@@ -28,6 +28,8 @@ model Order {
   id            String      @id @default(cuid())
   customerName  String?
   customerPhone String?
+  customerEmail String?     // Nuevo: Correo
+  paymentMethod String?     // Nuevo: Método de pago elegido
   totalAmount   Float
   paymentStatus PaymentStat @default(PENDING)
   kitchenStatus KitchenStat @default(RECEIVED)
@@ -39,7 +41,7 @@ model OrderItem {
   id              String         @id @default(cuid())
   quantity        Int
   calculatedPrice Float
-  notes           String?        // Aquí viajará la configuración del cliente
+  notes           String?
   orderId         String
   order           Order          @relation(fields: [orderId], references: [id])
   productId       String
@@ -56,31 +58,7 @@ model ItemModifier {
   modifier      Modifier  @relation(fields: [modifierId], references: [id])
 }
 
-enum Category {
-  ESQUITE
-  ESPECIALIDAD
-  ANTOJO
-  BEBIDA
-  COMBO
-}
-
-enum ModifierType {
-  POLVO
-  ADEREZO
-  QUESO
-  RESTRICCION
-}
-
-enum PaymentStat {
-  PENDING
-  PAID_ONLINE
-  PAID_TERMINAL
-  PAID_CASH
-}
-
-enum KitchenStat {
-  RECEIVED
-  PREPARING
-  READY
-  DELIVERED
-}
+enum Category { ESQUITE, ESPECIALIDAD, ANTOJO, BEBIDA, COMBO }
+enum ModifierType { POLVO, ADEREZO, QUESO, RESTRICCION }
+enum PaymentStat { PENDING, PAID_ONLINE, PAID_TERMINAL, PAID_CASH }
+enum KitchenStat { RECEIVED, PREPARING, READY, DELIVERED }
