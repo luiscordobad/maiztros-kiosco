@@ -1,87 +1,67 @@
 import { prisma } from '../../lib/prisma';
 import { revalidatePath } from 'next/cache';
 
-// Le decimos a Vercel que no guarde esta página en caché, que siempre traiga datos frescos
 export const dynamic = 'force-dynamic';
 
 export default async function Cocina() {
-  // 1. Traemos de Supabase todas las órdenes que tienen estatus 'RECEIVED'
   const orders = await prisma.order.findMany({
     where: { kitchenStatus: 'RECEIVED' },
-    orderBy: { createdAt: 'asc' }, // Las más viejas primero (filas reales)
+    orderBy: { createdAt: 'asc' },
     include: {
       items: {
         include: {
           product: true,
-          modifiers: {
-            include: { modifier: true }
-          }
+          modifiers: { include: { modifier: true } }
         }
       }
     }
   });
 
-  // 2. Función "Server Action" para marcar la orden como lista
   async function despacharOrden(formData: FormData) {
     'use server';
     const orderId = formData.get('orderId') as string;
-    
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { kitchenStatus: 'DELIVERED' }
-    });
-    
-    // Recargamos la pantalla al instante para desaparecer el ticket
+    await prisma.order.update({ where: { id: orderId }, data: { kitchenStatus: 'DELIVERED' } });
     revalidatePath('/cocina'); 
   }
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white font-sans p-6 md:p-12">
-      <header className="mb-8 flex justify-between items-center border-b border-zinc-800 pb-6">
+      <header className="mb-10 flex justify-between items-end border-b-4 border-yellow-400 pb-6">
         <div>
-          <h1 className="text-5xl font-black text-yellow-400">🔥 Pantalla de Cocina</h1>
-          <p className="text-zinc-400 text-xl mt-2">Maiztros - Estación de Preparación</p>
+          <h1 className="text-6xl font-black text-white italic tracking-tighter">MAIZTROS <span className="text-yellow-400">KDS</span></h1>
+          <p className="text-zinc-500 font-bold uppercase tracking-[0.3em] text-sm mt-2">Estación de Preparación</p>
         </div>
-        <div className="bg-zinc-900 px-8 py-4 rounded-2xl border border-zinc-800 text-center">
-          <span className="text-4xl font-black text-white">{orders.length}</span>
-          <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm mt-1">Pendientes</p>
+        <div className="bg-yellow-400 px-10 py-4 rounded-2xl text-zinc-950 text-center">
+          <span className="text-5xl font-black leading-none">{orders.length}</span>
+          <p className="font-black uppercase text-xs">Pendientes</p>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {orders.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center py-32 text-zinc-500">
-            <span className="text-8xl mb-6">🌽</span>
-            <p className="text-4xl font-black text-zinc-700">Sin órdenes pendientes</p>
-            <p className="text-xl mt-2">La estación de preparación está limpia.</p>
-          </div>
-        ) : (
-          orders.map((order) => (
-            <div key={order.id} className="bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden flex flex-col shadow-xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        {orders.map((order) => (
+          <div key={order.id} className="bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
+            <div className="bg-zinc-800 p-6 flex justify-between items-center border-b border-zinc-700">
+              <span className="text-zinc-400 font-black text-sm uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
+              <span className="text-zinc-500 text-xs">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+            
+            <div className="p-8 flex-1">
+              <h2 className="text-4xl font-black text-yellow-400 uppercase italic leading-tight mb-8 break-words">
+                {order.customerName || 'Cliente'}
+              </h2>
               
-              {/* Encabezado del Ticket */}
-              <div className="bg-yellow-400 text-zinc-950 p-5 flex justify-between items-center">
-                <h2 className="font-black text-2xl">Orden #{order.id.slice(-4).toUpperCase()}</h2>
-              </div>
-
-              {/* Lista de Esquites y Toppings */}
-              <div className="p-6 flex-1 space-y-6">
+              <div className="space-y-8">
                 {order.items.map((item) => (
-                  <div key={item.id} className="border-b border-zinc-800 pb-4 last:border-0 last:pb-0">
-                    <p className="font-black text-2xl flex items-start leading-tight mb-2">
-                      <span className="text-yellow-400 mr-3">{item.quantity}x</span>
+                  <div key={item.id} className="relative pl-6 border-l-4 border-zinc-700">
+                    <p className="text-2xl font-black text-white leading-tight">
+                      <span className="text-yellow-400 mr-2">{item.quantity}x</span>
                       {item.product.name}
                     </p>
-                    
-                    {/* Imprimimos la lista de ingredientes que eligió */}
                     {item.modifiers.length > 0 && (
-                      <ul className="ml-9 space-y-2 mt-3">
+                      <ul className="mt-3 space-y-1">
                         {item.modifiers.map((modItem) => (
-                          <li 
-                            key={modItem.id} 
-                            className={`text-lg font-bold flex items-center ${modItem.modifier.type === 'RESTRICCION' ? 'text-red-400' : 'text-zinc-300'}`}
-                          >
-                            <span className="mr-2 opacity-50">↳</span> {modItem.modifier.name}
+                          <li key={modItem.id} className={`text-lg font-bold ${modItem.modifier.type === 'RESTRICCION' ? 'text-red-400' : 'text-zinc-400'}`}>
+                            • {modItem.modifier.name}
                           </li>
                         ))}
                       </ul>
@@ -89,19 +69,18 @@ export default async function Cocina() {
                   </div>
                 ))}
               </div>
-
-              {/* Botón para Despachar */}
-              <div className="p-4 border-t border-zinc-800 bg-zinc-950">
-                <form action={despacharOrden}>
-                  <input type="hidden" name="orderId" value={order.id} />
-                  <button type="submit" className="w-full bg-zinc-800 hover:bg-green-500 hover:text-white text-zinc-400 hover:border-green-500 border border-zinc-700 py-4 rounded-xl font-black transition-all text-xl">
-                    ✔ Marcar como Lista
-                  </button>
-                </form>
-              </div>
             </div>
-          ))
-        )}
+
+            <div className="p-6 bg-zinc-950 mt-auto">
+              <form action={despacharOrden}>
+                <input type="hidden" name="orderId" value={order.id} />
+                <button type="submit" className="w-full bg-zinc-800 hover:bg-green-600 text-zinc-500 hover:text-white py-5 rounded-2xl font-black text-xl transition-all border border-zinc-700 hover:border-green-500">
+                  DESPACHAR
+                </button>
+              </form>
+            </div>
+          </div>
+        ))}
       </div>
     </main>
   );
