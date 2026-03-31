@@ -25,7 +25,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
-  const [wizardData, setWizardData] = useState<any>({}); // Guarda: { pasoIndex: [selecciones] }
+  const [wizardData, setWizardData] = useState<any>({}); 
   
   // Estados de Pago
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -96,7 +96,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       return;
     }
 
-    // Calcular costos y armar el texto para la cocina
     let totalExtra = 0;
     let notesLines: string[] = [];
 
@@ -107,7 +106,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       if (step.type === 'TOPPINGS') {
         const paid = selections.filter((s:any) => s.type !== 'RESTRICCION').length;
         let baseCount = paid;
-        if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; // 1ro gratis
+        if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; 
         
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
