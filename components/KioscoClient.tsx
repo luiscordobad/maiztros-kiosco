@@ -22,11 +22,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
-  // Estados
+  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
-  const [wizardData, setWizardData] = useState<any>({}); // { pasoIndex: [selecciones] }
+  const [wizardData, setWizardData] = useState<any>({}); // Guarda: { pasoIndex: [selecciones] }
   
+  // Estados de Pago
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
@@ -85,8 +86,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const canProceed = () => {
-    if (currentStep?.type === 'TOPPINGS') return true; // Toppings siempre opcionales
-    return (wizardData[wizardStep] && wizardData[wizardStep].length > 0); // Lo demás es obligatorio
+    if (currentStep?.type === 'TOPPINGS') return true; 
+    return (wizardData[wizardStep] && wizardData[wizardStep].length > 0); 
   };
 
   const handleNextOrFinish = () => {
@@ -95,7 +96,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       return;
     }
 
-    // Calcular costos y armar el string para la cocina
+    // Calcular costos y armar el texto para la cocina
     let totalExtra = 0;
     let notesLines: string[] = [];
 
@@ -194,7 +195,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <div key={item.id} className="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex justify-between">
                 <div className="flex-1">
                   <p className="font-bold text-lg leading-none">{item.product.name}</p>
-                  <p className="text-xs text-zinc-400 mt-2 leading-tight whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>
+                  {item.notes && <p className="text-xs text-zinc-400 mt-2 leading-tight whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>}
                   <p className="text-yellow-400 font-bold mt-2">${item.totalPrice.toFixed(2)}</p>
                 </div>
                 <button onClick={() => removeFromCart(item.id)} className="text-zinc-500 hover:text-red-400 ml-4 font-bold">✕</button>
@@ -225,7 +226,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       {activeProduct && currentStep && (
         <div className="fixed inset-0 bg-black/80 flex justify-center items-center p-4 z-50">
           <div className="bg-zinc-900 border border-zinc-700 w-full max-w-2xl rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-            
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
               <div>
                 <h2 className="text-2xl font-black text-yellow-400 uppercase italic">
@@ -237,7 +237,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 {currentStep.isFree && <p className="text-green-400 text-sm mt-1 uppercase tracking-widest">Toppings Ilimitados Gratis incluidos</p>}
                 {activeProduct.name === 'Don Maiztro' && currentStep.type === 'TOPPINGS' && <p className="text-green-400 text-sm mt-1 uppercase tracking-widest">1er Topping Gratis</p>}
               </div>
-              <button onClick={() => setActiveProduct(null)} className="text-zinc-500 text-3xl font-bold">✕</button>
+              <button onClick={() => setActiveProduct(null)} className="text-zinc-500 text-3xl font-bold hover:text-white">✕</button>
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6">
