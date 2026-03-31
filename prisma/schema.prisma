@@ -27,6 +27,7 @@ model Modifier {
 model Order {
   id            String      @id @default(cuid())
   customerName  String?
+  customerPhone String?     // Nuevo campo para tu base de datos
   totalAmount   Float
   paymentStatus PaymentStat @default(PENDING)
   kitchenStatus KitchenStat @default(RECEIVED)
