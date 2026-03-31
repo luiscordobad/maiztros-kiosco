@@ -4,11 +4,12 @@ import { prisma } from '../../../lib/prisma';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { cart, totalAmount } = body;
+    const { cart, totalAmount, customerName, customerPhone } = body;
 
-    // Guardamos la orden completa en Supabase con todas sus relaciones
     const order = await prisma.order.create({
       data: {
+        customerName: customerName,
+        customerPhone: customerPhone,
         totalAmount: totalAmount,
         kitchenStatus: 'RECEIVED',
         paymentStatus: 'PENDING',
@@ -31,6 +32,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, orderId: order.id });
   } catch (error) {
     console.error("Error guardando la orden:", error);
-    return NextResponse.json({ success: false, error: 'Error processing order' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Error' }, { status: 500 });
   }
 }
