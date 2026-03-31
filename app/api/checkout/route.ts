@@ -18,12 +18,7 @@ export async function POST(request: Request) {
             productId: item.product.id,
             quantity: item.quantity,
             calculatedPrice: item.totalPrice,
-            modifiers: {
-              create: item.modifiers.map((mod: any) => ({
-                modifierId: mod.id,
-                appliedCharge: 0 
-              }))
-            }
+            notes: item.notes // Aquí guardamos toda la instrucción para cocina
           }))
         }
       }
@@ -31,7 +26,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, orderId: order.id });
   } catch (error) {
-    console.error("Error guardando la orden:", error);
+    console.error("Error guardando orden:", error);
     return NextResponse.json({ success: false, error: 'Error' }, { status: 500 });
   }
 }
