@@ -5,23 +5,24 @@ import { useCartStore } from '../store/cart';
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   
-  // Control de la ventana flotante
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [selectedMods, setSelectedMods] = useState<any[]>([]);
+  
+  // Nuevos estados para el proceso de pago
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
 
-  // Separar toppings por categoría para mostrarlos bonito
   const polvos = modifiers.filter(m => m.type === 'POLVO');
   const aderezos = modifiers.filter(m => m.type === 'ADEREZO');
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
-  // Lógica de Precios de Maiztros
   const calculateExtraCost = () => {
     const paidToppingsCount = selectedMods.filter(m => m.type !== 'RESTRICCION').length;
     if (paidToppingsCount === 0) return 0;
     if (paidToppingsCount === 1) return 15;
     if (paidToppingsCount === 2) return 25;
-    return 35; // 3 o más (Ilimitados)
+    return 35;
   };
 
   const toggleModifier = (mod: any) => {
@@ -37,6 +38,46 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setActiveProduct(null);
     setSelectedMods([]);
   };
+
+  // Función que envía los datos a Supabase
+  const handleCheckout = async () => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cart, totalAmount: getTotal() })
+      });
+
+      if (response.ok) {
+        setOrderSuccess(true);
+        useCartStore.setState({ cart: [] }); // Vaciamos el carrito
+        
+        // Ocultamos el mensaje de éxito después de 5 segundos para el siguiente cliente
+        setTimeout(() => {
+          setOrderSuccess(false);
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error al enviar la orden:', error);
+      alert("Hubo un error al procesar tu orden. Intenta de nuevo.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Pantalla de Éxito que cubre todo
+  if (orderSuccess) {
+    return (
+      <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center">
+        <h1 className="text-6xl font-black mb-4">¡Orden Recibida!</h1>
+        <p className="text-2xl font-bold mb-8">Tu antojo ya se está preparando en la cocina.</p>
+        <div className="animate-pulse w-24 h-24 rounded-full bg-white/20 flex items-center justify-center">
+          <span className="text-5xl">🌽</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-zinc-950 text-white font-sans relative">
@@ -62,7 +103,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <button 
                   onClick={() => {
                     setActiveProduct(product);
-                    setSelectedMods([]); // Limpiamos opciones previas
+                    setSelectedMods([]); 
                   }}
                   className="bg-yellow-400 text-zinc-950 px-4 py-2 rounded-xl font-bold hover:bg-yellow-300 transition-colors active:scale-95"
                 >
@@ -88,7 +129,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <li key={item.id} className="flex justify-between items-start bg-zinc-800 p-4 rounded-xl border border-zinc-700">
                   <div className="flex-1">
                     <p className="font-bold text-lg leading-tight">{item.product.name}</p>
-                    {/* Imprimimos los toppings que eligió */}
                     {item.modifiers.length > 0 && (
                       <p className="text-xs text-zinc-400 mt-1 leading-snug">
                         {item.modifiers.map((m: any) => m.name).join(', ')}
@@ -110,8 +150,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <span className="text-2xl text-zinc-400 font-bold">Total:</span>
             <span className="text-4xl text-yellow-400 font-black">${getTotal().toFixed(2)}</span>
           </div>
-          <button disabled={cart.length === 0} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black text-xl hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed">
-            Pagar Orden
+          <button 
+            onClick={handleCheckout}
+            disabled={cart.length === 0 || isSubmitting} 
+            className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black text-xl hover:bg-yellow-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+          >
+            {isSubmitting ? 'Enviando...' : 'Pagar Orden'}
           </button>
         </div>
       </div>
@@ -120,8 +164,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       {activeProduct && (
         <div className="fixed inset-0 bg-black/80 flex justify-center items-center p-4 z-50">
           <div className="bg-zinc-900 border border-zinc-700 w-full max-w-2xl max-h-[90vh] rounded-2xl flex flex-col shadow-2xl">
-            
-            {/* Cabecera del Modal */}
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
               <div>
                 <h2 className="text-3xl font-black text-yellow-400">{activeProduct.name}</h2>
@@ -129,11 +171,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               </div>
               <button onClick={() => setActiveProduct(null)} className="text-zinc-500 hover:text-white text-3xl font-bold">✕</button>
             </div>
-
-            {/* Opciones con scroll */}
             <div className="p-6 overflow-y-auto flex-1">
-              
-              {/* Sección Polvos */}
               <h3 className="text-xl font-bold mb-3 border-b border-zinc-700 pb-2">Polvito de Papas</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
                 {polvos.map(mod => (
@@ -143,8 +181,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   </button>
                 ))}
               </div>
-
-              {/* Sección Aderezos */}
               <h3 className="text-xl font-bold mb-3 border-b border-zinc-700 pb-2">Aderezos</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
                 {aderezos.map(mod => (
@@ -154,8 +190,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   </button>
                 ))}
               </div>
-
-              {/* Sección Quesos */}
               <h3 className="text-xl font-bold mb-3 border-b border-zinc-700 pb-2">Quesos</h3>
               <div className="grid grid-cols-2 gap-3 mb-6">
                 {quesos.map(mod => (
@@ -165,8 +199,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   </button>
                 ))}
               </div>
-
-              {/* Sección Restricciones */}
               <h3 className="text-xl font-bold mb-3 border-b border-zinc-700 pb-2 text-red-400">Restricciones Base (Gratis)</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {restricciones.map(mod => (
@@ -176,20 +208,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   </button>
                 ))}
               </div>
-
             </div>
-
-            {/* Botón Flotante para Confirmar */}
             <div className="p-6 border-t border-zinc-800 bg-zinc-900 rounded-b-2xl">
               <button onClick={handleConfirmAdd} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black text-xl hover:bg-yellow-300">
                 Añadir al Carrito - ${(activeProduct.basePrice + calculateExtraCost()).toFixed(2)}
               </button>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
