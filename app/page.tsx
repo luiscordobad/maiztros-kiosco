@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma';
-import KioscoClient from './components/KioscoClient';
+import KioscoClient from '../components/KioscoClient';
 
 export const dynamic = 'force-dynamic';
 
