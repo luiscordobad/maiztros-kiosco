@@ -3,25 +3,27 @@ import { create } from 'zustand';
 interface CartItem {
   id: string;
   product: any;
+  modifiers: any[];
   quantity: number;
   totalPrice: number;
 }
 
 interface CartStore {
   cart: CartItem[];
-  addToCart: (product: any) => void;
+  addToCart: (product: any, modifiers: any[], extraCost: number) => void;
   removeFromCart: (cartItemId: string) => void;
   getTotal: () => number;
 }
 
 export const useCartStore = create<CartStore>((set, get) => ({
   cart: [],
-  addToCart: (product) => {
+  addToCart: (product, modifiers = [], extraCost = 0) => {
     const newItem = {
       id: Math.random().toString(36).substring(7),
       product,
+      modifiers,
       quantity: 1,
-      totalPrice: product.basePrice,
+      totalPrice: product.basePrice + extraCost,
     };
     set((state) => ({ cart: [...state.cart, newItem] }));
   },
