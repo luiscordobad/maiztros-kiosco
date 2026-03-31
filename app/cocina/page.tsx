@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { revalidatePath } from 'next/cache';
+import AutoRefresh from './AutoRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,14 +8,7 @@ export default async function Cocina() {
   const orders = await prisma.order.findMany({
     where: { kitchenStatus: 'RECEIVED' },
     orderBy: { createdAt: 'asc' },
-    include: {
-      items: {
-        include: {
-          product: true,
-          modifiers: { include: { modifier: true } }
-        }
-      }
-    }
+    include: { items: { include: { product: true } } }
   });
 
   async function despacharOrden(formData: FormData) {
@@ -25,13 +19,14 @@ export default async function Cocina() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white font-sans p-6 md:p-12">
+    <main className="min-h-screen bg-zinc-950 text-white font-sans p-6 md:p-12 relative">
+      <AutoRefresh />
       <header className="mb-10 flex justify-between items-end border-b-4 border-yellow-400 pb-6">
         <div>
           <h1 className="text-6xl font-black text-white italic tracking-tighter">MAIZTROS <span className="text-yellow-400">KDS</span></h1>
           <p className="text-zinc-500 font-bold uppercase tracking-[0.3em] text-sm mt-2">Estación de Preparación</p>
         </div>
-        <div className="bg-yellow-400 px-10 py-4 rounded-2xl text-zinc-950 text-center">
+        <div className="bg-yellow-400 px-10 py-4 rounded-2xl text-zinc-950 text-center shadow-[0_0_30px_rgba(250,204,21,0.3)]">
           <span className="text-5xl font-black leading-none">{orders.length}</span>
           <p className="font-black uppercase text-xs">Pendientes</p>
         </div>
@@ -57,14 +52,14 @@ export default async function Cocina() {
                       <span className="text-yellow-400 mr-2">{item.quantity}x</span>
                       {item.product.name}
                     </p>
-                    {item.modifiers.length > 0 && (
-                      <ul className="mt-3 space-y-1">
-                        {item.modifiers.map((modItem) => (
-                          <li key={modItem.id} className={`text-lg font-bold ${modItem.modifier.type === 'RESTRICCION' ? 'text-red-400' : 'text-zinc-400'}`}>
-                            • {modItem.modifier.name}
-                          </li>
+                    {item.notes && (
+                      <div className="mt-3 space-y-2">
+                        {item.notes.split(' | ').map((line, i) => (
+                          <p key={i} className="text-lg font-bold text-zinc-400 whitespace-pre-wrap leading-snug">
+                            {line.includes('Restricciones') || line.includes('Gratis') ? <span className="text-red-400">{line}</span> : line}
+                          </p>
                         ))}
-                      </ul>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -75,7 +70,7 @@ export default async function Cocina() {
               <form action={despacharOrden}>
                 <input type="hidden" name="orderId" value={order.id} />
                 <button type="submit" className="w-full bg-zinc-800 hover:bg-green-600 text-zinc-500 hover:text-white py-5 rounded-2xl font-black text-xl transition-all border border-zinc-700 hover:border-green-500">
-                  DESPACHAR
+                  ✔ DESPACHAR
                 </button>
               </form>
             </div>
