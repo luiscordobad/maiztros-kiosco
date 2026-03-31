@@ -27,7 +27,7 @@ model Modifier {
 model Order {
   id            String      @id @default(cuid())
   customerName  String?
-  customerPhone String?     // Nuevo campo para tu base de datos
+  customerPhone String?
   totalAmount   Float
   paymentStatus PaymentStat @default(PENDING)
   kitchenStatus KitchenStat @default(RECEIVED)
@@ -39,6 +39,7 @@ model OrderItem {
   id              String         @id @default(cuid())
   quantity        Int
   calculatedPrice Float
+  notes           String?        // Aquí viajará la configuración del cliente
   orderId         String
   order           Order          @relation(fields: [orderId], references: [id])
   productId       String
