@@ -4,21 +4,23 @@ import { prisma } from '../../../lib/prisma';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { cart, totalAmount, customerName, customerPhone } = body;
+    const { cart, totalAmount, customerName, customerPhone, customerEmail, paymentMethod } = body;
 
     const order = await prisma.order.create({
       data: {
-        customerName: customerName,
-        customerPhone: customerPhone,
-        totalAmount: totalAmount,
+        customerName,
+        customerPhone,
+        customerEmail,
+        paymentMethod,
+        totalAmount,
         kitchenStatus: 'RECEIVED',
-        paymentStatus: 'PENDING',
+        paymentStatus: 'PENDING', // Se queda pendiente hasta que Mercado Pago o la caja confirmen
         items: {
           create: cart.map((item: any) => ({
             productId: item.product.id,
             quantity: item.quantity,
             calculatedPrice: item.totalPrice,
-            notes: item.notes // Aquí guardamos toda la instrucción para cocina
+            notes: item.notes
           }))
         }
       }
