@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useCartStore } from '../../store/cart';
+import { useCartStore } from '../store/cart';
 
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
@@ -91,7 +91,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     {/* Imprimimos los toppings que eligió */}
                     {item.modifiers.length > 0 && (
                       <p className="text-xs text-zinc-400 mt-1 leading-snug">
-                        {item.modifiers.map(m => m.name).join(', ')}
+                        {item.modifiers.map((m: any) => m.name).join(', ')}
                       </p>
                     )}
                     <p className="text-yellow-400 font-bold mt-2">${item.totalPrice.toFixed(2)}</p>
