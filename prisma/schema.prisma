@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Product {
+  id          String      @id
+  name        String
+  category    Category
+  basePrice   Float
+  isCombo     Boolean     @default(false)
+  orderItems  OrderItem[]
+}
+
+model Modifier {
+  id           String         @id
+  name         String
+  type         ModifierType
+  itemsApplied ItemModifier[]
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  customerName  String?
+  totalAmount   Float
+  paymentStatus PaymentStat @default(PENDING)
+  kitchenStatus KitchenStat @default(RECEIVED)
+  createdAt     DateTime    @default(now())
+  items         OrderItem[]
+}
+
+model OrderItem {
+  id              String         @id @default(cuid())
+  quantity        Int
+  calculatedPrice Float
+  orderId         String
+  order           Order          @relation(fields: [orderId], references: [id])
+  productId       String
+  product         Product        @relation(fields: [productId], references: [id])
+  modifiers       ItemModifier[]
+}
+
+model ItemModifier {
+  id            String    @id @default(cuid())
+  appliedCharge Float
+  orderItemId   String
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
+  modifierId    String
+  modifier      Modifier  @relation(fields: [modifierId], references: [id])
+}
+
+enum Category {
+  ESQUITE
+  ESPECIALIDAD
+  ANTOJO
+  BEBIDA
+  COMBO
+}
+
+enum ModifierType {
+  POLVO
+  ADEREZO
+  QUESO
+  RESTRICCION
+}
+
+enum PaymentStat {
+  PENDING
+  PAID_ONLINE
+  PAID_TERMINAL
+  PAID_CASH
+}
+
+enum KitchenStat {
+  RECEIVED
+  PREPARING
+  READY
+  DELIVERED
+}
