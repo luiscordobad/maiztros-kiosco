@@ -20,19 +20,26 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
+  // Estados de la App
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
   const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
+  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
+  // Estados del Cliente y Checkout
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
+
+  // Estados de Mercado Pago Terminal
+  const [waitingTerminal, setWaitingTerminal] = useState(false);
+  const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -44,32 +51,19 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return "";
   };
 
-  // CEREBRO DE RUTAS PARA PRODUCTOS
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
-    
-    // Bebidas específicas
     if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
-    
-    // Combos
     if(n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('pareja')) return [{t: 'Esquite 1', type: 'TOPPINGS', isFree: true}, {t: 'Esquite 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
     if(n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
-    
-    // Especialidades complejas
     if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
     if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    
-    // Especialidades o Antojos Solos (NUEVA LÓGICA)
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
     if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    
-    // Antojos Simples (Gomitas, Mangos) o Agua -> SIN PASOS (Directo al carrito)
     if(p.category === 'ANTOJO' || n === 'agua natural') return [];
-
-    // Por defecto (Esquites Clásicos)
     return [{t: 'Personaliza tu antojo', type: 'TOPPINGS'}];
   };
 
@@ -81,19 +75,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const handleProductClick = (product: any) => {
     const steps = getProductSteps(product);
-    
-    // Si el producto no tiene pasos de configuración (Gomitas, Agua)
     if (steps.length === 0) {
       addToCart(product, 0, product.name);
-      
-      // Si estaba en el Upsell y eligió gomitas, lo regresamos al menú para que no se quede atorado
-      if (appState === 'UPSELL') {
-        setAppState('MENU');
-      }
+      if (appState === 'UPSELL') setAppState('MENU');
       return; 
     }
-
-    // Si tiene pasos, abrimos el Wizard
     setActiveProduct(product);
     setWizardStep(0);
     setWizardData({});
@@ -135,9 +121,37 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  const handleCheckout = async (paymentMethod: string) => {
-    if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
-    setIsSubmitting(true);
+  // --- LOGICA DE COBRO CON MERCADO PAGO ---
+  const checkTerminalStatus = async (intentId: string) => {
+    try {
+      const res = await fetch(`/api/terminal?intentId=${intentId}`);
+      const data = await res.json();
+
+      if (data.state === 'FINISHED') {
+        if (data.paymentStatus === 'approved') {
+          executeOrderSave('TERMINAL');
+        } else {
+          alert('El cobro fue rechazado o cancelado en la terminal.');
+          setWaitingTerminal(false);
+          setTerminalIntentId(null);
+          setIsSubmitting(false);
+        }
+        return true; 
+      }
+      if (data.state === 'ERROR' || data.state === 'CANCELED') {
+        alert('El cobro fue cancelado.');
+        setWaitingTerminal(false);
+        setTerminalIntentId(null);
+        setIsSubmitting(false);
+        return true;
+      }
+      return false; 
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const executeOrderSave = async (paymentMethod: string) => {
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -149,11 +163,47 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
+        setWaitingTerminal(false);
+        setTerminalIntentId(null);
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); }, 10000);
       }
-    } catch (error) { alert("Error al procesar la orden."); }
+    } catch (error) { alert("Error guardando orden."); }
     setIsSubmitting(false);
+  };
+
+  const handleCheckout = async (paymentMethod: string) => {
+    if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
+    setIsSubmitting(true);
+
+    if (paymentMethod === 'TERMINAL') {
+      try {
+        const res = await fetch('/api/terminal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: getTotal(), description: 'Orden Maiztros' })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          setWaitingTerminal(true);
+          setTerminalIntentId(data.intentId);
+          
+          const interval = setInterval(async () => {
+            const finished = await checkTerminalStatus(data.intentId);
+            if (finished) clearInterval(interval);
+          }, 3000);
+        } else {
+          alert(data.error || 'Error conectando con la terminal.');
+          setIsSubmitting(false);
+        }
+      } catch (e) {
+        alert("Error de conexión con Mercado Pago.");
+        setIsSubmitting(false);
+      }
+    } else {
+      executeOrderSave(paymentMethod);
+    }
   };
 
   const renderProductGrid = (items: any[]) => (
@@ -205,7 +255,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   if (appState === 'CHECKOUT') {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white">
+      <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -251,6 +301,16 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             </div>
           </div>
         </div>
+
+        {/* MODAL DE ESPERA TERMINAL FÍSICA */}
+        {waitingTerminal && (
+          <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
+            <span className="text-[10rem] animate-pulse mb-8">💳</span>
+            <h2 className="text-6xl font-black text-yellow-400 mb-6">Pasa tu tarjeta</h2>
+            <p className="text-3xl text-zinc-300 font-medium">Sigue las instrucciones en la terminal física de tu lado.</p>
+            <div className="mt-16 w-32 h-32 border-8 border-zinc-800 border-t-yellow-400 rounded-full animate-spin"></div>
+          </div>
+        )}
       </div>
     );
   }
@@ -331,7 +391,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
 
             <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
-            {/* Solo mostramos gomitas, pandas o mangos en el upsell (no las papas solas que ya compran con el esquite) */}
             {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango') || p.name.toLowerCase().includes('dulce'))))}
           </div>
 
