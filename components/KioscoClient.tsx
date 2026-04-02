@@ -30,16 +30,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  // Estados del Cliente y Checkout
+  // Estados del Cliente
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  // Estados de Mercado Pago Terminal
+  // Estados de Terminal
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
+  const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -121,30 +122,43 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  // --- LÓGICA DE COBRO CON MERCADO PAGO ACTUALIZADA ---
+  // --- LÓGICA DE TERMINAL BLINDADA ---
   const checkTerminalStatus = async (intentId: string) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
       const data = await res.json();
 
-      // Si el estado principal es FINISHED, el cobro fue un éxito rotundo.
-      if (data.state === 'FINISHED') {
+      const currentState = (data.state || '').toUpperCase();
+
+      // Feedback visual para el usuario
+      if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
+      if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago, no retires la tarjeta...');
+
+      // 1. Éxito rotundo
+      if (currentState === 'FINISHED') {
+        setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo ticket...');
         executeOrderSave('TERMINAL');
         return true; 
       }
       
-      // Si fue cancelado en la terminal o hubo error de lectura
-      if (data.state === 'ERROR' || data.state === 'CANCELED' || data.state === 'ABANDONED') {
-        alert('El cobro fue cancelado en la terminal.');
+      // 2. Rechazo o cancelación real
+      if (currentState === 'CANCELED' || currentState === 'ABANDONED') {
+        alert('El cobro fue cancelado o rechazado en la terminal física.');
         setWaitingTerminal(false);
         setTerminalIntentId(null);
         setIsSubmitting(false);
         return true;
       }
+
+      // 3. Fallas de red (NO CANCELA EL CICLO, solo avisa y sigue esperando)
+      if (currentState === 'ERROR' || currentState === 'FETCH_ERROR') {
+        setTerminalStatusMsg('📡 Intermitencia de internet, reconectando...');
+        return false;
+      }
       
-      // Si está en 'OPEN' o 'PROCESSING', sigue esperando
       return false; 
     } catch (e) {
+      setTerminalStatusMsg('📡 Esperando señal...');
       return false;
     }
   };
@@ -166,7 +180,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); }, 10000);
       }
-    } catch (error) { alert("Error guardando orden."); }
+    } catch (error) { alert("Error guardando orden en base de datos."); }
     setIsSubmitting(false);
   };
 
@@ -176,6 +190,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
     if (paymentMethod === 'TERMINAL') {
       try {
+        setTerminalStatusMsg('Buscando tu terminal Mercado Pago...');
         const res = await fetch('/api/terminal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -186,6 +201,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         if (data.success) {
           setWaitingTerminal(true);
           setTerminalIntentId(data.intentId);
+          setTerminalStatusMsg('💳 Esperando tarjeta en la terminal...');
           
           const interval = setInterval(async () => {
             const finished = await checkTerminalStatus(data.intentId);
@@ -196,7 +212,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           setIsSubmitting(false);
         }
       } catch (e) {
-        alert("Error de conexión con Mercado Pago.");
+        alert("Error de conexión con la nube de Mercado Pago.");
         setIsSubmitting(false);
       }
     } else {
@@ -300,12 +316,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* MODAL DE ESPERA TERMINAL FÍSICA */}
         {waitingTerminal && (
           <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
             <span className="text-[10rem] animate-pulse mb-8">💳</span>
-            <h2 className="text-6xl font-black text-yellow-400 mb-6">Pasa tu tarjeta</h2>
-            <p className="text-3xl text-zinc-300 font-medium">Sigue las instrucciones en la terminal física de tu lado.</p>
+            <h2 className="text-6xl font-black text-yellow-400 mb-6">Terminal Lista</h2>
+            <p className="text-3xl text-zinc-300 font-medium bg-zinc-900 px-8 py-4 rounded-full border border-zinc-700 shadow-xl">{terminalStatusMsg}</p>
             <div className="mt-16 w-32 h-32 border-8 border-zinc-800 border-t-yellow-400 rounded-full animate-spin"></div>
           </div>
         )}
@@ -378,7 +393,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         </div>
       )}
 
-      {/* MOTOR UPSELL */}
       {appState === 'UPSELL' && (
         <div className="fixed inset-0 bg-zinc-950 flex flex-col z-40 overflow-y-auto animate-in slide-in-from-bottom duration-300">
           <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
@@ -400,7 +414,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         </div>
       )}
 
-      {/* WIZARD MODAL */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden h-[90vh] md:h-auto md:max-h-[90vh]">
