@@ -121,30 +121,28 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  // --- LOGICA DE COBRO CON MERCADO PAGO ---
+  // --- LÓGICA DE COBRO CON MERCADO PAGO ACTUALIZADA ---
   const checkTerminalStatus = async (intentId: string) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
       const data = await res.json();
 
+      // Si el estado principal es FINISHED, el cobro fue un éxito rotundo.
       if (data.state === 'FINISHED') {
-        if (data.paymentStatus === 'approved') {
-          executeOrderSave('TERMINAL');
-        } else {
-          alert('El cobro fue rechazado o cancelado en la terminal.');
-          setWaitingTerminal(false);
-          setTerminalIntentId(null);
-          setIsSubmitting(false);
-        }
+        executeOrderSave('TERMINAL');
         return true; 
       }
-      if (data.state === 'ERROR' || data.state === 'CANCELED') {
-        alert('El cobro fue cancelado.');
+      
+      // Si fue cancelado en la terminal o hubo error de lectura
+      if (data.state === 'ERROR' || data.state === 'CANCELED' || data.state === 'ABANDONED') {
+        alert('El cobro fue cancelado en la terminal.');
         setWaitingTerminal(false);
         setTerminalIntentId(null);
         setIsSubmitting(false);
         return true;
       }
+      
+      // Si está en 'OPEN' o 'PROCESSING', sigue esperando
       return false; 
     } catch (e) {
       return false;
