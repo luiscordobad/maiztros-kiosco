@@ -6,7 +6,8 @@ export async function POST(request: Request) {
     const token = process.env.MP_ACCESS_TOKEN;
 
     const devicesRes = await fetch('https://api.mercadopago.com/point/integration-api/devices', {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
     });
     const devicesData = await devicesRes.json();
     
@@ -19,8 +20,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No se encontró tu Smart 2 en modo PDV.' }, { status: 400 });
     }
 
-    // CONVERSIÓN DE PESOS A CENTAVOS
-    // Multiplicamos por 100 y redondeamos para evitar fracciones de centavo (ej. $180.50 -> 18050)
     const amountInCents = Math.round(amount * 100);
 
     const intentRes = await fetch(`https://api.mercadopago.com/point/integration-api/devices/${terminal.id}/payment-intents`, {
@@ -32,7 +31,8 @@ export async function POST(request: Request) {
           external_reference: "Kiosco_Maiztros",
           print_on_terminal: false
         }
-      })
+      }),
+      cache: 'no-store'
     });
     
     const intentData = await intentRes.json();
@@ -58,12 +58,17 @@ export async function GET(request: Request) {
     const token = process.env.MP_ACCESS_TOKEN;
 
     const res = await fetch(`https://api.mercadopago.com/point/integration-api/payment-intents/${intentId}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
     });
+    
+    if (!res.ok) {
+       return NextResponse.json({ state: 'FETCH_ERROR' });
+    }
+    
     const data = await res.json();
-
     return NextResponse.json({ state: data.state, paymentStatus: data.payment?.state });
   } catch (error) {
-    return NextResponse.json({ state: 'ERROR' }, { status: 500 });
+    return NextResponse.json({ state: 'FETCH_ERROR' }, { status: 500 });
   }
 }
