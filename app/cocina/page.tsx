@@ -24,7 +24,6 @@ export default async function Cocina() {
       <header className="mb-10 flex justify-between items-end border-b-4 border-yellow-400 pb-6">
         <div>
           <h1 className="text-6xl font-black text-white italic tracking-tighter">MAIZTROS <span className="text-yellow-400">KDS</span></h1>
-          <p className="text-zinc-500 font-bold uppercase tracking-[0.3em] text-sm mt-2">Estación de Preparación</p>
         </div>
         <div className="bg-yellow-400 px-10 py-4 rounded-2xl text-zinc-950 text-center shadow-[0_0_30px_rgba(250,204,21,0.3)]">
           <span className="text-5xl font-black leading-none">{orders.length}</span>
@@ -35,8 +34,6 @@ export default async function Cocina() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
         {orders.map((order) => (
           <div key={order.id} className="bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
-            
-            {/* ENCABEZADO INTELIGENTE (Para Llevar vs Comer Aquí) */}
             <div className={`p-5 flex justify-between items-center ${order.orderType === 'TAKEOUT' ? 'bg-orange-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
               <span className="font-black text-sm uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
               <span className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
@@ -45,9 +42,17 @@ export default async function Cocina() {
             </div>
             
             <div className="p-8 flex-1">
-              <h2 className="text-4xl font-black text-yellow-400 uppercase italic leading-tight mb-8 break-words">
+              <h2 className="text-4xl font-black text-yellow-400 uppercase italic leading-tight mb-4 break-words">
                 {order.customerName || 'Cliente'}
               </h2>
+              
+              {/* COMENTARIOS DE LA ORDEN DESTACADOS */}
+              {order.orderNotes && (
+                <div className="bg-yellow-400/20 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-xl">
+                  <p className="text-yellow-400 font-black text-xs uppercase tracking-widest mb-1">Nota del Cliente:</p>
+                  <p className="text-white font-bold text-lg leading-snug">{order.orderNotes}</p>
+                </div>
+              )}
               
               <div className="space-y-8">
                 {order.items.map((item) => (
