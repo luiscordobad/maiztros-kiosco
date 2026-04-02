@@ -13,7 +13,7 @@ const OPCIONES = {
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   
-  // 1. Limpieza a prueba de balas para Ramaiztro
+  // Limpiamos Ramaiztro
   const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro'));
 
   const polvos = modifiers.filter(m => m.type === 'POLVO');
@@ -21,29 +21,26 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
-  // Máquina de Estados
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
-  const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
-  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  // Estados de Pago
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
 
   const getProductDesc = (name: string) => {
-    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
-    if(name.includes('Pareja')) return "2 Esquites (Toppings full) + 2 Bebidas";
-    if(name.includes('Familiar')) return "2 Gdes + 2 Chicos (Toppings full) + 4 Bebidas";
-    if(name === 'Construpapas') return "Tus papas favoritas con esquite encima.";
-    if(name === 'Obra Maestra') return "Deliciosa Maruchan con nuestro esquite.";
-    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
+    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida a elegir.";
+    if(name.includes('Pareja')) return "2 Esquites (Toppings ilimitados) + 2 Bebidas a elegir.";
+    if(name.includes('Familiar')) return "2 Esq. Grandes + 2 Esq. Chicos (Full Toppings) + 4 Bebidas.";
+    if(name === 'Construpapas') return "Tus papas favoritas preparadas con esquite encima.";
+    if(name === 'Obra Maestra') return "Deliciosa Maruchan preparada con nuestro esquite.";
+    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis).";
     return "";
   };
 
@@ -74,9 +71,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setActiveProduct(product);
     setWizardStep(0);
     setWizardData({});
-    
-    // Si viene del upsell, aseguramos que regrese al menú después
-    if (appState === 'UPSELL') setAppState('MENU');
   };
 
   const handleNextOrFinish = () => {
@@ -108,9 +102,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     const wasDrinkOrAntojoOrCombo = activeProduct.category === 'BEBIDA' || activeProduct.category === 'ANTOJO' || activeProduct.category === 'COMBO';
     setActiveProduct(null);
     
-    // Detonador Inteligente de Upsell
-    if (!wasDrinkOrAntojoOrCombo) {
-      setUpsellView('OPTIONS');
+    // Si viene del menú y es un esquite/especialidad, abre el Upsell.
+    // Si ya está en el Upsell, se queda en el Upsell (El modal del wizard flota sobre él).
+    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) {
       setAppState('UPSELL');
     }
   };
@@ -122,13 +116,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, totalAmount: getTotal(), customerName, customerEmail, paymentMethod, orderType })
+        body: JSON.stringify({ cart, totalAmount: getTotal(), customerName, customerEmail, paymentMethod, orderType, orderNotes })
       });
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerEmail(''); 
+        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); }, 10000);
       }
@@ -136,7 +130,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setIsSubmitting(false);
   };
 
-  // --- COMPONENTES REUTILIZABLES ---
   const renderProductGrid = (items: any[]) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {items.map((product) => (
@@ -154,7 +147,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     </div>
   );
 
-  // --- PANTALLAS PRINCIPALES ---
   if (appState === 'WELCOME') {
     return (
       <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
@@ -181,7 +173,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           <p className="text-2xl uppercase tracking-[0.3em] font-bold opacity-80 mb-6">Número de Turno</p>
           <p className="text-[10rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
         </div>
-        <p className="mt-16 text-3xl font-bold bg-zinc-950 text-white px-8 py-4 rounded-full animate-bounce">Llamaremos tu nombre al entregar</p>
       </div>
     );
   }
@@ -204,9 +195,16 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </div>
               </div>
             ))}
+            
+            {/* TEXTAREA COMENTARIOS */}
+            <div className="mt-8">
+              <label className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2 block">Comentarios para la cocina</label>
+              <textarea placeholder="Ej. El esquite mediano bien doradito, con poco chile..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-lg font-medium resize-none h-32"/>
+            </div>
           </div>
+          
           <div className="mt-8 pt-8 border-t border-zinc-800 flex justify-between items-end">
-            <button onClick={() => setAppState('MENU')} className="text-zinc-400 text-xl font-bold hover:text-white">← Agregar más cosas</button>
+            <button onClick={() => setAppState('MENU')} className="text-zinc-400 text-xl font-bold hover:text-white">← Agregar más</button>
             <div className="text-right">
               <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
               <p className="text-7xl text-yellow-400 font-black tracking-tighter">${getTotal().toFixed(2)}</p>
@@ -219,14 +217,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
             <div className="space-y-4">
               <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
-              <input type="email" placeholder="Correo (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
+              <input type="email" placeholder="Correo (Ticket Digital)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
             </div>
           </div>
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
-            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Pagar Orden</h3>
+            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-4 justify-center">
-              <button onClick={() => handleCheckout('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta en Terminal</button>
-              <button onClick={() => handleCheckout('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Efectivo en Caja</button>
+              <button onClick={() => handleCheckout('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta (Terminal)</button>
+              <button onClick={() => handleCheckout('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Pagar en Caja</button>
             </div>
           </div>
         </div>
@@ -234,7 +232,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // --- MENU PRINCIPAL (ORDEN ESTRATÉGICO) ---
+  // --- MENU PRINCIPAL ---
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
@@ -249,10 +247,24 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
         
-        {/* 1. COMBOS (Mayor Ticket) */}
+        {/* 1. COMBOS (Diseño Especial Super Destacado) */}
         <section id="seccion-combos">
           <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'COMBO'))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {visibleProducts.filter(p => p.category === 'COMBO').map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-gradient-to-br from-yellow-500 to-orange-500 border-4 border-yellow-300 rounded-[3rem] p-8 text-zinc-950 shadow-[0_0_40px_rgba(250,204,21,0.3)] transform hover:scale-[1.03] transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[300px]">
+                <div className="absolute -right-4 -top-4 opacity-20 text-[10rem]">🌽</div>
+                <div className="relative z-10">
+                  <h2 className="text-4xl font-black mb-3 leading-none">{product.name}</h2>
+                  <p className="text-zinc-900 font-bold text-lg leading-relaxed">{getProductDesc(product.name)}</p>
+                </div>
+                <div className="mt-8 flex items-center justify-between relative z-10 bg-zinc-950/10 p-4 rounded-2xl backdrop-blur-sm border border-zinc-950/10">
+                  <p className="text-zinc-950 text-4xl font-black">${product.basePrice.toFixed(2)}</p>
+                  <span className="bg-zinc-950 text-yellow-400 h-14 w-14 rounded-full flex items-center justify-center text-3xl font-black shadow-lg">＋</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* 2. ESQUITES CLÁSICOS */}
@@ -263,7 +275,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
         {/* 3. PROYECTOS ESPECIALES */}
         <section id="seccion-especialidades">
-          <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🔥</span> Proyectos Especiales</h2>
+          <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🔥</span> Especialidades</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ESPECIALIDAD'))}
         </section>
 
@@ -286,59 +298,35 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <span className="text-zinc-400 font-black tracking-widest uppercase text-sm mb-1">Orden Actual ({cart.length})</span>
             <span className="text-5xl text-yellow-400 font-black tracking-tighter">${getTotal().toFixed(2)}</span>
           </div>
-          <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-10 md:px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 active:scale-95 transition-all flex items-center gap-4">
+          <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-10 md:px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-[0_10px_30px_rgba(250,204,21,0.3)] active:scale-95 transition-all flex items-center gap-4">
             Pagar Orden <span className="text-3xl">➔</span>
           </button>
         </div>
       )}
 
-      {/* --- MOTOR DIRECTO DE UPSELL --- */}
+      {/* --- MOTOR UPSELL MASIVO --- */}
       {appState === 'UPSELL' && (
-        <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
-          <div className="bg-zinc-900 border border-zinc-700 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl p-8 md:p-12 text-center animate-in zoom-in duration-300">
+        <div className="fixed inset-0 bg-zinc-950 flex flex-col z-40 overflow-y-auto animate-in slide-in-from-bottom duration-300">
+          <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
+            <h2 className="text-6xl md:text-7xl font-black text-white mb-4 text-center">¡Hazlo un festín!</h2>
+            <p className="text-2xl text-zinc-400 mb-16 text-center font-medium">Agrega bebidas y antojitos a tu orden. Pica lo que quieras.</p>
             
-            {upsellView === 'OPTIONS' && (
-              <>
-                <h2 className="text-5xl font-black text-white mb-4">¿Te falta algo?</h2>
-                <p className="text-xl text-zinc-400 mb-12">Complementa tu esquite con una bebida fría o un snack.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                  <button onClick={() => setUpsellView('BEBIDAS')} className="bg-blue-500 text-white py-10 rounded-[2rem] font-black text-3xl shadow-xl hover:bg-blue-400 transition-colors flex flex-col items-center gap-4"><span className="text-6xl">🥤</span> Ver Bebidas</button>
-                  <button onClick={() => setUpsellView('GOMITAS')} className="bg-purple-500 text-white py-10 rounded-[2rem] font-black text-3xl shadow-xl hover:bg-purple-400 transition-colors flex flex-col items-center gap-4"><span className="text-6xl">🍬</span> Ver Gomitas</button>
-                </div>
-                <button onClick={() => setAppState('MENU')} className="text-zinc-500 font-bold text-xl hover:text-white transition-colors">No gracias, seguir con mi orden</button>
-              </>
-            )}
+            <h3 className="text-3xl font-black mb-8 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🥤 Bebidas Frías</h3>
+            {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
 
-            {upsellView === 'BEBIDAS' && (
-              <div className="flex flex-col h-full">
-                <div className="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
-                  <h2 className="text-4xl font-black text-blue-400">Elige tu Bebida</h2>
-                  <button onClick={() => setAppState('MENU')} className="text-zinc-500 text-4xl font-bold">✕</button>
-                </div>
-                <div className="overflow-y-auto max-h-[50vh] text-left">
-                  {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
-                </div>
-              </div>
-            )}
+            <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
+            {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango'))))}
+          </div>
 
-            {upsellView === 'GOMITAS' && (
-              <div className="flex flex-col h-full">
-                <div className="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
-                  <h2 className="text-4xl font-black text-purple-400">Elige tus Gomitas</h2>
-                  <button onClick={() => setAppState('MENU')} className="text-zinc-500 text-4xl font-bold">✕</button>
-                </div>
-                <div className="overflow-y-auto max-h-[50vh] text-left">
-                  {/* Filtramos la categoría ANTOJO buscando la palabra gomita, mangos o pandas */}
-                  {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango'))))}
-                </div>
-              </div>
-            )}
-            
+          <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-50 flex justify-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
+             <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-20 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-xl active:scale-95 transition-all flex items-center gap-4 w-full max-w-2xl justify-center">
+              Continuar al Pago <span className="text-3xl">➔</span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* --- WIZARD MODAL (Se mantiene igual) --- */}
+      {/* --- WIZARD MODAL (Flota sobre el Menú y sobre el Upsell) --- */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden h-[90vh] md:h-auto md:max-h-[90vh]">
