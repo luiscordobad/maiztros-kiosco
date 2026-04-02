@@ -10,6 +10,9 @@ const OPCIONES = {
   BEBIDA_ALL: ['Coca-Cola', 'Sprite', 'Fresca', 'Fanta', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural']
 };
 
+// Productos Estrella (Mayor Margen)
+const HIGH_PROFIT = ['don maiztro', 'combo pareja', 'combo familiar', 'construpapas'];
+
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   const visibleProducts = products.filter(p => p.name.toLowerCase() !== 'ramaiztro');
@@ -19,26 +22,29 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
+  // Máquina de Estados de la App
+  const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
+  const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
+  
+  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
-  
+  const [lastAddedProduct, setLastAddedProduct] = useState<any>(null);
+
+  // Estados de Pago
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState<any>(null);
-  const [showForm, setShowForm] = useState(false);
-  
-  // Nuevos datos del cliente
+  const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
 
   const getProductDesc = (name: string) => {
-    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida a elegir.";
-    if(name.includes('Pareja')) return "2 Esquites (Toppings ilimitados) + 2 Bebidas.";
-    if(name.includes('Familiar')) return "2 Grandes + 2 Chicos (Toppings ilimitados) + 4 Bebidas.";
-    if(name === 'Construpapas') return "Tus papas favoritas con esquite encima.";
+    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
+    if(name.includes('Pareja')) return "2 Esquites (Toppings full) + 2 Bebidas";
+    if(name.includes('Familiar')) return "2 Gdes + 2 Chicos (Toppings full) + 4 Bebidas";
+    if(name === 'Construpapas') return "Tus papas con esquite encima.";
     if(name === 'Obra Maestra') return "Maruchan con nuestro esquite.";
-    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis).";
+    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
     return "";
   };
 
@@ -55,13 +61,16 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return [{t: 'Personaliza tu antojo', type: 'TOPPINGS'}];
   };
 
-  const activeSteps = activeProduct ? getProductSteps(activeProduct) : [];
-  const currentStep = activeSteps[wizardStep];
-  const isLastStep = wizardStep === activeSteps.length - 1;
+  const handleStartOrder = (type: 'DINE_IN' | 'TAKEOUT') => {
+    setOrderType(type);
+    setAppState('MENU');
+  };
 
   const handleProductClick = (product: any) => {
     if (product.name.toLowerCase() === 'agua natural') {
       addToCart(product, 0, 'Agua Natural');
+      setLastAddedProduct(product);
+      setAppState('UPSELL');
       return;
     }
     setActiveProduct(product);
@@ -69,23 +78,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setWizardData({});
   };
 
-  const toggleTopping = (mod: any) => {
-    const current = wizardData[wizardStep] || [];
-    const exists = current.find((m:any) => m.id === mod.id);
-    const next = exists ? current.filter((m:any) => m.id !== mod.id) : [...current, mod];
-    setWizardData({ ...wizardData, [wizardStep]: next });
-  };
-
-  const setSingleChoice = (choiceStr: string) => {
-    setWizardData({ ...wizardData, [wizardStep]: [choiceStr] });
-  };
-
-  const canProceed = () => {
-    if (currentStep?.type === 'TOPPINGS') return true; 
-    return (wizardData[wizardStep] && wizardData[wizardStep].length > 0); 
-  };
-
   const handleNextOrFinish = () => {
+    const activeSteps = getProductSteps(activeProduct);
+    const isLastStep = wizardStep === activeSteps.length - 1;
+
     if (!isLastStep) { setWizardStep(prev => prev + 1); return; }
 
     let totalExtra = 0;
@@ -94,205 +90,296 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     activeSteps.forEach((step, index) => {
       const selections = wizardData[index] || [];
       if (selections.length === 0) return;
-
       if (step.type === 'TOPPINGS') {
         const paid = selections.filter((s:any) => s.type !== 'RESTRICCION').length;
         let baseCount = paid;
         if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; 
-        
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
           if (baseCount === 2) totalExtra += 25;
           if (baseCount >= 3) totalExtra += 35;
         }
         notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
-      } else {
-        notesLines.push(`${step.t}: ${selections[0]}`);
-      }
+      } else { notesLines.push(`${step.t}: ${selections[0]}`); }
     });
 
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
+    setLastAddedProduct(activeProduct);
     setActiveProduct(null);
+    
+    // Si no es una bebida, mostramos el Upsell de bebidas
+    if (activeProduct.category !== 'BEBIDA' && activeProduct.category !== 'COMBO') {
+      setAppState('UPSELL');
+    }
   };
 
   const handleCheckout = async (paymentMethod: string) => {
-    if (!customerName || !customerPhone) return alert("Por favor, ingresa tu Nombre y WhatsApp para enviarte tu ticket.");
+    if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, totalAmount: getTotal(), customerName, customerPhone, customerEmail, paymentMethod })
+        body: JSON.stringify({ cart, totalAmount: getTotal(), customerName, customerEmail, paymentMethod, orderType })
       });
       const data = await response.json();
       if (response.ok) {
-        setOrderSuccess(data.orderId);
+        setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setShowForm(false);
-        setTimeout(() => setOrderSuccess(null), 8000);
+        setCustomerName(''); setCustomerEmail(''); 
+        setAppState('SUCCESS');
+        setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); }, 10000);
       }
     } catch (error) { alert("Error al procesar la orden."); }
     setIsSubmitting(false);
   };
 
-  if (orderSuccess) {
+  // --- PANTALLA 1: WELCOME ---
+  if (appState === 'WELCOME') {
     return (
-      <div className="min-h-screen bg-green-600 text-white flex flex-col items-center justify-center p-6 text-center">
-        <h1 className="text-7xl font-black mb-4">¡Orden Confirmada!</h1>
-        <p className="text-3xl font-bold mb-2 uppercase">{customerName || 'Cliente'}</p>
-        <p className="text-xl mb-10 opacity-90 text-zinc-100 italic">Te enviamos tu ticket digital a tu celular.</p>
-        <div className="bg-white/10 p-8 rounded-3xl border border-white/20">
-          <p className="text-sm uppercase tracking-widest opacity-70 mb-2">Tu turno es el:</p>
-          <p className="text-8xl font-black italic tracking-tighter">#{orderSuccess.slice(-4).toUpperCase()}</p>
+      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+        <h1 className="text-8xl font-black text-yellow-400 tracking-tighter mb-4 shadow-black drop-shadow-2xl">MAIZTROS</h1>
+        <p className="text-3xl font-bold text-white mb-16 italic">¿Dónde disfrutarás tu antojo?</p>
+        <div className="flex gap-8 w-full max-w-4xl">
+          <button onClick={() => handleStartOrder('DINE_IN')} className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-zinc-950 h-80 rounded-[3rem] flex flex-col items-center justify-center gap-6 transition-transform hover:scale-105 active:scale-95 shadow-2xl">
+            <span className="text-8xl">🍽️</span>
+            <span className="text-4xl font-black uppercase">Comer Aquí</span>
+          </button>
+          <button onClick={() => handleStartOrder('TAKEOUT')} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white h-80 rounded-[3rem] flex flex-col items-center justify-center gap-6 transition-transform hover:scale-105 active:scale-95 border-4 border-zinc-700 shadow-2xl">
+            <span className="text-8xl">🎒</span>
+            <span className="text-4xl font-black uppercase">Para Llevar</span>
+          </button>
         </div>
-        <p className="mt-8 text-2xl font-bold text-yellow-300 animate-pulse">
-          Pasa a recoger tu pedido cuando llamemos tu nombre.
-        </p>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col lg:flex-row min-h-screen bg-zinc-950 text-white font-sans relative">
-      <div className="flex-1 p-6 md:p-12 h-screen overflow-y-auto">
-        <header className="mb-10 text-center md:text-left">
-          <h1 className="text-5xl font-black text-yellow-400 tracking-tight">MAIZTROS</h1>
-          <p className="text-zinc-400 text-lg mt-2">Bienvenido. Ordena tu antojo aquí.</p>
-        </header>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {visibleProducts.map((product) => (
-            <div key={product.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col justify-between hover:border-yellow-400/50 transition-colors">
-              <div>
-                <span className="inline-block px-3 py-1 bg-zinc-800 text-zinc-300 text-xs font-bold uppercase tracking-wider rounded-full mb-3">{product.category}</span>
-                <h2 className="text-2xl font-bold mb-1">{product.name}</h2>
-                <p className="text-zinc-500 text-sm leading-snug">{getProductDesc(product.name)}</p>
-              </div>
-              <div className="mt-6 flex items-center justify-between">
-                <p className="text-yellow-400 text-2xl font-black">${product.basePrice.toFixed(2)}</p>
-                <button onClick={() => handleProductClick(product)} className="bg-yellow-400 text-zinc-950 px-4 py-2 rounded-xl font-bold active:scale-95 transition-all">
-                  {product.name.toLowerCase() === 'agua natural' ? 'Agregar' : 'Configurar'}
-                </button>
-              </div>
-            </div>
-          ))}
+  // --- PANTALLA 5: SUCCESS ---
+  if (appState === 'SUCCESS') {
+    return (
+      <div className="h-screen bg-green-600 text-white flex flex-col items-center justify-center p-6 text-center">
+        <h1 className="text-8xl font-black mb-4">¡ORDEN RECIBIDA!</h1>
+        <p className="text-3xl font-bold mb-10">{orderType === 'TAKEOUT' ? 'Empacando para llevar' : 'Preparando para comer aquí'}</p>
+        <div className="bg-white/10 p-12 rounded-[3rem] border border-white/20 shadow-2xl">
+          <p className="text-xl uppercase tracking-widest opacity-80 mb-4">Número de Turno:</p>
+          <p className="text-9xl font-black italic tracking-tighter shadow-black drop-shadow-md">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
         </div>
+        <p className="mt-12 text-3xl font-bold text-yellow-300 animate-pulse">Te llamaremos en la barra de entrega.</p>
       </div>
+    );
+  }
 
-      <div className="w-full lg:w-[450px] bg-zinc-900 border-l border-zinc-800 p-6 flex flex-col h-screen">
-        <h2 className="text-3xl font-black text-white mb-6 italic">Tu Orden</h2>
-        <div className="flex-1 overflow-y-auto space-y-4">
-          {cart.length === 0 ? <p className="text-zinc-500 text-center mt-20">El carrito está vacío</p> : 
-            cart.map((item) => (
-              <div key={item.id} className="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex justify-between">
-                <div className="flex-1">
-                  <p className="font-bold text-lg leading-none">{item.product.name}</p>
-                  {item.notes && <p className="text-xs text-zinc-400 mt-2 leading-tight whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>}
-                  <p className="text-yellow-400 font-bold mt-2">${item.totalPrice.toFixed(2)}</p>
+  // --- PANTALLA 4: CHECKOUT (PAGO) ---
+  if (appState === 'CHECKOUT') {
+    return (
+      <div className="h-screen bg-zinc-950 flex p-6 md:p-12 gap-12 text-white">
+        {/* Resumen Carrito */}
+        <div className="flex-1 bg-zinc-900 rounded-[3rem] p-10 flex flex-col border border-zinc-800">
+          <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
+          <div className="flex-1 overflow-y-auto space-y-4 pr-4">
+            {cart.map((item) => (
+              <div key={item.id} className="bg-zinc-800 p-6 rounded-2xl flex justify-between items-center">
+                <div>
+                  <p className="font-black text-2xl">{item.product.name}</p>
+                  {item.notes && <p className="text-zinc-400 text-sm mt-2 whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>}
                 </div>
-                <button onClick={() => removeFromCart(item.id)} className="text-zinc-500 hover:text-red-400 ml-4 font-bold text-xl">✕</button>
+                <div className="text-right ml-4">
+                  <p className="text-yellow-400 font-black text-2xl">${item.totalPrice.toFixed(2)}</p>
+                  <button onClick={() => removeFromCart(item.id)} className="text-red-400 text-sm font-bold mt-2 hover:text-white">Eliminar</button>
+                </div>
               </div>
-            ))
-          }
-        </div>
-        
-        <div className="mt-6 pt-6 border-t border-zinc-800">
-          <div className="flex justify-between items-center mb-6">
-            <span className="text-xl text-zinc-400">Total:</span>
-            <span className="text-4xl text-yellow-400 font-black">${getTotal().toFixed(2)}</span>
+            ))}
           </div>
-          
-          {showForm ? (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="space-y-2">
-                <input type="text" placeholder="Tu Nombre" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl focus:border-yellow-400 outline-none"/>
-                <input type="tel" placeholder="WhatsApp (Para tu ticket)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl focus:border-yellow-400 outline-none"/>
-                <input type="email" placeholder="Correo (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl focus:border-yellow-400 outline-none"/>
-              </div>
-              
-              <div className="grid grid-cols-1 gap-2 pt-2">
-                <p className="text-zinc-500 text-xs text-center uppercase tracking-widest font-bold mb-1">Elige cómo pagar</p>
-                
-                {/* Botón Mercado Pago Terminal */}
-                <button onClick={() => handleCheckout('TERMINAL')} disabled={isSubmitting} className="w-full bg-blue-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-600 transition-colors">
-                  💳 Tarjeta en Terminal
-                </button>
-                
-                {/* Botón Mercado Pago QR */}
-                <button onClick={() => handleCheckout('QR_ONLINE')} disabled={isSubmitting} className="w-full bg-[#009EE3] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#0089C5] transition-colors">
-                  📱 Código QR / App
-                </button>
-                
-                {/* Botón Efectivo en Caja */}
-                <button onClick={() => handleCheckout('EFECTIVO_CAJA')} disabled={isSubmitting} className="w-full bg-zinc-800 border border-zinc-600 text-white py-3 rounded-xl font-bold flex items-center justify-center hover:bg-zinc-700 transition-colors">
-                  💵 Efectivo en Caja
-                </button>
-
-                <button onClick={() => setShowForm(false)} className="mt-2 text-zinc-500 text-sm hover:text-white transition-colors">← Volver al carrito</button>
-              </div>
+          <div className="mt-6 pt-6 border-t border-zinc-800 flex justify-between items-end">
+            <button onClick={() => setAppState('MENU')} className="text-zinc-400 text-xl font-bold hover:text-white">← Seguir comprando</button>
+            <div className="text-right">
+              <p className="text-zinc-400 text-xl font-bold">Total a Pagar</p>
+              <p className="text-6xl text-yellow-400 font-black">${getTotal().toFixed(2)}</p>
             </div>
-          ) : (
-            <button disabled={cart.length === 0} onClick={() => setShowForm(true)} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black text-xl disabled:opacity-50">Siguiente ➔</button>
-          )}
+          </div>
         </div>
-      </div>
 
-      {/* --- WIZARD MULTI-PASO (Se mantiene intacto) --- */}
-      {activeProduct && currentStep && (
-        <div className="fixed inset-0 bg-black/80 flex justify-center items-center p-4 z-50">
-          <div className="bg-zinc-900 border border-zinc-700 w-full max-w-2xl rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
-              <div>
-                <h2 className="text-2xl font-black text-yellow-400 uppercase italic">
-                  Paso {wizardStep + 1} de {activeSteps.length}: <span className="text-white">{currentStep.t}</span>
-                </h2>
-                {currentStep.type === 'TOPPINGS' && !currentStep.isFree && activeProduct.name !== 'Don Maiztro' && (
-                  <p className="text-zinc-400 text-sm mt-1 uppercase tracking-widest">+1: $15 | +2: $25 | Ilimitados: $35</p>
-                )}
-                {currentStep.isFree && <p className="text-green-400 text-sm mt-1 uppercase tracking-widest">Toppings Ilimitados Gratis</p>}
-                {activeProduct.name === 'Don Maiztro' && currentStep.type === 'TOPPINGS' && <p className="text-green-400 text-sm mt-1 uppercase tracking-widest">1er Topping Gratis</p>}
-              </div>
-              <button onClick={() => setActiveProduct(null)} className="text-zinc-500 text-3xl font-bold hover:text-white">✕</button>
+        {/* Panel de Cobro */}
+        <div className="w-[500px] flex flex-col gap-6">
+          <div className="bg-zinc-900 rounded-[3rem] p-10 border border-zinc-800">
+            <h3 className="text-2xl font-black mb-6 uppercase tracking-widest text-zinc-500">Datos del Ticket</h3>
+            <div className="space-y-4">
+              <input type="text" placeholder="Tu Nombre (Para llamarte)" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-800 border-2 border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold placeholder:font-normal"/>
+              <input type="email" placeholder="Correo electrónico (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-800 border-2 border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold placeholder:font-normal"/>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6">
-              {currentStep.type === 'TOPPINGS' && (
-                <>
-                  {[ {t: 'Polvito de Papas', m: polvos}, {t: 'Aderezos', m: aderezos}, {t: 'Quesos', m: quesos} ].map(sec => (
-                    <div key={sec.t}>
-                      <h3 className="text-sm font-black text-zinc-500 uppercase tracking-widest mb-3">{sec.t}</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {sec.m.map((mod:any) => (
-                          <button key={mod.id} onClick={() => toggleTopping(mod)} className={`p-3 rounded-xl border text-sm font-bold transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400' : 'bg-zinc-800 border-zinc-700 hover:border-zinc-500'}`}>{mod.name}</button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <div>
-                    <h3 className="text-sm font-black text-red-400/70 uppercase tracking-widest mb-3">Restricciones (Gratis)</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {restricciones.map((mod:any) => (
-                        <button key={mod.id} onClick={() => toggleTopping(mod)} className={`p-3 rounded-xl border text-sm font-bold transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500' : 'bg-zinc-800 border-zinc-700 hover:border-red-400/30'}`}>{mod.name}</button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-              {['PAPAS', 'MARUCHAN', 'BOING', 'REFRESCO', 'BEBIDA_ALL'].includes(currentStep.type) && (
-                <div className="grid grid-cols-2 gap-3">
-                  {(OPCIONES as any)[currentStep.type].map((opt: string) => (
-                    <button key={opt} onClick={() => setSingleChoice(opt)} className={`p-4 rounded-xl border font-bold transition-all text-lg ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400' : 'bg-zinc-800 border-zinc-700 hover:border-zinc-500'}`}>{opt}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="p-6 border-t border-zinc-800 bg-zinc-950">
-              <button onClick={handleNextOrFinish} disabled={!canProceed()} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black text-xl disabled:opacity-50 disabled:cursor-not-allowed">
-                {isLastStep ? 'Añadir al Carrito' : 'Siguiente Paso ➔'}
+          </div>
+
+          <div className="bg-zinc-900 rounded-[3rem] p-10 border border-zinc-800 flex-1 flex flex-col">
+            <h3 className="text-2xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿Cómo deseas pagar?</h3>
+            <div className="flex-1 flex flex-col gap-4 justify-center">
+              <button onClick={() => handleCheckout('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-600 text-white py-6 rounded-2xl font-black text-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                💳 Tarjeta en Terminal
+              </button>
+              <button onClick={() => handleCheckout('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border-2 border-zinc-600 text-white py-6 rounded-2xl font-black text-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                💵 Efectivo en Caja
               </button>
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // --- WIZARD MULTIPASO Y MODALES (Flotan sobre el menú) ---
+  const renderWizard = () => {
+    if (!activeProduct) return null;
+    const activeSteps = getProductSteps(activeProduct);
+    const currentStep = activeSteps[wizardStep];
+    const canProceed = () => currentStep?.type === 'TOPPINGS' ? true : (wizardData[wizardStep] && wizardData[wizardStep].length > 0);
+
+    return (
+      <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-50 backdrop-blur-sm">
+        <div className="bg-zinc-900 border border-zinc-700 w-full max-w-3xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden">
+          <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-800/50">
+            <div>
+              <h2 className="text-3xl font-black text-yellow-400 uppercase italic">Paso {wizardStep + 1}: <span className="text-white">{currentStep.t}</span></h2>
+              {currentStep.type === 'TOPPINGS' && !currentStep.isFree && activeProduct.name !== 'Don Maiztro' && <p className="text-zinc-400 text-sm mt-1 uppercase tracking-widest">+1: $15 | +2: $25 | Ilimitados: $35</p>}
+              {currentStep.isFree && <p className="text-green-400 text-sm mt-1 uppercase tracking-widest">Toppings Ilimitados Gratis</p>}
+            </div>
+            <button onClick={() => setActiveProduct(null)} className="text-zinc-500 text-5xl font-bold hover:text-white leading-none">✕</button>
+          </div>
+          
+          <div className="p-8 overflow-y-auto max-h-[60vh] space-y-8">
+            {currentStep.type === 'TOPPINGS' && (
+              <>
+                {[ {t: 'Polvito de Papas', m: polvos}, {t: 'Aderezos', m: aderezos}, {t: 'Quesos', m: quesos} ].map(sec => (
+                  <div key={sec.t}>
+                    <h3 className="text-lg font-black text-zinc-500 uppercase tracking-widest mb-4">{sec.t}</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                      {sec.m.map((mod:any) => (
+                        <button key={mod.id} onClick={() => {
+                          const c = wizardData[wizardStep] || [];
+                          setWizardData({...wizardData, [wizardStep]: c.find((m:any)=>m.id===mod.id) ? c.filter((m:any)=>m.id!==mod.id) : [...c, mod]});
+                        }} className={`p-4 rounded-2xl border-2 text-sm font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-800 border-zinc-700 hover:border-zinc-500'}`}>{mod.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div>
+                  <h3 className="text-lg font-black text-red-400/70 uppercase tracking-widest mb-4">Restricciones</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    {restricciones.map((mod:any) => (
+                      <button key={mod.id} onClick={() => {
+                        const c = wizardData[wizardStep] || [];
+                        setWizardData({...wizardData, [wizardStep]: c.find((m:any)=>m.id===mod.id) ? c.filter((m:any)=>m.id!==mod.id) : [...c, mod]});
+                      }} className={`p-4 rounded-2xl border-2 text-sm font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-800 border-zinc-700 hover:border-red-400/30'}`}>{mod.name}</button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {['PAPAS', 'MARUCHAN', 'BOING', 'REFRESCO', 'BEBIDA_ALL'].includes(currentStep.type) && (
+              <div className="grid grid-cols-2 gap-4">
+                {(OPCIONES as any)[currentStep.type].map((opt: string) => (
+                  <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-800 border-zinc-700 hover:border-zinc-500'}`}>{opt}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-8 border-t border-zinc-800 bg-zinc-950">
+            <button onClick={handleNextOrFinish} disabled={!canProceed()} className="w-full bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed">
+              {wizardStep === activeSteps.length - 1 ? 'Agregar a la Orden' : 'Siguiente Paso ➔'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderUpsell = () => {
+    if (appState !== 'UPSELL') return null;
+    return (
+      <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-50 backdrop-blur-sm">
+        <div className="bg-zinc-900 border-4 border-yellow-400 w-full max-w-2xl rounded-[3rem] flex flex-col shadow-2xl p-10 text-center animate-in zoom-in duration-300">
+          <span className="text-8xl mb-6">🥤</span>
+          <h2 className="text-5xl font-black text-white mb-4">¿Sed?</h2>
+          <p className="text-2xl text-zinc-400 mb-12">Acompaña tu antojo con una bebida bien fría.</p>
+          <div className="flex flex-col gap-4">
+            <button onClick={() => setAppState('MENU')} className="bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl hover:bg-yellow-300">
+              Sí, ver bebidas
+            </button>
+            <button onClick={() => setAppState('MENU')} className="bg-zinc-800 text-zinc-400 py-6 rounded-2xl font-black text-xl border-2 border-zinc-700 hover:text-white">
+              No gracias, seguir con mi orden
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // --- PANTALLA 2: MENU PRINCIPAL ---
+  return (
+    <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-32">
+      <header className="p-8 flex justify-between items-center bg-zinc-900 border-b border-zinc-800 sticky top-0 z-40 shadow-xl">
+        <h1 className="text-4xl font-black text-yellow-400 tracking-tight cursor-pointer" onClick={() => setAppState('WELCOME')}>MAIZTROS</h1>
+        <div className="bg-zinc-800 px-6 py-2 rounded-full border border-zinc-700 font-bold text-sm tracking-widest uppercase">
+          {orderType === 'DINE_IN' ? '🍽️ Comer Aquí' : '🎒 Para Llevar'}
+        </div>
+      </header>
+
+      <div className="p-8 max-w-7xl mx-auto w-full space-y-16">
+        {/* SECCIÓN ESTRELLA (Combos y Especialidades Top) */}
+        <section>
+          <h2 className="text-3xl font-black mb-6 flex items-center gap-3 text-white"><span className="text-yellow-400 text-4xl">🔥</span> Los Favoritos</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {visibleProducts.filter(p => HIGH_PROFIT.includes(p.name.toLowerCase())).map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-gradient-to-br from-zinc-800 to-zinc-900 border-2 border-yellow-400/50 rounded-3xl p-6 flex flex-col justify-between cursor-pointer hover:border-yellow-400 hover:scale-[1.02] transition-all shadow-[0_0_15px_rgba(250,204,21,0.1)] relative overflow-hidden">
+                <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black text-xs px-4 py-1 rounded-bl-xl tracking-widest">TOP</div>
+                <div>
+                  <h2 className="text-2xl font-black mb-2">{product.name}</h2>
+                  <p className="text-zinc-400 text-sm leading-snug">{getProductDesc(product.name)}</p>
+                </div>
+                <div className="mt-6 flex items-center justify-between">
+                  <p className="text-yellow-400 text-3xl font-black">${product.basePrice.toFixed(2)}</p>
+                  <span className="bg-white/10 p-3 rounded-full">➕</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* MENÚ GENERAL (El resto) */}
+        <section>
+          <h2 className="text-2xl font-black mb-6 text-zinc-500 uppercase tracking-widest border-b border-zinc-800 pb-4">Nuestro Menú</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {visibleProducts.filter(p => !HIGH_PROFIT.includes(p.name.toLowerCase())).map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col justify-between cursor-pointer hover:border-zinc-600 transition-colors">
+                <div>
+                  <span className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 block">{product.category}</span>
+                  <h2 className="text-xl font-bold mb-2">{product.name}</h2>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-white text-2xl font-black">${product.basePrice.toFixed(2)}</p>
+                  <span className="text-zinc-500 font-bold text-sm">Agregar ➔</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {/* BARRA INFERIOR (Flotante) */}
+      {cart.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-zinc-900 border-t border-zinc-800 z-40 flex justify-between items-center shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-col">
+            <span className="text-zinc-400 font-bold tracking-widest uppercase text-sm">Tu Orden ({cart.length} items)</span>
+            <span className="text-4xl text-yellow-400 font-black">${getTotal().toFixed(2)}</span>
+          </div>
+          <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-12 py-5 rounded-2xl font-black text-2xl hover:bg-yellow-300 shadow-xl active:scale-95 transition-all">
+            Ver Orden y Pagar
+          </button>
+        </div>
       )}
+
+      {renderWizard()}
+      {renderUpsell()}
     </div>
   );
 }
