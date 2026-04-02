@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCartStore } from '../store/cart';
 
 const OPCIONES = {
@@ -41,6 +41,45 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
+
+  // --- MOTOR DE AUTO-RESET (INACTIVIDAD) ---
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const resetApp = () => {
+      // Solo reseteamos si NO está en la pantalla inicial y NO está procesando un pago
+      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting) {
+        useCartStore.setState({ cart: [] });
+        setCustomerName('');
+        setCustomerEmail('');
+        setOrderNotes('');
+        setActiveProduct(null);
+        setAppState('WELCOME');
+      }
+    };
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      // 120,000 milisegundos = 2 Minutos de inactividad
+      timeoutId = setTimeout(resetApp, 120000);
+    };
+
+    // Escuchamos a cualquier toque en la pantalla
+    window.addEventListener('click', resetTimer);
+    window.addEventListener('touchstart', resetTimer);
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('scroll', resetTimer);
+
+    resetTimer(); // Iniciar el temporizador al cargar
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('click', resetTimer);
+      window.removeEventListener('touchstart', resetTimer);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('scroll', resetTimer);
+    };
+  }, [appState, waitingTerminal, isSubmitting]);
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -122,7 +161,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  // --- LÓGICA DE TERMINAL BLINDADA ---
   const checkTerminalStatus = async (intentId: string) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
@@ -130,18 +168,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
       const currentState = (data.state || '').toUpperCase();
 
-      // Feedback visual para el usuario
       if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
       if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago, no retires la tarjeta...');
 
-      // 1. Éxito rotundo
       if (currentState === 'FINISHED') {
-        setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo ticket...');
+        setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo ticket bancario...');
         executeOrderSave('TERMINAL');
         return true; 
       }
       
-      // 2. Rechazo o cancelación real
       if (currentState === 'CANCELED' || currentState === 'ABANDONED') {
         alert('El cobro fue cancelado o rechazado en la terminal física.');
         setWaitingTerminal(false);
@@ -150,7 +185,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         return true;
       }
 
-      // 3. Fallas de red (NO CANCELA EL CICLO, solo avisa y sigue esperando)
       if (currentState === 'ERROR' || currentState === 'FETCH_ERROR') {
         setTerminalStatusMsg('📡 Intermitencia de internet, reconectando...');
         return false;
