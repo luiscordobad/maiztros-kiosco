@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    // Ya no extraemos "description", solo "amount"
     const { amount } = await request.json();
     const token = process.env.MP_ACCESS_TOKEN;
 
@@ -20,12 +19,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No se encontró tu Smart 2 en modo PDV.' }, { status: 400 });
     }
 
-    // Orden de cobro CORREGIDA (Sin la palabra "description")
+    // CONVERSIÓN DE PESOS A CENTAVOS
+    // Multiplicamos por 100 y redondeamos para evitar fracciones de centavo (ej. $180.50 -> 18050)
+    const amountInCents = Math.round(amount * 100);
+
     const intentRes = await fetch(`https://api.mercadopago.com/point/integration-api/devices/${terminal.id}/payment-intents`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        amount: amount,
+        amount: amountInCents,
         additional_info: {
           external_reference: "Kiosco_Maiztros",
           print_on_terminal: false
