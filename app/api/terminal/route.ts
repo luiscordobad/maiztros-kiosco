@@ -29,7 +29,8 @@ export async function POST(request: Request) {
         amount: amountInCents,
         additional_info: {
           external_reference: "Kiosco_Maiztros",
-          print_on_terminal: false
+          // ¡MAGIA AQUÍ! Ahora imprimirá el comprobante automáticamente
+          print_on_terminal: true
         }
       }),
       cache: 'no-store'
