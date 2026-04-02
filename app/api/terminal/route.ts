@@ -29,8 +29,12 @@ export async function POST(request: Request) {
         amount: amountInCents,
         additional_info: {
           external_reference: "Kiosco_Maiztros",
-          // ¡MAGIA AQUÍ! Ahora imprimirá el comprobante automáticamente
           print_on_terminal: true
+        },
+        // ¡MAGIA AQUÍ! Obligamos a la terminal a saltarse el menú y pedir la tarjeta directo
+        payment: {
+          type: "credit_card",
+          installments: 1
         }
       }),
       cache: 'no-store'
