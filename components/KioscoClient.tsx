@@ -20,66 +20,45 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
-  // Estados de la App
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
   const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
-  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  // Estados del Cliente
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  // Estados de Terminal
+  // ESTADOS DE PROPINA
+  const [showTipModal, setShowTipModal] = useState(false);
+  const [selectedTipMethod, setSelectedTipMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
+
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
-  // --- MOTOR DE AUTO-RESET (INACTIVIDAD) ---
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
-
     const resetApp = () => {
-      // Solo reseteamos si NO está en la pantalla inicial y NO está procesando un pago
-      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting) {
+      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
         useCartStore.setState({ cart: [] });
-        setCustomerName('');
-        setCustomerEmail('');
-        setOrderNotes('');
-        setActiveProduct(null);
-        setAppState('WELCOME');
+        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
+        setActiveProduct(null); setAppState('WELCOME');
       }
     };
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      // 120,000 milisegundos = 2 Minutos de inactividad
       timeoutId = setTimeout(resetApp, 120000);
     };
-
-    // Escuchamos a cualquier toque en la pantalla
-    window.addEventListener('click', resetTimer);
-    window.addEventListener('touchstart', resetTimer);
-    window.addEventListener('mousemove', resetTimer);
-    window.addEventListener('scroll', resetTimer);
-
-    resetTimer(); // Iniciar el temporizador al cargar
-
-    return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('click', resetTimer);
-      window.removeEventListener('touchstart', resetTimer);
-      window.removeEventListener('mousemove', resetTimer);
-      window.removeEventListener('scroll', resetTimer);
-    };
-  }, [appState, waitingTerminal, isSubmitting]);
+    window.addEventListener('click', resetTimer); window.addEventListener('touchstart', resetTimer);
+    resetTimer();
+    return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); };
+  }, [appState, waitingTerminal, isSubmitting, showTipModal]);
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -108,9 +87,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const handleStartOrder = (type: 'DINE_IN' | 'TAKEOUT') => {
-    setOrderType(type);
-    setAppState('MENU');
-    window.scrollTo(0,0);
+    setOrderType(type); setAppState('MENU'); window.scrollTo(0,0);
   };
 
   const handleProductClick = (product: any) => {
@@ -120,9 +97,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       if (appState === 'UPSELL') setAppState('MENU');
       return; 
     }
-    setActiveProduct(product);
-    setWizardStep(0);
-    setWizardData({});
+    setActiveProduct(product); setWizardStep(0); setWizardData({});
     if (appState === 'UPSELL') setAppState('MENU');
   };
 
@@ -132,8 +107,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
     if (!isLastStep) { setWizardStep(prev => prev + 1); return; }
 
-    let totalExtra = 0;
-    let notesLines: string[] = [];
+    let totalExtra = 0; let notesLines: string[] = [];
 
     activeSteps.forEach((step, index) => {
       const selections = wizardData[index] || [];
@@ -156,32 +130,28 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setActiveProduct(null);
     
     if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) {
-      setUpsellView('OPTIONS');
-      setAppState('UPSELL');
+      setUpsellView('OPTIONS'); setAppState('UPSELL');
     }
   };
 
-  const checkTerminalStatus = async (intentId: string) => {
+  const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
       const data = await res.json();
-
       const currentState = (data.state || '').toUpperCase();
 
       if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
-      if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago, no retires la tarjeta...');
+      if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago...');
 
       if (currentState === 'FINISHED') {
-        setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo ticket bancario...');
-        executeOrderSave('TERMINAL');
+        setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...');
+        executeOrderSave('TERMINAL', tipAmount);
         return true; 
       }
       
       if (currentState === 'CANCELED' || currentState === 'ABANDONED') {
-        alert('El cobro fue cancelado o rechazado en la terminal física.');
-        setWaitingTerminal(false);
-        setTerminalIntentId(null);
-        setIsSubmitting(false);
+        alert('El cobro fue cancelado en la terminal física.');
+        setWaitingTerminal(false); setTerminalIntentId(null); setIsSubmitting(false);
         return true;
       }
 
@@ -189,7 +159,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setTerminalStatusMsg('📡 Intermitencia de internet, reconectando...');
         return false;
       }
-      
       return false; 
     } catch (e) {
       setTerminalStatusMsg('📡 Esperando señal...');
@@ -197,20 +166,19 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  const executeOrderSave = async (paymentMethod: string) => {
+  const executeOrderSave = async (paymentMethod: string, tipAmount: number) => {
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, totalAmount: getTotal(), customerName, customerEmail, paymentMethod, orderType, orderNotes })
+        body: JSON.stringify({ cart, totalAmount: getTotal(), tipAmount, customerName, customerEmail, paymentMethod, orderType, orderNotes })
       });
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
-        setWaitingTerminal(false);
-        setTerminalIntentId(null);
+        setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); }, 10000);
       }
@@ -218,17 +186,26 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setIsSubmitting(false);
   };
 
-  const handleCheckout = async (paymentMethod: string) => {
+  // BOTONES INICIALES ABREN EL MODAL DE PROPINA
+  const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
-    setIsSubmitting(true);
+    setSelectedTipMethod(paymentMethod);
+    setShowTipModal(true);
+  };
 
-    if (paymentMethod === 'TERMINAL') {
+  // EL MODAL DE PROPINA EJECUTA EL COBRO REAL
+  const processFinalCheckout = async (tipAmount: number) => {
+    setShowTipModal(false);
+    setIsSubmitting(true);
+    const finalTotal = getTotal() + tipAmount;
+
+    if (selectedTipMethod === 'TERMINAL') {
       try {
         setTerminalStatusMsg('Buscando tu terminal Mercado Pago...');
         const res = await fetch('/api/terminal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: getTotal(), description: 'Orden Maiztros' })
+          body: JSON.stringify({ amount: finalTotal, description: 'Orden Maiztros' }) // Total + Propina
         });
         const data = await res.json();
         
@@ -236,9 +213,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           setWaitingTerminal(true);
           setTerminalIntentId(data.intentId);
           setTerminalStatusMsg('💳 Esperando tarjeta en la terminal...');
-          
           const interval = setInterval(async () => {
-            const finished = await checkTerminalStatus(data.intentId);
+            const finished = await checkTerminalStatus(data.intentId, tipAmount);
             if (finished) clearInterval(interval);
           }, 3000);
         } else {
@@ -250,7 +226,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setIsSubmitting(false);
       }
     } else {
-      executeOrderSave(paymentMethod);
+      executeOrderSave(selectedTipMethod!, tipAmount);
     }
   };
 
@@ -295,7 +271,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         <p className="text-4xl font-bold mb-12 opacity-90">{orderType === 'TAKEOUT' ? 'Empacando para llevar 🎒' : 'Preparando para comer aquí 🍽️'}</p>
         <div className="bg-white/20 p-16 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
           <p className="text-2xl uppercase tracking-[0.3em] font-bold opacity-80 mb-6">Número de Turno</p>
-          <p className="text-[10rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+          <p className="text-[10rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">{orderSuccessId}</p>
         </div>
       </div>
     );
@@ -338,20 +314,47 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
             <div className="space-y-4">
               <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
-              <input type="email" placeholder="Correo (Ticket Digital)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
             </div>
           </div>
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-4 justify-center">
-              <button onClick={() => handleCheckout('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta (Terminal)</button>
-              <button onClick={() => handleCheckout('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Pagar en Caja</button>
+              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta (Terminal)</button>
+              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Pagar en Caja</button>
             </div>
           </div>
         </div>
 
+        {/* MODAL DE PROPINA ESTILO USA */}
+        {showTipModal && (
+          <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] p-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-[3rem] p-12 max-w-3xl w-full shadow-2xl text-center">
+              <span className="text-[6rem] mb-6 block">🌽</span>
+              <h2 className="text-5xl font-black text-white mb-4">¿Deseas apoyar al equipo?</h2>
+              <p className="text-xl text-zinc-400 mb-10">Tu propina va directo a los Maiztros que preparan tu antojo.</p>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {[0.10, 0.15, 0.20].map((pct) => {
+                  const tipAmt = Math.round(getTotal() * pct);
+                  return (
+                    <button key={pct} onClick={() => processFinalCheckout(tipAmt)} className="bg-zinc-800 hover:bg-yellow-400 hover:text-zinc-950 border border-zinc-700 p-6 rounded-2xl transition-all shadow-lg group">
+                      <p className="text-3xl font-black mb-1">{pct * 100}%</p>
+                      <p className="text-zinc-400 group-hover:text-zinc-800 font-bold">${tipAmt.toFixed(2)}</p>
+                    </button>
+                  );
+                })}
+                <button onClick={() => processFinalCheckout(0)} className="bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 p-6 rounded-2xl transition-all flex flex-col justify-center items-center text-zinc-400 hover:text-white">
+                  <p className="text-xl font-bold">Sin<br/>Propina</p>
+                </button>
+              </div>
+              <button onClick={() => setShowTipModal(false)} className="text-zinc-500 font-bold underline hover:text-white">← Regresar</button>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE ESPERA TERMINAL */}
         {waitingTerminal && (
-          <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
+          <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[70] text-center p-8">
             <span className="text-[10rem] animate-pulse mb-8">💳</span>
             <h2 className="text-6xl font-black text-yellow-400 mb-6">Terminal Lista</h2>
             <p className="text-3xl text-zinc-300 font-medium bg-zinc-900 px-8 py-4 rounded-full border border-zinc-700 shadow-xl">{terminalStatusMsg}</p>
