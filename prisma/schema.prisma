@@ -1,90 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
-  provider = "prisma-client-js"
+  provider =锐"prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
+// --- MODELOS DE CATÁLOGO ---
+
 model Product {
-  id          String      @id
+  id          String     @id
   name        String
-  category    Category
+  category    String     // ESQUITE, ESPECIALIDAD, BEBIDA, ANTOJO, COMBO
   basePrice   Float
-  isCombo     Boolean     @default(false)
-  orderItems  OrderItem[]
+  description String?
+  isCombo     Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 model Modifier {
-  id           String         @id
-  name         String
-  type         ModifierType
-  itemsApplied ItemModifier[]
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // POLVO, ADEREZO, QUESO, RESTRICCION
+  price     Float    @default(0)
+  createdAt DateTime @default(now())
 }
+
+// --- MODELO DE OPERACIONES (EL NUEVO CORAZÓN) ---
 
 model Order {
-  id            String      @id @default(cuid())
-  customerName  String?
-  customerPhone String?
-  customerEmail String?
-  paymentMethod String?
-  orderType     String?     @default("DINE_IN")
-  orderNotes    String?
-  totalAmount   Float
-  paymentStatus PaymentStat @default(PENDING)
-  kitchenStatus KitchenStat @default(RECEIVED)
-  createdAt     DateTime    @default(now())
-  items         OrderItem[]
-}
-
-model OrderItem {
-  id              String         @id @default(cuid())
-  quantity        Int
-  calculatedPrice Float
-  notes           String?
-  orderId         String
-  order           Order          @relation(fields: [orderId], references: [id])
-  productId       String
-  product         Product        @relation(fields: [productId], references: [id])
-  modifiers       ItemModifier[]
-}
-
-model ItemModifier {
-  id            String    @id @default(cuid())
-  appliedCharge Float
-  orderItemId   String
-  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
-  modifierId    String
-  modifier      Modifier  @relation(fields: [modifierId], references: [id])
-}
-
-enum Category {
-  ESQUITE
-  ESPECIALIDAD
-  ANTOJO
-  BEBIDA
-  COMBO
-}
-
-enum ModifierType {
-  POLVO
-  ADEREZO
-  QUESO
-  RESTRICCION
-}
-
-enum PaymentStat {
-  PENDING
-  PAID_ONLINE
-  PAID_TERMINAL
-  PAID_CASH
-}
-
-enum KitchenStat {
-  RECEIVED
-  PREPARING
-  READY
-  DELIVERED
+  id            String   @id @default(uuid())
+  turnNumber    String   // Ejemplo: M492
+  customerName  String?  @default("Cliente")
+  orderType     String   // DINE_IN o TAKEOUT
+  paymentMethod String   // TERMINAL o EFECTIVO_CAJA
+  
+  // Guardamos el carrito completo como JSON para no perder detalle de los toppings
+  items         Json     
+  
+  orderNotes    String?  // Comentarios para la cocina
+  
+  totalAmount   Float    // Monto de los productos
+  tipAmount     Float    @default(0) // Propina agregada
+  
+  status        String   @default("PENDING") // PENDING, COMPLETED, CANCELED
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
