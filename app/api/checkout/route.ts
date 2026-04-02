@@ -7,11 +7,11 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { cart, totalAmount, customerName, customerPhone, customerEmail, paymentMethod, orderType } = body;
+    const { cart, totalAmount, customerName, customerPhone, customerEmail, paymentMethod, orderType, orderNotes } = body;
 
     const order = await prisma.order.create({
       data: {
-        customerName, customerPhone, customerEmail, paymentMethod, orderType, totalAmount,
+        customerName, customerPhone, customerEmail, paymentMethod, orderType, orderNotes, totalAmount,
         kitchenStatus: 'RECEIVED', paymentStatus: 'PENDING',
         items: {
           create: cart.map((item: any) => ({
@@ -27,12 +27,13 @@ export async function POST(request: Request) {
       ).join('\n\n');
 
       const tipoOrden = orderType === 'TAKEOUT' ? '🎒 PARA LLEVAR' : '🍽️ PARA COMER AQUÍ';
+      const notasExtra = orderNotes ? `\nCOMENTARIOS: ${orderNotes}\n` : '';
 
       await resend.emails.send({
         from: 'Maiztros Kiosco <onboarding@resend.dev>',
         to: customerEmail,
         subject: `¡Tu orden en Maiztros está en la cocina! (Turno #${order.id.slice(-4).toUpperCase()})`,
-        text: `¡Hola ${customerName}!\n\nTu turno es el: #${order.id.slice(-4).toUpperCase()}\n\nTipo de orden: ${tipoOrden}\n\nRESUMEN DE TU ORDEN:\n-------------------------\n${itemsList}\n-------------------------\nTOTAL PAGADO: $${totalAmount.toFixed(2)}\nMétodo de pago: ${paymentMethod}\n\nTe llamaremos por tu nombre en cuanto esté listo.`,
+        text: `¡Hola ${customerName}!\n\nTu turno es el: #${order.id.slice(-4).toUpperCase()}\n\nTipo de orden: ${tipoOrden}${notasExtra}\n\nRESUMEN DE TU ORDEN:\n-------------------------\n${itemsList}\n-------------------------\nTOTAL PAGADO: $${totalAmount.toFixed(2)}\nMétodo de pago: ${paymentMethod}\n\nTe llamaremos por tu nombre en cuanto esté listo.`,
       });
     }
 
