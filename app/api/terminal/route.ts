@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { amount, description } = await request.json();
+    // Ya no extraemos "description", solo "amount"
+    const { amount } = await request.json();
     const token = process.env.MP_ACCESS_TOKEN;
 
     const devicesRes = await fetch('https://api.mercadopago.com/point/integration-api/devices', {
@@ -19,19 +20,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No se encontró tu Smart 2 en modo PDV.' }, { status: 400 });
     }
 
-    // Orden de cobro simplificada al máximo
+    // Orden de cobro CORREGIDA (Sin la palabra "description")
     const intentRes = await fetch(`https://api.mercadopago.com/point/integration-api/devices/${terminal.id}/payment-intents`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: amount,
-        description: description
+        additional_info: {
+          external_reference: "Kiosco_Maiztros",
+          print_on_terminal: false
+        }
       })
     });
     
     const intentData = await intentRes.json();
     
-    // AQUÍ ESTÁ LA TRAMPA DE DEBUGGING
     if (!intentRes.ok || intentData.error) {
        return NextResponse.json({ 
          success: false, 
