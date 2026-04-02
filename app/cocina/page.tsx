@@ -35,9 +35,13 @@ export default async function Cocina() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
         {orders.map((order) => (
           <div key={order.id} className="bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
-            <div className="bg-zinc-800 p-6 flex justify-between items-center border-b border-zinc-700">
-              <span className="text-zinc-400 font-black text-sm uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
-              <span className="text-zinc-500 text-xs">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            
+            {/* ENCABEZADO INTELIGENTE (Para Llevar vs Comer Aquí) */}
+            <div className={`p-5 flex justify-between items-center ${order.orderType === 'TAKEOUT' ? 'bg-orange-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
+              <span className="font-black text-sm uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
+              <span className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
+                {order.orderType === 'TAKEOUT' ? '🎒 PARA LLEVAR' : '🍽️ COMER AQUÍ'}
+              </span>
             </div>
             
             <div className="p-8 flex-1">
