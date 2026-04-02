@@ -1,91 +1,116 @@
-import { prisma } from '../../lib/prisma';
-import { revalidatePath } from 'next/cache';
-import AutoRefresh from './AutoRefresh';
+'use client';
+import { useState, useEffect } from 'react';
 
-export const dynamic = 'force-dynamic';
+export default function CocinaKDS() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export default async function Cocina() {
-  const orders = await prisma.order.findMany({
-    where: { kitchenStatus: 'RECEIVED' },
-    orderBy: { createdAt: 'asc' },
-    include: { items: { include: { product: true } } }
-  });
+  // El "Radar" que busca tickets nuevos cada 3 segundos
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch('/api/orders');
+      const data = await res.json();
+      if (data.success) {
+        setOrders(data.orders);
+      }
+    } catch (error) {
+      console.error('Error de red al buscar órdenes');
+    }
+    setLoading(false);
+  };
 
-  async function despacharOrden(formData: FormData) {
-    'use server';
-    const orderId = formData.get('orderId') as string;
-    await prisma.order.update({ where: { id: orderId }, data: { kitchenStatus: 'DELIVERED' } });
-    revalidatePath('/cocina'); 
-  }
+  useEffect(() => {
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 3000); // Heartbeat de 3s
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDespachar = async (orderId: string) => {
+    // Lo quitamos de la pantalla al instante por fluidez
+    setOrders(orders.filter(o => o.id !== orderId));
+    
+    // Le avisamos a la base de datos
+    await fetch('/api/orders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId })
+    });
+  };
+
+  if (loading) return <div className="min-h-screen bg-zinc-950 text-white flex justify-center items-center text-3xl">Cargando KDS...</div>;
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white font-sans p-6 md:p-12 relative">
-      <AutoRefresh />
-      <header className="mb-10 flex justify-between items-end border-b-4 border-yellow-400 pb-6">
-        <div>
-          <h1 className="text-6xl font-black text-white italic tracking-tighter">MAIZTROS <span className="text-yellow-400">KDS</span></h1>
-        </div>
-        <div className="bg-yellow-400 px-10 py-4 rounded-2xl text-zinc-950 text-center shadow-[0_0_30px_rgba(250,204,21,0.3)]">
-          <span className="text-5xl font-black leading-none">{orders.length}</span>
-          <p className="font-black uppercase text-xs">Pendientes</p>
+    <div className="min-h-screen bg-zinc-950 text-white p-6 md:p-10 font-sans">
+      <header className="flex justify-between items-center border-b border-zinc-800 pb-6 mb-8">
+        <h1 className="text-4xl font-black text-yellow-400 tracking-tighter">🔥 PARRILLA MAIZTROS</h1>
+        <div className="bg-zinc-900 px-6 py-2 rounded-full border border-zinc-700 font-bold text-zinc-400">
+          Tickets Activos: <span className="text-white text-xl">{orders.length}</span>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-        {orders.map((order) => (
-          <div key={order.id} className="bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl">
-            <div className={`p-5 flex justify-between items-center ${order.orderType === 'TAKEOUT' ? 'bg-orange-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
-              <span className="font-black text-sm uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
-              <span className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
-                {order.orderType === 'TAKEOUT' ? '🎒 PARA LLEVAR' : '🍽️ COMER AQUÍ'}
-              </span>
-            </div>
-            
-            <div className="p-8 flex-1">
-              <h2 className="text-4xl font-black text-yellow-400 uppercase italic leading-tight mb-4 break-words">
-                {order.customerName || 'Cliente'}
-              </h2>
-              
-              {/* COMENTARIOS DE LA ORDEN DESTACADOS */}
-              {order.orderNotes && (
-                <div className="bg-yellow-400/20 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-xl">
-                  <p className="text-yellow-400 font-black text-xs uppercase tracking-widest mb-1">Nota del Cliente:</p>
-                  <p className="text-white font-bold text-lg leading-snug">{order.orderNotes}</p>
-                </div>
-              )}
-              
-              <div className="space-y-8">
-                {order.items.map((item) => (
-                  <div key={item.id} className="relative pl-6 border-l-4 border-zinc-700">
-                    <p className="text-2xl font-black text-white leading-tight">
-                      <span className="text-yellow-400 mr-2">{item.quantity}x</span>
-                      {item.product.name}
-                    </p>
-                    {item.notes && (
-                      <div className="mt-3 space-y-2">
-                        {item.notes.split(' | ').map((line, i) => (
-                          <p key={i} className="text-lg font-bold text-zinc-400 whitespace-pre-wrap leading-snug">
-                            {line.includes('Restricciones') || line.includes('Gratis') ? <span className="text-red-400">{line}</span> : line}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+      {orders.length === 0 ? (
+        <div className="flex flex-col items-center justify-center mt-32 opacity-50">
+          <span className="text-8xl mb-6">🧹</span>
+          <h2 className="text-3xl font-bold">Cocina Limpia</h2>
+          <p className="text-xl">Esperando el siguiente antojo...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {orders.map((order) => {
+            const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+            const timeAgo = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
+            const isLate = timeAgo >= 10; // Se pone en rojo si pasan 10 minutos
 
-            <div className="p-6 bg-zinc-950 mt-auto">
-              <form action={despacharOrden}>
-                <input type="hidden" name="orderId" value={order.id} />
-                <button type="submit" className="w-full bg-zinc-800 hover:bg-green-600 text-zinc-500 hover:text-white py-5 rounded-2xl font-black text-xl transition-all border border-zinc-700 hover:border-green-500">
-                  ✔ DESPACHAR
+            return (
+              <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl ${isLate ? 'border-red-500' : 'border-zinc-700'}`}>
+                {/* Cabecera del Ticket */}
+                <div className={`p-6 flex justify-between items-center border-b ${isLate ? 'bg-red-500/20 border-red-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
+                  <div>
+                    <h2 className="text-4xl font-black italic tracking-tighter">#{order.turnNumber}</h2>
+                    <p className="text-zinc-400 font-bold mt-1">{order.customerName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-blue-400'}`}>
+                      {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '🎒 LLEVAR'}
+                    </p>
+                    <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400' : 'text-zinc-500'}`}>
+                      Hace {timeAgo} min
+                    </p>
+                  </div>
+                </div>
+
+                {/* Lista de Productos */}
+                <div className="p-6 flex-1 bg-zinc-950/50 overflow-y-auto space-y-4">
+                  {items.map((item: any, idx: number) => (
+                    <div key={idx} className="pb-4 border-b border-zinc-800/50 last:border-0 last:pb-0">
+                      <p className="text-xl font-black">{item.product.name}</p>
+                      {item.notes && (
+                        <p className="text-zinc-400 text-sm mt-2 font-medium whitespace-pre-wrap leading-relaxed">
+                          {item.notes.split(' | ').join('\n')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  {order.orderNotes && (
+                    <div className="mt-4 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl">
+                      <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota Especial:</p>
+                      <p className="text-white font-medium">{order.orderNotes}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botón de Despachar */}
+                <button 
+                  onClick={() => handleDespachar(order.id)}
+                  className="w-full bg-green-500 hover:bg-green-400 text-zinc-950 py-6 font-black text-2xl uppercase tracking-widest active:bg-green-600 transition-colors"
+                >
+                  ✅ Despachado
                 </button>
-              </form>
-            </div>
-          </div>
-        ))}
-      </div>
-    </main>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
