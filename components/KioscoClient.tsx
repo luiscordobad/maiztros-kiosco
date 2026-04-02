@@ -13,7 +13,6 @@ const OPCIONES = {
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   
-  // Limpiamos Ramaiztro
   const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro'));
 
   const polvos = modifiers.filter(m => m.type === 'POLVO');
@@ -22,6 +21,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
 
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
+  const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
   const [activeProduct, setActiveProduct] = useState<any>(null);
@@ -35,25 +35,41 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [orderNotes, setOrderNotes] = useState('');
 
   const getProductDesc = (name: string) => {
-    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida a elegir.";
-    if(name.includes('Pareja')) return "2 Esquites (Toppings ilimitados) + 2 Bebidas a elegir.";
-    if(name.includes('Familiar')) return "2 Esq. Grandes + 2 Esq. Chicos (Full Toppings) + 4 Bebidas.";
-    if(name === 'Construpapas') return "Tus papas favoritas preparadas con esquite encima.";
-    if(name === 'Obra Maestra') return "Deliciosa Maruchan preparada con nuestro esquite.";
-    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis).";
+    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
+    if(name.includes('Pareja')) return "2 Esquites (Toppings full) + 2 Bebidas";
+    if(name.includes('Familiar')) return "2 Gdes + 2 Chicos (Toppings full) + 4 Bebidas";
+    if(name === 'Construpapas') return "Tus papas con esquite encima";
+    if(name === 'Obra Maestra') return "Maruchan con nuestro esquite";
+    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
     return "";
   };
 
+  // CEREBRO DE RUTAS PARA PRODUCTOS
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
+    
+    // Bebidas específicas
     if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
-    if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    
+    // Combos
     if(n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('pareja')) return [{t: 'Esquite 1', type: 'TOPPINGS', isFree: true}, {t: 'Esquite 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
-    if(n.includes('familiar')) return [{t: 'Esquite Grande 1', type: 'TOPPINGS', isFree: true}, {t: 'Esquite Grande 2', type: 'TOPPINGS', isFree: true}, {t: 'Esquite Chico 1', type: 'TOPPINGS', isFree: true}, {t: 'Esquite Chico 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
+    if(n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
+    
+    // Especialidades complejas
+    if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    
+    // Especialidades o Antojos Solos (NUEVA LÓGICA)
+    if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
+    if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
+    if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    
+    // Antojos Simples (Gomitas, Mangos) o Agua -> SIN PASOS (Directo al carrito)
+    if(p.category === 'ANTOJO' || n === 'agua natural') return [];
+
+    // Por defecto (Esquites Clásicos)
     return [{t: 'Personaliza tu antojo', type: 'TOPPINGS'}];
   };
 
@@ -64,13 +80,24 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const handleProductClick = (product: any) => {
-    if (product.name.toLowerCase() === 'agua natural') {
-      addToCart(product, 0, 'Agua Natural');
+    const steps = getProductSteps(product);
+    
+    // Si el producto no tiene pasos de configuración (Gomitas, Agua)
+    if (steps.length === 0) {
+      addToCart(product, 0, product.name);
+      
+      // Si estaba en el Upsell y eligió gomitas, lo regresamos al menú para que no se quede atorado
+      if (appState === 'UPSELL') {
+        setAppState('MENU');
+      }
       return; 
     }
+
+    // Si tiene pasos, abrimos el Wizard
     setActiveProduct(product);
     setWizardStep(0);
     setWizardData({});
+    if (appState === 'UPSELL') setAppState('MENU');
   };
 
   const handleNextOrFinish = () => {
@@ -102,9 +129,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     const wasDrinkOrAntojoOrCombo = activeProduct.category === 'BEBIDA' || activeProduct.category === 'ANTOJO' || activeProduct.category === 'COMBO';
     setActiveProduct(null);
     
-    // Si viene del menú y es un esquite/especialidad, abre el Upsell.
-    // Si ya está en el Upsell, se queda en el Upsell (El modal del wizard flota sobre él).
     if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) {
+      setUpsellView('OPTIONS');
       setAppState('UPSELL');
     }
   };
@@ -195,14 +221,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </div>
               </div>
             ))}
-            
-            {/* TEXTAREA COMENTARIOS */}
             <div className="mt-8">
               <label className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2 block">Comentarios para la cocina</label>
-              <textarea placeholder="Ej. El esquite mediano bien doradito, con poco chile..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-lg font-medium resize-none h-32"/>
+              <textarea placeholder="Ej. El esquite mediano bien doradito..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-lg font-medium resize-none h-32"/>
             </div>
           </div>
-          
           <div className="mt-8 pt-8 border-t border-zinc-800 flex justify-between items-end">
             <button onClick={() => setAppState('MENU')} className="text-zinc-400 text-xl font-bold hover:text-white">← Agregar más</button>
             <div className="text-right">
@@ -232,7 +255,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // --- MENU PRINCIPAL ---
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
@@ -246,8 +268,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       </header>
 
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
-        
-        {/* 1. COMBOS (Diseño Especial Super Destacado) */}
         <section id="seccion-combos">
           <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -267,25 +287,21 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </section>
 
-        {/* 2. ESQUITES CLÁSICOS */}
         <section id="seccion-esquites">
           <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🌽</span> Esquites</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ESQUITE'))}
         </section>
 
-        {/* 3. PROYECTOS ESPECIALES */}
         <section id="seccion-especialidades">
           <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🔥</span> Especialidades</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ESPECIALIDAD'))}
         </section>
 
-        {/* 4. BEBIDAS */}
         <section id="seccion-bebidas">
           <h2 className="text-3xl font-black mb-6 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🥤</span> Bebidas</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
         </section>
 
-        {/* 5. OTROS (Gomitas, Papas solas, etc) */}
         <section id="seccion-otros">
           <h2 className="text-3xl font-black mb-6 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🍬</span> Otros Antojos</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO'))}
@@ -304,7 +320,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         </div>
       )}
 
-      {/* --- MOTOR UPSELL MASIVO --- */}
+      {/* MOTOR UPSELL */}
       {appState === 'UPSELL' && (
         <div className="fixed inset-0 bg-zinc-950 flex flex-col z-40 overflow-y-auto animate-in slide-in-from-bottom duration-300">
           <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
@@ -315,7 +331,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
 
             <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
-            {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango'))))}
+            {/* Solo mostramos gomitas, pandas o mangos en el upsell (no las papas solas que ya compran con el esquite) */}
+            {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango') || p.name.toLowerCase().includes('dulce'))))}
           </div>
 
           <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-50 flex justify-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
@@ -326,7 +343,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         </div>
       )}
 
-      {/* --- WIZARD MODAL (Flota sobre el Menú y sobre el Upsell) --- */}
+      {/* WIZARD MODAL */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden h-[90vh] md:h-auto md:max-h-[90vh]">
