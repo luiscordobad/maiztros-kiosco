@@ -19,7 +19,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const aderezos = modifiers.filter(m => m.type === 'ADEREZO');
   const quesos = modifiers.filter(m => m.type === 'QUESO');
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
-  // Extraemos la nueva categoría de chiles
   const chiles = modifiers.filter(m => m.type === 'CHILE');
 
   // Estados de la App
@@ -49,7 +48,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     let timeoutId: NodeJS.Timeout;
 
     const resetApp = () => {
-      // Solo reseteamos si NO está en la pantalla inicial y NO está procesando un pago
       if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting) {
         useCartStore.setState({ cart: [] });
         setCustomerName('');
@@ -62,17 +60,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      // 120,000 milisegundos = 2 Minutos de inactividad
-      timeoutId = setTimeout(resetApp, 120000);
+      timeoutId = setTimeout(resetApp, 120000); // 2 Minutos de inactividad
     };
 
-    // Escuchamos a cualquier toque en la pantalla
     window.addEventListener('click', resetTimer);
     window.addEventListener('touchstart', resetTimer);
     window.addEventListener('mousemove', resetTimer);
     window.addEventListener('scroll', resetTimer);
 
-    resetTimer(); // Iniciar el temporizador al cargar
+    resetTimer(); 
 
     return () => {
       clearTimeout(timeoutId);
@@ -128,6 +124,30 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if (appState === 'UPSELL') setAppState('MENU');
   };
 
+  // --- LÓGICA DE EXCLUSIVIDAD MUTUA (CHILE VS SIN CHILE) ---
+  const handleToggleModifier = (mod: any) => {
+    const currentSelections = wizardData[wizardStep] || [];
+    const isSelected = currentSelections.find((m: any) => m.id === mod.id);
+    let newSelections = [];
+
+    if (isSelected) {
+      newSelections = currentSelections.filter((m: any) => m.id !== mod.id);
+    } else {
+      newSelections = [...currentSelections, mod];
+
+      // REGLA: Si pica un Chile, quitamos el "Sin Chilito"
+      if (mod.type === 'CHILE') {
+        newSelections = newSelections.filter((m: any) => !m.name.toLowerCase().includes('sin chilito') && !m.name.toLowerCase().includes('sin chile'));
+      }
+      // REGLA: Si pica "Sin Chilito", quitamos los Chiles
+      if (mod.name.toLowerCase().includes('sin chilito') || mod.name.toLowerCase().includes('sin chile')) {
+        newSelections = newSelections.filter((m: any) => m.type !== 'CHILE');
+      }
+    }
+
+    setWizardData({...wizardData, [wizardStep]: newSelections});
+  };
+
   const handleNextOrFinish = () => {
     const activeSteps = getProductSteps(activeProduct);
     const isLastStep = wizardStep === activeSteps.length - 1;
@@ -141,16 +161,22 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       const selections = wizardData[index] || [];
       if (selections.length === 0) return;
       if (step.type === 'TOPPINGS') {
-        const paid = selections.filter((s:any) => s.type !== 'RESTRICCION').length;
-        let baseCount = paid;
-        if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; 
+        
+        // --- NUEVA LÓGICA DE COBRO: ADEREZO, QUESO Y POLVO SUMAN PRECIO ---
+        const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
+        
+        let baseCount = paidCount;
+        if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; // 1er topping gratis en Don Maiztro
+        
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
           if (baseCount === 2) totalExtra += 25;
           if (baseCount >= 3) totalExtra += 35;
         }
         notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
-      } else { notesLines.push(`${step.t}: ${selections[0]}`); }
+      } else { 
+        notesLines.push(`${step.t}: ${selections[0]}`); 
+      }
     });
 
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
@@ -413,7 +439,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
         <section id="seccion-otros">
           <h2 className="text-3xl font-black mb-6 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🍬</span> Otros Antojos</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO'))}
+          {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' || p.category === 'PAPA_SOLA' || p.category === 'MARUCHAN_SOLA'))}
         </section>
       </div>
 
@@ -453,7 +479,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden h-[90vh] md:h-auto md:max-h-[90vh]">
-            <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-900">
+            <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-900 sticky top-0">
               <div>
                 <p className="text-yellow-400 font-bold tracking-widest uppercase text-sm mb-2">Paso {wizardStep + 1} de {getProductSteps(activeProduct).length}</p>
                 <h2 className="text-3xl font-black text-white">{getProductSteps(activeProduct)[wizardStep].t}</h2>
@@ -464,28 +490,27 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <div className="p-8 overflow-y-auto flex-1 space-y-10">
               {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
                 <>
-                  {/* AQUÍ SE AGREGÓ LA SECCIÓN DE CHILES */}
-                  {[ {t: 'Chile (Pica o no pica)', m: chiles}, {t: 'Polvito de Papas', m: polvos}, {t: 'Aderezos', m: aderezos}, {t: 'Quesos', m: quesos} ].map(sec => (
+                  {/* NUEVO ORDEN VISUAL SOLICITADO */}
+                  {[ 
+                    {t: '1. Aderezos Extras', m: aderezos}, 
+                    {t: '2. Ponle Queso', m: quesos},
+                    {t: '3. Polvito de Papas', m: polvos}, 
+                    {t: '4. Chile (Pica o no pica)', m: chiles} 
+                  ].map(sec => (
                     <div key={sec.t}>
                       <h3 className="text-lg font-black text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400"></span>{sec.t}</h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {sec.m.map((mod:any) => (
-                          <button key={mod.id} onClick={() => {
-                            const c = wizardData[wizardStep] || [];
-                            setWizardData({...wizardData, [wizardStep]: c.find((m:any)=>m.id===mod.id) ? c.filter((m:any)=>m.id!==mod.id) : [...c, mod]});
-                          }} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{mod.name}</button>
+                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{mod.name}</button>
                         ))}
                       </div>
                     </div>
                   ))}
                   <div>
-                    <h3 className="text-lg font-black text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400"></span>Restricciones</h3>
+                    <h3 className="text-lg font-black text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400"></span>Restricciones (Sin...)</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {restricciones.map((mod:any) => (
-                        <button key={mod.id} onClick={() => {
-                          const c = wizardData[wizardStep] || [];
-                          setWizardData({...wizardData, [wizardStep]: c.find((m:any)=>m.id===mod.id) ? c.filter((m:any)=>m.id!==mod.id) : [...c, mod]});
-                        }} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-red-400/50 text-zinc-300'}`}>{mod.name}</button>
+                        <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-red-400/50 text-zinc-300'}`}>{mod.name}</button>
                       ))}
                     </div>
                   </div>
@@ -499,7 +524,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               )}
             </div>
 
-            <div className="p-8 border-t border-zinc-800 bg-zinc-900">
+            <div className="p-8 border-t border-zinc-800 bg-zinc-900 sticky bottom-0">
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="w-full bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-300 active:scale-[0.98] transition-transform">
                 {wizardStep === getProductSteps(activeProduct).length - 1 ? 'Terminar y Agregar' : 'Siguiente Paso ➔'}
               </button>
