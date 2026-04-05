@@ -2,7 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider ="prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -13,25 +13,27 @@ datasource db {
 // --- MODELOS DE CATÁLOGO ---
 
 model Product {
-  id          String     @id
+  id          String   @id
   name        String
-  category    String     // ESQUITE, ESPECIALIDAD, BEBIDA, ANTOJO, COMBO
+  category    String   // ESQUITE, ESPECIALIDAD, BEBIDA, ANTOJO, COMBO
   basePrice   Float
   description String?
-  isCombo     Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  isCombo     Boolean  @default(false)
+  isAvailable Boolean  @default(true) // <-- EL NUEVO SWITCH DE INVENTARIO
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Modifier {
-  id        String   @id @default(uuid())
-  name      String
-  type      String   // POLVO, ADEREZO, QUESO, RESTRICCION
-  price     Float    @default(0)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // POLVO, ADEREZO, QUESO, RESTRICCION, CHILE
+  price       Float    @default(0)
+  isAvailable Boolean  @default(true) // <-- EL NUEVO SWITCH DE INVENTARIO
+  createdAt   DateTime @default(now())
 }
 
-// --- MODELO DE OPERACIONES (EL NUEVO CORAZÓN) ---
+// --- MODELO DE OPERACIONES (EL CORAZÓN) ---
 
 model Order {
   id            String   @id @default(uuid())
@@ -40,7 +42,7 @@ model Order {
   orderType     String   // DINE_IN o TAKEOUT
   paymentMethod String   // TERMINAL o EFECTIVO_CAJA
   
-  // Guardamos el carrito completo como JSON para no perder detalle de los toppings
+  // Guardamos el carrito completo como JSON
   items         Json     
   
   orderNotes    String?  // Comentarios para la cocina
@@ -48,7 +50,7 @@ model Order {
   totalAmount   Float    // Monto de los productos
   tipAmount     Float    @default(0) // Propina agregada
   
-  status        String   @default("PENDING") // PENDING, COMPLETED, CANCELED
+  status        String   @default("PENDING") // AWAITING_PAYMENT, PAID, COMPLETED
   
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
