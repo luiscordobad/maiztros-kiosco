@@ -4,16 +4,29 @@ import { useEffect, useState } from 'react';
 export default function TicketBeeper({ params }: { params: { id: string } }) {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
+  const enableNotifications = () => {
+    // Truco: Reproducimos un audio en silencio para que el navegador nos dé permiso de usar bocinas
+    const audio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
+    audio.volume = 0.01; 
+    audio.play().catch(() => {});
+    
+    // Probamos si el celular soporta vibración (Android sí, iPhone no)
+    if (navigator.vibrate) navigator.vibrate(200); 
+    
+    setNotificationsEnabled(true);
+  };
 
   const fetchOrder = async () => {
     const res = await fetch(`/api/orders/${params.id}`);
     const data = await res.json();
     if (data.success) {
-      // Si acaba de cambiar a COMPLETED, hacemos el escándalo
       if (data.order.status === 'COMPLETED' && order?.status !== 'COMPLETED' && order !== null) {
-        if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 2000]); // Vibración tipo restaurante
+        // Escándalo activado (Solo si dieron permiso)
+        if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 2000]); 
         const audio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
-        audio.play().catch(() => {});
+        audio.play().catch(() => console.log("Audio bloqueado"));
       }
       setOrder(data.order);
     }
@@ -22,7 +35,7 @@ export default function TicketBeeper({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     fetchOrder();
-    const interval = setInterval(fetchOrder, 3000); // Revisa cada 3 segundos
+    const interval = setInterval(fetchOrder, 3000); 
     return () => clearInterval(interval);
   }, [params.id, order]);
 
@@ -43,7 +56,7 @@ export default function TicketBeeper({ params }: { params: { id: string } }) {
       )}
 
       <div className="bg-white text-zinc-950 w-full max-w-md p-8 rounded-3xl shadow-2xl mt-4 relative overflow-hidden">
-        {/* Estado Visual */}
+        {/* Estado Visual Superior */}
         <div className={`absolute top-0 left-0 right-0 h-4 ${isReady ? 'bg-green-500' : 'bg-yellow-400'}`}></div>
 
         <div className="text-center border-b-2 border-dashed border-zinc-300 pb-6 mb-6 mt-4">
@@ -53,9 +66,17 @@ export default function TicketBeeper({ params }: { params: { id: string } }) {
           <p className="font-bold text-xl mt-2">{order.customerName}</p>
           
           {!isReady && (
-             <div className="mt-6 bg-yellow-100 text-yellow-800 p-4 rounded-xl border border-yellow-300">
+             <div className="mt-6 bg-yellow-100 text-yellow-800 p-4 rounded-xl border border-yellow-300 flex flex-col gap-3">
                <p className="font-black text-lg animate-pulse">⏳ Preparando en Cocina...</p>
-               <p className="text-sm font-medium mt-1">No cierres esta pantalla. Tu celular vibrará cuando tu orden esté lista.</p>
+               
+               {!notificationsEnabled ? (
+                 <button onClick={enableNotifications} className="bg-yellow-400 hover:bg-yellow-500 text-zinc-900 font-black py-3 px-4 rounded-lg shadow-lg active:scale-95 transition-all">
+                   🔔 Toca aquí para Activar Sonido
+                 </button>
+               ) : (
+                 <p className="text-sm font-bold text-green-700 bg-green-200 py-2 rounded-lg">✅ Notificaciones activas</p>
+               )}
+               
              </div>
           )}
         </div>
