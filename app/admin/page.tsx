@@ -7,7 +7,6 @@ export default function AdminDashboard() {
   const [data, setData] = useState<{ products: any[], modifiers: any[], orders: any[] }>({ products: [], modifiers: [], orders: [] });
   const [loading, setLoading] = useState(true);
 
-  // Filtros de fecha
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -33,18 +32,37 @@ export default function AdminDashboard() {
     });
   };
 
-  // --- KPIs y MÉTRICAS (Data Analytics) ---
-  const totalOrders = data.orders.length;
-  const ventasNetas = data.orders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
-  const propinasTotales = data.orders.reduce((acc: number, o: any) => acc + o.tipAmount, 0);
+  // --- LÓGICA DE REEMBOLSOS ---
+  const handleRefund = async (orderId: string) => {
+    if (!confirm('¿Estás seguro de cancelar y reembolsar esta orden? Se restará de las ventas.')) return;
+    
+    // Lo actualizamos en la UI
+    setData({
+      ...data,
+      orders: data.orders.map(o => o.id === orderId ? { ...o, status: 'REFUNDED' } : o)
+    });
+
+    // Lo mandamos al backend
+    await fetch('/api/orders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, newStatus: 'REFUNDED' })
+    });
+  };
+
+  // Filtramos las canceladas para no inflar los KPIs
+  const validOrders = data.orders.filter(o => o.status !== 'REFUNDED');
+  
+  const totalOrders = validOrders.length;
+  const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
+  const propinasTotales = validOrders.reduce((acc: number, o: any) => acc + o.tipAmount, 0);
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
   
-  const totalEfectivo = data.orders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc: number, o: any) => acc + o.totalAmount, 0);
-  const totalTerminal = data.orders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc: number, o: any) => acc + o.totalAmount, 0);
+  const totalEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc: number, o: any) => acc + o.totalAmount, 0);
+  const totalTerminal = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc: number, o: any) => acc + o.totalAmount, 0);
 
-  // --- TOP PRODUCTOS (Análisis del JSON) ---
   const productCounts: Record<string, number> = {};
-  data.orders.forEach(order => {
+  validOrders.forEach(order => {
     const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
     items.forEach((item: any) => {
       const name = item.product.name;
@@ -52,18 +70,14 @@ export default function AdminDashboard() {
     });
   });
   
-  const topProducts = Object.entries(productCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5); // Top 5
+  const topProducts = Object.entries(productCounts).sort(([, a], [, b]) => b - a).slice(0, 5);
 
-  // --- EXPORTAR A CSV ---
   const exportToCSV = () => {
-    let csv = 'Turno,Fecha,Hora,Cliente,Tipo,MetodoPago,Monto,Propina\n';
+    let csv = 'Turno,Estado,Fecha,Cliente,Celular,Tipo,MetodoPago,Monto,Propina\n';
     data.orders.forEach(o => {
       const date = new Date(o.createdAt);
-      csv += `${o.turnNumber},${date.toLocaleDateString()},${date.toLocaleTimeString()},${o.customerName || 'Cliente'},${o.orderType},${o.paymentMethod},${o.totalAmount},${o.tipAmount}\n`;
+      csv += `${o.turnNumber},${o.status},${date.toLocaleDateString()},${o.customerName || 'Cliente'},${o.customerPhone || 'N/A'},${o.orderType},${o.paymentMethod},${o.totalAmount},${o.tipAmount}\n`;
     });
-    
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -79,11 +93,10 @@ export default function AdminDashboard() {
           <h1 className="text-4xl font-black text-yellow-400">📊 MAIZTROS BI</h1>
           <div className="flex bg-zinc-900 rounded-full p-1 border border-zinc-800">
             <button onClick={() => setActiveTab('INVENTARIO')} className={`px-6 py-2 rounded-full font-bold transition-all ${activeTab === 'INVENTARIO' ? 'bg-yellow-400 text-zinc-950' : 'text-zinc-500 hover:text-white'}`}>📦 Inventario</button>
-            <button onClick={() => setActiveTab('VENTAS')} className={`px-6 py-2 rounded-full font-bold transition-all ${activeTab === 'VENTAS' ? 'bg-yellow-400 text-zinc-950' : 'text-zinc-500 hover:text-white'}`}>📈 Analíticos</button>
+            <button onClick={() => setActiveTab('VENTAS')} className={`px-6 py-2 rounded-full font-bold transition-all ${activeTab === 'VENTAS' ? 'bg-yellow-400 text-zinc-950' : 'text-zinc-500 hover:text-white'}`}>📈 Ventas y Tickets</button>
           </div>
         </header>
 
-        {/* TAB 1: INVENTARIO */}
         {activeTab === 'INVENTARIO' && (
           <div className="space-y-12">
             {loading ? <p className="text-center text-zinc-500 text-xl py-20">Actualizando base de datos...</p> : (
@@ -122,10 +135,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 2: ANALÍTICOS (BI) */}
         {activeTab === 'VENTAS' && (
           <div className="space-y-8 animate-in fade-in duration-300">
-            {/* FILTROS DE FECHA Y EXPORTACIÓN */}
             <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
               <div className="flex items-center gap-4">
                 <div className="flex flex-col">
@@ -138,21 +149,21 @@ export default function AdminDashboard() {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-950 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400" />
                 </div>
               </div>
-              <button onClick={exportToCSV} disabled={totalOrders === 0} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black disabled:opacity-50 flex items-center gap-2 transition-colors">
+              <button onClick={exportToCSV} disabled={data.orders.length === 0} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black disabled:opacity-50 flex items-center gap-2 transition-colors">
                 ⬇️ Exportar CSV
               </button>
             </div>
 
             {loading ? <p className="text-center text-zinc-500 py-10">Calculando métricas...</p> : (
               <>
-                {/* KPIs PRINCIPALES */}
+                {/* KPIs */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-lg">
                     <p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ingresos Netos</p>
                     <p className="text-4xl md:text-5xl font-black text-green-400">${ventasNetas.toFixed(2)}</p>
                   </div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-lg">
-                    <p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Totales</p>
+                    <p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Pagadas</p>
                     <p className="text-4xl md:text-5xl font-black text-white">{totalOrders}</p>
                   </div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-lg">
@@ -160,43 +171,50 @@ export default function AdminDashboard() {
                     <p className="text-4xl md:text-5xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p>
                   </div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-lg">
-                    <p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Propinas (Staff)</p>
-                    <p className="text-4xl md:text-5xl font-black text-purple-400">${propinasTotales.toFixed(2)}</p>
+                    <p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Cancelaciones</p>
+                    <p className="text-4xl md:text-5xl font-black text-red-500">{data.orders.length - validOrders.length}</p>
                   </div>
                 </div>
 
-                {/* DISTRIBUCIÓN Y TOP PRODUCTOS */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Métodos de Pago</h3>
-                    <div className="space-y-6">
-                      <div>
-                        <div className="flex justify-between font-bold mb-2"><span>💳 Terminal (Mercado Pago)</span> <span>${totalTerminal.toFixed(2)}</span></div>
-                        <div className="w-full bg-zinc-950 rounded-full h-4 overflow-hidden"><div className="bg-blue-500 h-4 rounded-full" style={{ width: `${ventasNetas > 0 ? (totalTerminal/ventasNetas)*100 : 0}%` }}></div></div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between font-bold mb-2"><span>💵 Efectivo (Caja)</span> <span>${totalEfectivo.toFixed(2)}</span></div>
-                        <div className="w-full bg-zinc-950 rounded-full h-4 overflow-hidden"><div className="bg-green-500 h-4 rounded-full" style={{ width: `${ventasNetas > 0 ? (totalEfectivo/ventasNetas)*100 : 0}%` }}></div></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Top 5 Productos</h3>
-                    <div className="space-y-4">
-                      {topProducts.length === 0 ? <p className="text-zinc-500">No hay ventas en este periodo.</p> : 
-                        topProducts.map(([name, count], idx) => (
-                          <div key={name} className="flex items-center gap-4">
-                            <span className="text-zinc-600 font-black">#{idx + 1}</span>
-                            <div className="flex-1 bg-zinc-950 rounded-full h-8 overflow-hidden relative border border-zinc-800">
-                              <div className="bg-yellow-400/20 h-full" style={{ width: `${(count as number / (topProducts[0][1] as number)) * 100}%` }}></div>
-                              <span className="absolute left-4 top-1 font-bold text-sm">{name}</span>
-                            </div>
-                            <span className="font-black text-yellow-400 w-8 text-right">{count}</span>
+                {/* LISTA DE ÓRDENES (DESCARGAR TICKET / REEMBOLSAR) */}
+                <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl mt-8">
+                  <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Historial de Tickets y Operaciones</h3>
+                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                    {data.orders.map(order => (
+                      <div key={order.id} className={`p-4 rounded-2xl flex flex-col md:flex-row justify-between items-center border ${order.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800'}`}>
+                        <div className="flex items-center gap-6 mb-4 md:mb-0 w-full md:w-auto">
+                          <p className="text-3xl font-black italic w-24">#{order.turnNumber}</p>
+                          <div>
+                            <p className="font-bold">{order.customerName} {order.customerPhone && <span className="text-yellow-500 text-sm ml-2">⭐ {order.customerPhone}</span>}</p>
+                            <p className="text-sm text-zinc-500">{new Date(order.createdAt).toLocaleString()} • {order.paymentMethod === 'TERMINAL' ? '💳' : '💵'}</p>
                           </div>
-                        ))
-                      }
-                    </div>
+                        </div>
+                        <div className="flex items-center gap-4 w-full md:w-auto justify-end">
+                          <p className={`font-black text-xl ${order.status === 'REFUNDED' ? 'line-through text-red-500' : 'text-green-400'}`}>
+                            ${(order.totalAmount + order.tipAmount).toFixed(2)}
+                          </p>
+                          
+                          {/* BOTONES ADMINISTRATIVOS */}
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => window.open(`/ticket/${order.turnNumber}`, '_blank')}
+                              className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                            >
+                              📄 Ver Ticket
+                            </button>
+                            
+                            {order.status !== 'REFUNDED' && (
+                              <button 
+                                onClick={() => handleRefund(order.id)}
+                                className="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-4 py-2 rounded-lg text-sm font-bold border border-red-500/30 transition-all"
+                              >
+                                🛑 Cancelar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </>
