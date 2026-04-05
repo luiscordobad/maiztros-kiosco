@@ -7,7 +7,6 @@ export async function POST(request: Request) {
     const turnNumber = 'M' + Math.floor(100 + Math.random() * 900).toString();
     const initialStatus = data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT';
 
-    // Usamos una "Transacción" para que se guarde la orden y los puntos al mismo tiempo
     const order = await prisma.$transaction(async (tx) => {
       
       const newOrder = await tx.order.create({
@@ -22,22 +21,22 @@ export async function POST(request: Request) {
           orderNotes: data.orderNotes || '',
           totalAmount: data.totalAmount, 
           pointsDiscount: data.pointsDiscount || 0,
+          couponCode: data.couponCode || null,
           tipAmount: data.tipAmount || 0,
           status: initialStatus
         }
       });
 
-      // Si el cliente puso su celular, actualizamos su saldo
       if (data.customerPhone && data.customerPhone.length === 10) {
-         // Suma puntos por lo que gastó real (Subtotal - Descuento)
-         const earnedPoints = data.totalAmount - (data.pointsDiscount || 0); 
-         // Resta 10 puntos por cada peso descontado
-         const pointsToDeduct = (data.pointsDiscount || 0) * 10; 
+         // Suma puntos por lo que gastó real (Monto final)
+         const earnedPoints = data.totalAmount; 
+         // AHORA: 100 puntos valen $1 peso
+         const pointsToDeduct = (data.pointsDiscount || 0) * 100; 
 
          await tx.customer.upsert({
            where: { phone: data.customerPhone },
            update: {
-             name: data.customerName, // Actualiza el nombre por si cambió
+             name: data.customerName, 
              points: { increment: earnedPoints - pointsToDeduct }
            },
            create: {
