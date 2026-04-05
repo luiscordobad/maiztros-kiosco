@@ -1,32 +1,32 @@
+// app/api/checkout/route.ts
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    
-    // Generar turno: M + 3 dígitos
     const turnNumber = 'M' + Math.floor(100 + Math.random() * 900).toString();
+
+    // Lógica de estado inicial
+    // Si es terminal, asumimos que la terminal ya confirmó. Si es efectivo, espera validación.
+    const initialStatus = data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT';
 
     const newOrder = await prisma.order.create({
       data: {
-        turnNumber: turnNumber,
+        turnNumber,
         customerName: data.customerName || 'Cliente',
         orderType: data.orderType || 'DINE_IN',
-        paymentMethod: data.paymentMethod || 'EFECTIVO',
-        items: data.cart || [], // Prisma se encarga de convertir el array a JSONB
+        paymentMethod: data.paymentMethod,
+        items: data.cart || [],
         orderNotes: data.orderNotes || '',
-        totalAmount: parseFloat(data.totalAmount) || 0,
-        tipAmount: parseFloat(data.tipAmount) || 0,
-        status: 'PENDING'
+        totalAmount: data.totalAmount,
+        tipAmount: data.tipAmount || 0,
+        status: initialStatus // <--- Aquí aplicamos el filtro
       }
     });
 
     return NextResponse.json({ success: true, orderId: turnNumber });
-  } catch (error: any) {
-    console.error("Error en Checkout:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: 'Error al procesar orden' }, { status: 500 });
   }
 }
