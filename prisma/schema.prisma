@@ -28,18 +28,29 @@ model Modifier {
   createdAt   DateTime @default(now())
 }
 
+// EL NUEVO CRM DE CLIENTES
+model Customer {
+  phone     String   @id
+  name      String?
+  points    Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Order {
-  id            String   @id @default(uuid())
-  turnNumber    String   
-  customerName  String?  @default("Cliente")
-  customerPhone String?  // <-- NUEVO: Para el sistema de Lealtad
-  orderType     String   
-  paymentMethod String   
-  items         Json     
-  orderNotes    String?  
-  totalAmount   Float    
-  tipAmount     Float    @default(0) 
-  status        String   @default("PENDING") // Puede ser PAID, COMPLETED, REFUNDED
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  turnNumber     String   
+  customerName   String?  @default("Cliente")
+  customerPhone  String?  
+  customerEmail  String?
+  orderType      String   
+  paymentMethod  String   
+  items          Json     
+  orderNotes     String?  
+  totalAmount    Float    // Lo que costó la comida
+  pointsDiscount Float    @default(0) // El descuento aplicado por lealtad
+  tipAmount      Float    @default(0) 
+  status         String   @default("PENDING") 
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
