@@ -3,13 +3,11 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Órdenes en preparación
     const preparing = await prisma.order.findMany({
       where: { status: 'PAID' },
       orderBy: { createdAt: 'asc' }
     });
 
-    // Órdenes despachadas en los últimos 15 minutos
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60000);
     const ready = await prisma.order.findMany({
       where: { status: 'COMPLETED', updatedAt: { gte: fifteenMinsAgo } },
