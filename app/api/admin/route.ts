@@ -1,21 +1,34 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const startDateParam = searchParams.get('startDate');
+  const endDateParam = searchParams.get('endDate');
+
   try {
     // 1. Traer Inventario
     const products = await prisma.product.findMany({ orderBy: { category: 'asc' } });
     const modifiers = await prisma.modifier.findMany({ orderBy: { type: 'asc' } });
 
-    // 2. Traer Ventas de HOY (Corte de Caja)
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // 2. Filtro de Fechas para Ventas
+    let startDate = new Date();
+    startDate.setHours(0, 0, 0, 0); // Por defecto: Hoy
+    let endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
+
+    if (startDateParam && endDateParam) {
+      startDate = new Date(startDateParam);
+      endDate = new Date(endDateParam);
+      endDate.setHours(23, 59, 59, 999); // Asegurar el final del día
+    }
 
     const orders = await prisma.order.findMany({
       where: { 
-        createdAt: { gte: startOfDay }, 
-        status: { in: ['PAID', 'COMPLETED'] } 
-      }
+        createdAt: { gte: startDate, lte: endDate }, 
+        status: { in: ['PAID', 'COMPLETED'] } // Solo lo que sí se pagó
+      },
+      orderBy: { createdAt: 'desc' }
     });
 
     return NextResponse.json({ success: true, products, modifiers, orders });
