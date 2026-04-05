@@ -32,7 +32,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState(''); // <-- NUEVO: Lealtad
   const [orderNotes, setOrderNotes] = useState('');
   
   const [lastPaymentMethod, setLastPaymentMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
@@ -48,7 +48,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     const resetApp = () => {
       if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
+        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setAppState('WELCOME');
       }
@@ -191,13 +191,22 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, totalAmount: getTotal(), tipAmount, customerName, customerEmail, paymentMethod, orderType, orderNotes })
+        body: JSON.stringify({ 
+          cart, 
+          totalAmount: getTotal(), 
+          tipAmount, 
+          customerName, 
+          customerPhone, // <-- NUEVO
+          paymentMethod, 
+          orderType, 
+          orderNotes 
+        })
       });
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
+        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
         setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
         
@@ -286,7 +295,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   }
 
   if (appState === 'SUCCESS') {
-    // Solución del error 404: Lee la URL real en la que estás navegando
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
 
@@ -295,7 +303,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         <div className="h-screen bg-orange-600 text-white flex flex-col items-center justify-center p-6 text-center">
           <h1 className="text-7xl md:text-8xl font-black mb-4 tracking-tighter drop-shadow-lg">¡FALTA UN PASO!</h1>
           <p className="text-3xl font-bold mb-8 opacity-90">Pasa a la caja para pagar tu orden en efectivo 💵</p>
-          
           <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-4 border-white/30 shadow-2xl backdrop-blur-md">
             <div className="text-center">
               <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-90 mb-2">Tu Turno</p>
@@ -318,7 +325,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       <div className="h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center">
         <h1 className="text-7xl md:text-8xl font-black mb-4">¡ORDEN CONFIRMADA!</h1>
         <p className="text-3xl font-bold mb-8 opacity-90">{orderType === 'TAKEOUT' ? 'Empacando para llevar 🎒' : 'Preparando para comer aquí 🍽️'}</p>
-        
         <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
           <div className="text-center">
             <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-80 mb-2">Número de Turno</p>
@@ -371,6 +377,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
             <div className="space-y-4">
               <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
+              
+              {/* CAMPO DE LEALTAD */}
+              <div>
+                <label className="text-yellow-500 font-bold text-xs uppercase mb-1 block">⭐ Acumula MaiztroPuntos</label>
+                <input type="tel" placeholder="Tu Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-yellow-500/10 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold text-yellow-400 placeholder:text-yellow-600/50"/>
+              </div>
+
             </div>
           </div>
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
@@ -432,6 +445,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       </header>
 
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
+        {/* ... (Las secciones del menú siguen igual, el renderizado no cambia) */}
         <section id="seccion-combos">
           <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
