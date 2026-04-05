@@ -21,35 +21,28 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
   const chiles = modifiers.filter(m => m.type === 'CHILE');
 
-  // Estados de la App
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
   const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
-  // Estados del Wizard
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  // Estados del Cliente
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   
-  // Guardamos el método de pago final para saber qué pantalla de éxito mostrar
   const [lastPaymentMethod, setLastPaymentMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
-
   const [showTipModal, setShowTipModal] = useState(false);
   const [selectedTipMethod, setSelectedTipMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
 
-  // Estados de Terminal
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
-  // --- MOTOR DE AUTO-RESET ---
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
@@ -108,7 +101,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if (appState === 'UPSELL') setAppState('MENU');
   };
 
-  // --- LÓGICA DE EXCLUSIVIDAD MUTUA (CHILE VS SIN CHILE) ---
   const handleToggleModifier = (mod: any) => {
     const currentSelections = wizardData[wizardStep] || [];
     const isSelected = currentSelections.find((m: any) => m.id === mod.id);
@@ -141,7 +133,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       const selections = wizardData[index] || [];
       if (selections.length === 0) return;
       if (step.type === 'TOPPINGS') {
-        // --- COBRO: ADEREZO, QUESO Y POLVO SUMAN PRECIO ---
         const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
         let baseCount = paidCount;
         if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; 
@@ -294,13 +285,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // --- PANTALLAS DE ÉXITO CON TICKET DIGITAL QR ---
   if (appState === 'SUCCESS') {
-    // Configura aquí tu dominio final en lugar de maiztros.vercel.app cuando lo tengas
-    const baseUrl = 'https://maiztros.vercel.app'; 
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
+    // Solución del error 404: Lee la URL real en la que estás navegando
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
 
-    // 1. PANTALLA NARANJA PARA EFECTIVO
     if (lastPaymentMethod === 'EFECTIVO_CAJA') {
       return (
         <div className="h-screen bg-orange-600 text-white flex flex-col items-center justify-center p-6 text-center">
@@ -314,18 +303,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             </div>
             <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
             <div className="flex flex-col items-center mt-6 md:mt-0">
-              <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/30 px-4 py-2 rounded-full">📱 Escanea tu Ticket Digital</p>
+              <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/30 px-4 py-2 rounded-full">📱 Escanea para tu Localizador Digital</p>
               <img src={qrUrl} alt="QR Ticket" className="w-40 h-40 rounded-2xl shadow-lg border-4 border-white" />
             </div>
           </div>
           <p className="text-2xl font-bold mt-8 bg-black/20 px-8 py-4 rounded-full border border-black/30 shadow-lg">
-            Avisa tu turno al cajero. Tu orden se enviará a cocina al pagar.
+            Avisa tu turno al cajero. Te avisaremos a tu celular en cuanto esté listo.
           </p>
         </div>
       );
     }
 
-    // 2. PANTALLA VERDE PARA TERMINAL
     return (
       <div className="h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center">
         <h1 className="text-7xl md:text-8xl font-black mb-4">¡ORDEN CONFIRMADA!</h1>
@@ -338,7 +326,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
           <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
           <div className="flex flex-col items-center mt-6 md:mt-0">
-            <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/20 px-4 py-2 rounded-full">📱 Escanea tu Ticket Digital</p>
+            <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/20 px-4 py-2 rounded-full">📱 Escanea para tu Localizador Digital</p>
             <img src={qrUrl} alt="QR Ticket" className="w-40 h-40 rounded-2xl shadow-lg border-4 border-white" />
           </div>
         </div>
@@ -383,7 +371,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
             <div className="space-y-4">
               <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
-              <input type="email" placeholder="Correo (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
             </div>
           </div>
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
