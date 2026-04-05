@@ -31,9 +31,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
+  
+  // DATOS DEL CLIENTE
   const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState(''); // <-- NUEVO: Lealtad
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
+
+  // LEALTAD (MAIZTROPUNTOS)
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [usePoints, setUsePoints] = useState(false);
+  const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
   const [lastPaymentMethod, setLastPaymentMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
   const [showTipModal, setShowTipModal] = useState(false);
@@ -43,12 +51,33 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
+  // Búsqueda de puntos en tiempo real
+  useEffect(() => {
+    if (customerPhone.length === 10) {
+      setIsCheckingPoints(true);
+      fetch(`/api/loyalty?phone=${customerPhone}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setLoyaltyPoints(data.points);
+            if(data.name && !customerName) setCustomerName(data.name); // ¡Autocompletar nombre!
+          }
+          setIsCheckingPoints(false);
+        });
+    } else {
+      setLoyaltyPoints(0);
+      setUsePoints(false);
+    }
+  }, [customerPhone]);
+
+  // RESET TIMER
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
       if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+        setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
+        setLoyaltyPoints(0); setUsePoints(false);
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setAppState('WELCOME');
       }
@@ -59,6 +88,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     resetTimer(); 
     return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
   }, [appState, waitingTerminal, isSubmitting, showTipModal]);
+
+  // MATEMÁTICAS FINALES
+  const subtotal = getTotal();
+  // Cada 10 puntos es $1 peso
+  const pointValueInPesos = Math.floor(loyaltyPoints / 10);
+  const actualDiscount = usePoints ? Math.min(pointValueInPesos, subtotal) : 0;
+  const totalAfterDiscount = subtotal - actualDiscount;
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -193,10 +229,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           cart, 
-          totalAmount: getTotal(), 
+          totalAmount: subtotal, // Pasamos el costo real
+          pointsDiscount: actualDiscount, // Pasamos el descuento para la API
           tipAmount, 
           customerName, 
-          customerPhone, // <-- NUEVO
+          customerEmail,
+          customerPhone,
           paymentMethod, 
           orderType, 
           orderNotes 
@@ -206,7 +244,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       if (response.ok) {
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+        setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
+        setLoyaltyPoints(0); setUsePoints(false);
         setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
         
@@ -224,15 +263,20 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
+    // Si el descuento cubre todo, no pedimos terminal
+    if (totalAfterDiscount <= 0 && paymentMethod === 'TERMINAL') {
+      alert("Tu orden se paga sola con puntos. Cobra en Efectivo/Caja para registrarlo.");
+      return;
+    }
     setSelectedTipMethod(paymentMethod); 
     setShowTipModal(true);
   };
 
   const processFinalCheckout = async (tipAmount: number) => {
     setShowTipModal(false); setIsSubmitting(true);
-    const finalTotal = getTotal() + tipAmount;
+    const finalTotal = totalAfterDiscount + tipAmount;
 
-    if (selectedTipMethod === 'TERMINAL') {
+    if (selectedTipMethod === 'TERMINAL' && finalTotal > 0) {
       try {
         setTerminalStatusMsg('Buscando tu terminal Mercado Pago...');
         const res = await fetch('/api/terminal', {
@@ -256,6 +300,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         alert("Error de conexión con la nube de Mercado Pago."); setIsSubmitting(false);
       }
     } else {
+      // Si finalTotal es 0 o paga en efectivo, guarda directo
       executeOrderSave(selectedTipMethod!, tipAmount);
     }
   };
@@ -363,34 +408,58 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <textarea placeholder="Ej. El esquite mediano bien doradito..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-lg font-medium resize-none h-32"/>
             </div>
           </div>
+          
           <div className="mt-8 pt-8 border-t border-zinc-800 flex justify-between items-end">
             <button onClick={() => setAppState('MENU')} className="text-zinc-400 text-xl font-bold hover:text-white">← Agregar más</button>
             <div className="text-right">
+              {usePoints && (
+                <p className="text-green-400 font-bold mb-1">- ${actualDiscount.toFixed(2)} pts Maiztros</p>
+              )}
               <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
-              <p className="text-7xl text-yellow-400 font-black tracking-tighter">${getTotal().toFixed(2)}</p>
+              <p className="text-7xl text-yellow-400 font-black tracking-tighter">${totalAfterDiscount.toFixed(2)}</p>
             </div>
           </div>
         </div>
 
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
-          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl">
-            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
+          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl relative">
+            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Cuenta / Lealtad</h3>
             <div className="space-y-4">
-              <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
               
-              {/* CAMPO DE LEALTAD */}
               <div>
-                <label className="text-yellow-500 font-bold text-xs uppercase mb-1 block">⭐ Acumula MaiztroPuntos</label>
-                <input type="tel" placeholder="Tu Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-yellow-500/10 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold text-yellow-400 placeholder:text-yellow-600/50"/>
+                <label className="text-yellow-500 font-bold text-xs uppercase mb-1 block">⭐ Celular (Acumula o Usa Puntos)</label>
+                <div className="relative">
+                  <input type="tel" placeholder="10 dígitos" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-yellow-500/10 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-black text-yellow-400 placeholder:text-yellow-600/50"/>
+                  {isCheckingPoints && <span className="absolute right-4 top-5 text-yellow-500 animate-spin">⏳</span>}
+                </div>
               </div>
 
+              <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
+              <input type="email" placeholder="Correo (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
+              
+              {/* INTERFAZ DE REDENCIÓN DE PUNTOS */}
+              {loyaltyPoints >= 10 && (
+                <div className="mt-4 bg-green-500/10 border border-green-500/50 p-5 rounded-2xl flex justify-between items-center animate-in fade-in">
+                  <div>
+                    <p className="text-green-400 font-black text-lg">{Math.floor(loyaltyPoints)} pts 🌽</p>
+                    <p className="text-zinc-400 text-xs font-bold uppercase">Desc. de ${pointValueInPesos}</p>
+                  </div>
+                  <button 
+                    onClick={() => setUsePoints(!usePoints)}
+                    className={`px-4 py-2 rounded-lg font-black text-sm transition-colors ${usePoints ? 'bg-red-500 text-white' : 'bg-green-500 text-zinc-900'}`}
+                  >
+                    {usePoints ? 'Cancelar' : 'Usar Puntos'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-4 justify-center">
-              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta (Terminal)</button>
-              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Pagar en Caja</button>
+              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta</button>
+              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Caja / Efectivo</button>
             </div>
           </div>
         </div>
@@ -412,7 +481,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <p className="text-xl text-zinc-400 mb-10">Tu propina va directo a los Maiztros que preparan tu antojo.</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 {[0.10, 0.15, 0.20].map((pct) => {
-                  const tipAmt = Math.round(getTotal() * pct);
+                  const tipAmt = Math.round(totalAfterDiscount * pct);
                   return (
                     <button key={pct} onClick={() => processFinalCheckout(tipAmt)} className="bg-zinc-800 hover:bg-yellow-400 hover:text-zinc-950 border border-zinc-700 p-6 rounded-2xl transition-all shadow-lg group">
                       <p className="text-3xl font-black mb-1">{pct * 100}%</p>
@@ -445,7 +514,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       </header>
 
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
-        {/* ... (Las secciones del menú siguen igual, el renderizado no cambia) */}
+        {/* ... (Secciones de menú) */}
         <section id="seccion-combos">
           <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
