@@ -4,7 +4,14 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'INVENTARIO' | 'VENTAS'>('INVENTARIO');
-  const [data, setData] = useState({ products: [], modifiers: [], orders: [] });
+  
+  // ¡LA SOLUCIÓN ESTÁ AQUÍ! Le decimos a TypeScript que estos arreglos no son "never", sino "any"
+  const [data, setData] = useState<{ products: any[], modifiers: any[], orders: any[] }>({ 
+    products: [], 
+    modifiers: [], 
+    orders: [] 
+  });
+  
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -19,6 +26,7 @@ export default function AdminDashboard() {
   const toggleStock = async (id: string, type: 'product' | 'modifier', currentStatus: boolean) => {
     // Actualización optimista (se cambia en pantalla al instante)
     const updateList = (list: any[]) => list.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i);
+    
     if (type === 'product') setData({ ...data, products: updateList(data.products) });
     else setData({ ...data, modifiers: updateList(data.modifiers) });
 
