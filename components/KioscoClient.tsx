@@ -35,7 +35,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
+  
+  // Guardamos el método de pago final para saber qué pantalla de éxito mostrar
+  const [lastPaymentMethod, setLastPaymentMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
 
   const [showTipModal, setShowTipModal] = useState(false);
   const [selectedTipMethod, setSelectedTipMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
@@ -51,8 +55,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     const resetApp = () => {
       if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setOrderNotes('');
-        setActiveProduct(null); setSelectedTipMethod(null);
+        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
+        setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setAppState('WELCOME');
       }
     };
@@ -191,25 +195,27 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const executeOrderSave = async (paymentMethod: string, tipAmount: number) => {
     try {
+      setLastPaymentMethod(paymentMethod as 'TERMINAL' | 'EFECTIVO_CAJA');
+
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, totalAmount: getTotal(), tipAmount, customerName, paymentMethod, orderType, orderNotes })
+        body: JSON.stringify({ cart, totalAmount: getTotal(), tipAmount, customerName, customerEmail, paymentMethod, orderType, orderNotes })
       });
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setOrderNotes('');
+        setCustomerName(''); setCustomerEmail(''); setOrderNotes('');
         setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
         
-        // Timeout para regresar a la pantalla de inicio
         const resetDelay = paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000;
         setTimeout(() => { 
           setAppState('WELCOME'); 
           setOrderSuccessId(null); 
-          setSelectedTipMethod(null); // Limpiamos el método hasta que se acaba el tiempo
+          setLastPaymentMethod(null);
+          setSelectedTipMethod(null);
         }, resetDelay);
       }
     } catch (error) { alert("Error guardando orden en base de datos."); }
@@ -288,20 +294,32 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // --- LAS PANTALLAS DE ÉXITO CORRECTAS ---
+  // --- PANTALLAS DE ÉXITO CON TICKET DIGITAL QR ---
   if (appState === 'SUCCESS') {
+    // Configura aquí tu dominio final en lugar de maiztros.vercel.app cuando lo tengas
+    const baseUrl = 'https://maiztros.vercel.app'; 
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
+
     // 1. PANTALLA NARANJA PARA EFECTIVO
-    if (selectedTipMethod === 'EFECTIVO_CAJA') {
+    if (lastPaymentMethod === 'EFECTIVO_CAJA') {
       return (
         <div className="h-screen bg-orange-600 text-white flex flex-col items-center justify-center p-6 text-center">
-          <h1 className="text-8xl md:text-[8rem] font-black mb-6 tracking-tighter shadow-black drop-shadow-lg">¡FALTA UN PASO!</h1>
-          <p className="text-4xl font-bold mb-12 opacity-90">Pasa a la caja para pagar tu orden en efectivo 💵</p>
-          <div className="bg-white/20 p-16 rounded-[4rem] border-4 border-white/30 shadow-2xl backdrop-blur-md">
-            <p className="text-2xl uppercase tracking-[0.3em] font-bold opacity-90 mb-6">Tu Número de Turno</p>
-            <p className="text-[10rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+          <h1 className="text-7xl md:text-8xl font-black mb-4 tracking-tighter drop-shadow-lg">¡FALTA UN PASO!</h1>
+          <p className="text-3xl font-bold mb-8 opacity-90">Pasa a la caja para pagar tu orden en efectivo 💵</p>
+          
+          <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-4 border-white/30 shadow-2xl backdrop-blur-md">
+            <div className="text-center">
+              <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-90 mb-2">Tu Turno</p>
+              <p className="text-[8rem] leading-none font-black italic tracking-tighter">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+            </div>
+            <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
+            <div className="flex flex-col items-center mt-6 md:mt-0">
+              <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/30 px-4 py-2 rounded-full">📱 Escanea tu Ticket Digital</p>
+              <img src={qrUrl} alt="QR Ticket" className="w-40 h-40 rounded-2xl shadow-lg border-4 border-white" />
+            </div>
           </div>
-          <p className="text-2xl font-bold mt-12 bg-black/20 px-8 py-4 rounded-full border border-black/30 shadow-lg">
-            Avisa tu turno al cajero. Tu orden se enviará a cocina en cuanto pagues.
+          <p className="text-2xl font-bold mt-8 bg-black/20 px-8 py-4 rounded-full border border-black/30 shadow-lg">
+            Avisa tu turno al cajero. Tu orden se enviará a cocina al pagar.
           </p>
         </div>
       );
@@ -310,11 +328,19 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     // 2. PANTALLA VERDE PARA TERMINAL
     return (
       <div className="h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center">
-        <h1 className="text-8xl font-black mb-6">¡ORDEN CONFIRMADA!</h1>
-        <p className="text-4xl font-bold mb-12 opacity-90">{orderType === 'TAKEOUT' ? 'Empacando para llevar 🎒' : 'Preparando para comer aquí 🍽️'}</p>
-        <div className="bg-white/20 p-16 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
-          <p className="text-2xl uppercase tracking-[0.3em] font-bold opacity-80 mb-6">Número de Turno</p>
-          <p className="text-[10rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+        <h1 className="text-7xl md:text-8xl font-black mb-4">¡ORDEN CONFIRMADA!</h1>
+        <p className="text-3xl font-bold mb-8 opacity-90">{orderType === 'TAKEOUT' ? 'Empacando para llevar 🎒' : 'Preparando para comer aquí 🍽️'}</p>
+        
+        <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
+          <div className="text-center">
+            <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-80 mb-2">Número de Turno</p>
+            <p className="text-[8rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+          </div>
+          <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
+          <div className="flex flex-col items-center mt-6 md:mt-0">
+            <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/20 px-4 py-2 rounded-full">📱 Escanea tu Ticket Digital</p>
+            <img src={qrUrl} alt="QR Ticket" className="w-40 h-40 rounded-2xl shadow-lg border-4 border-white" />
+          </div>
         </div>
       </div>
     );
@@ -357,6 +383,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">¿A nombre de quién?</h3>
             <div className="space-y-4">
               <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
+              <input type="email" placeholder="Correo (Opcional)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
             </div>
           </div>
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
