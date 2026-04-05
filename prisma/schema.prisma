@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,16 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- MODELOS DE CATÁLOGO ---
-
 model Product {
   id          String   @id
   name        String
-  category    String   // ESQUITE, ESPECIALIDAD, BEBIDA, ANTOJO, COMBO
+  category    String   
   basePrice   Float
   description String?
   isCombo     Boolean  @default(false)
-  isAvailable Boolean  @default(true) // <-- EL NUEVO SWITCH DE INVENTARIO
+  isAvailable Boolean  @default(true) 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -27,31 +22,24 @@ model Product {
 model Modifier {
   id          String   @id @default(uuid())
   name        String
-  type        String   // POLVO, ADEREZO, QUESO, RESTRICCION, CHILE
+  type        String   
   price       Float    @default(0)
-  isAvailable Boolean  @default(true) // <-- EL NUEVO SWITCH DE INVENTARIO
+  isAvailable Boolean  @default(true) 
   createdAt   DateTime @default(now())
 }
 
-// --- MODELO DE OPERACIONES (EL CORAZÓN) ---
-
 model Order {
   id            String   @id @default(uuid())
-  turnNumber    String   // Ejemplo: M492
+  turnNumber    String   
   customerName  String?  @default("Cliente")
-  orderType     String   // DINE_IN o TAKEOUT
-  paymentMethod String   // TERMINAL o EFECTIVO_CAJA
-  
-  // Guardamos el carrito completo como JSON
+  customerPhone String?  // <-- NUEVO: Para el sistema de Lealtad
+  orderType     String   
+  paymentMethod String   
   items         Json     
-  
-  orderNotes    String?  // Comentarios para la cocina
-  
-  totalAmount   Float    // Monto de los productos
-  tipAmount     Float    @default(0) // Propina agregada
-  
-  status        String   @default("PENDING") // AWAITING_PAYMENT, PAID, COMPLETED
-  
+  orderNotes    String?  
+  totalAmount   Float    
+  tipAmount     Float    @default(0) 
+  status        String   @default("PENDING") // Puede ser PAID, COMPLETED, REFUNDED
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
