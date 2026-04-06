@@ -40,7 +40,6 @@ const initialInventory = [
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   
-  // Ruta ultrarrápida para que el Kiosco lea el inventario y sepa qué ocultar
   if (searchParams.get('action') === 'kiosco_sync') {
     const inventoryItems = await prisma.inventoryItem.findMany();
     return NextResponse.json({ success: true, inventoryItems });
@@ -61,8 +60,11 @@ export async function GET(request: Request) {
 
     const orders = await prisma.order.findMany({ where: { createdAt: { gte: startDate, lte: endDate } }, orderBy: { createdAt: 'desc' } });
     const shifts = await prisma.shift.findMany({ where: { openedAt: { gte: startDate, lte: endDate } }, include: { orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } }, movements: true }, orderBy: { openedAt: 'desc' } });
+    
+    // NUEVO: TRAER GASTOS
+    const expenses = await prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } }, orderBy: { date: 'desc' } });
 
-    return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts });
+    return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts, expenses });
   } catch (error) { return NextResponse.json({ success: false, error: 'Error' }, { status: 500 }); }
 }
 
@@ -74,14 +76,12 @@ export async function PATCH(request: Request) {
     if (type === 'update_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: parseFloat(newStock) } }); return NextResponse.json({ success: true }); }
     if (type === 'add_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: { increment: parseFloat(addAmount) } } }); return NextResponse.json({ success: true }); }
 
-    // BOTÓN MAESTRO DE CATEGORÍAS
     if (type === 'toggle_category') {
       if (isModifier) await prisma.modifier.updateMany({ where: { type: category }, data: { isAvailable: targetState } });
       else await prisma.product.updateMany({ where: { category: category }, data: { isAvailable: targetState } });
       return NextResponse.json({ success: true });
     }
 
-    // BOTONES INDIVIDUALES
     if (type === 'product') await prisma.product.update({ where: { id }, data: { isAvailable } });
     else if (type === 'modifier') await prisma.modifier.update({ where: { id }, data: { isAvailable } });
     else if (type === 'inventory_toggle') await prisma.inventoryItem.update({ where: { id }, data: { isAvailable } });
@@ -93,18 +93,30 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { code, discount, discountType, minAmount } = await request.json();
-    await prisma.coupon.create({ data: { code: code.toUpperCase().trim(), discount: parseFloat(discount), discountType, minAmount: parseFloat(minAmount) || 0 } });
+    const body = await request.json();
+    
+    // GUARDAR NUEVO GASTO
+    if (body.type === 'expense') {
+      await prisma.expense.create({
+        data: { amount: parseFloat(body.amount), category: body.category, description: body.description }
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    // CREAR CUPÓN
+    await prisma.coupon.create({ data: { code: body.code.toUpperCase().trim(), discount: parseFloat(body.discount), discountType: body.discountType, minAmount: parseFloat(body.minAmount) || 0 } });
     return NextResponse.json({ success: true });
-  } catch (error) { return NextResponse.json({ success: false, error: 'El cupón ya existe o es inválido' }, { status: 500 }); }
+  } catch (error) { return NextResponse.json({ success: false, error: 'Error en la petición' }, { status: 500 }); }
 }
 
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const type = searchParams.get('type');
     if (id) {
-      await prisma.coupon.delete({ where: { id } });
+      if (type === 'expense') await prisma.expense.delete({ where: { id } });
+      else await prisma.coupon.delete({ where: { id } });
       return NextResponse.json({ success: true });
     }
     return NextResponse.json({ success: false });
