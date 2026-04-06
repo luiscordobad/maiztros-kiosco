@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import ProtectedRoute from '@/components/ProtectedRoute'; 
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 export default function CocinaKDS() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // NUEVO: Lista negra de IDs que ya fueron despachados en esta sesión
+  // Lista negra de tickets ya despachados para evitar que "revivan"
   const [hiddenOrders, setHiddenOrders] = useState<string[]>([]);
   
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -20,11 +20,15 @@ export default function CocinaKDS() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/orders?status=PAID');
+      // Descargamos todas las órdenes activas
+      const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-        // Filtramos las órdenes: si su ID está en la lista negra, las ignoramos.
-        const visibleOrders = data.orders.filter((o: any) => !hiddenOrders.includes(o.id));
+        // EL CANDADO MAESTRO: Solo mostramos órdenes Pagadas (PAID) o Aceptadas de la APP (PREPARING)
+        const visibleOrders = data.orders.filter((o: any) => 
+            (o.status === 'PAID' || o.status === 'PREPARING') && !hiddenOrders.includes(o.id)
+        );
+        
         setOrders(visibleOrders);
         
         if (visibleOrders.length > previousOrderCount.current) {
@@ -42,16 +46,14 @@ export default function CocinaKDS() {
     fetchOrders();
     const interval = setInterval(fetchOrders, 3000); 
     return () => clearInterval(interval);
-  }, [soundEnabled, hiddenOrders]); // Actualizamos la dependencia
+  }, [soundEnabled, hiddenOrders]);
 
   const handleDespachar = async (orderId: string) => {
-    // 1. Agregamos el ID a la lista negra para que NO vuelva a aparecer
+    // 1. A la lista negra para que no reviva
     setHiddenOrders(prev => [...prev, orderId]);
-    
-    // 2. Lo quitamos de la vista actual inmediatamente por fluidez visual
+    // 2. Lo ocultamos visualmente al instante
     setOrders(orders.filter(o => o.id !== orderId)); 
-    
-    // 3. Mandamos la señal al backend
+    // 3. Le avisamos a la BD
     await fetch('/api/orders', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -59,7 +61,7 @@ export default function CocinaKDS() {
     });
   };
 
-  if (loading) return <div className="min-h-screen bg-zinc-950 text-white flex justify-center items-center text-3xl">Cargando KDS...</div>;
+  if (loading) return <div className="min-h-screen bg-zinc-950 text-white flex justify-center items-center text-3xl font-black animate-pulse">Cargando KDS...</div>;
 
   return (
     <ProtectedRoute title="Monitor de Cocina" requiredRole="KDS">
@@ -68,15 +70,10 @@ export default function CocinaKDS() {
         <header className="flex justify-between items-center border-b border-zinc-800 pb-6 mb-8">
           <div className="flex items-center gap-4">
             <h1 className="text-4xl font-black text-yellow-400 tracking-tighter">🔥 PARRILLA MAIZTROS</h1>
-            
-            <button 
-              onClick={() => setSoundEnabled(!soundEnabled)} 
-              className={`px-4 py-2 rounded-full font-bold text-sm transition-colors border ${soundEnabled ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30'}`}
-            >
+            <button onClick={() => setSoundEnabled(!soundEnabled)} className={`px-4 py-2 rounded-full font-bold text-sm transition-colors border ${soundEnabled ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30'}`}>
               {soundEnabled ? '🔊 Sonido ON' : '🔇 Sonido OFF (Tocar para activar)'}
             </button>
           </div>
-          
           <div className="bg-zinc-900 px-6 py-2 rounded-full border border-zinc-700 font-bold text-zinc-400">
             Tickets Activos: <span className="text-white text-xl">{orders.length}</span>
           </div>
@@ -96,17 +93,16 @@ export default function CocinaKDS() {
               const isLate = timeAgo >= 10; 
 
               return (
-                <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isLate ? 'border-red-500 shadow-red-500/20' : 'border-zinc-700'}`}>
+                <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-purple-500' : 'border-zinc-700'}`}>
                   
-                  {/* Cabecera del Ticket */}
-                  <div className={`p-6 flex justify-between items-center border-b ${isLate ? 'bg-red-500/20 border-red-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
+                  <div className={`p-6 flex justify-between items-center border-b ${isLate ? 'bg-red-500/20 border-red-500/50' : order.orderType === 'TAKEOUT' ? 'bg-purple-900/20 border-purple-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
                     <div>
                       <h2 className="text-4xl font-black italic tracking-tighter">#{order.turnNumber}</h2>
                       <p className="text-zinc-400 font-bold mt-1">{order.customerName}</p>
                     </div>
                     <div className="text-right">
-                      <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-purple-400'}`}>
-                        {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '🎒 LLEVAR'}
+                      <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-purple-400 animate-pulse'}`}>
+                        {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '📱 LLEVAR'}
                       </p>
                       <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400 animate-pulse' : 'text-zinc-500'}`}>
                         Hace {timeAgo} min
@@ -114,7 +110,6 @@ export default function CocinaKDS() {
                     </div>
                   </div>
 
-                  {/* Lista de Productos y Toppings */}
                   <div className="p-6 flex-1 bg-zinc-950/50 overflow-y-auto space-y-4">
                     {items.map((item: any, idx: number) => (
                       <div key={idx} className="pb-4 border-b border-zinc-800/50 last:border-0 last:pb-0">
@@ -130,20 +125,15 @@ export default function CocinaKDS() {
                       </div>
                     ))}
                     
-                    {/* Nota Especial del Cliente */}
                     {order.orderNotes && (
                       <div className="mt-4 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl">
-                        <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota Especial:</p>
+                        <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota de Caja/App:</p>
                         <p className="text-white font-medium">{order.orderNotes}</p>
                       </div>
                     )}
                   </div>
 
-                  {/* Botón de Despachar */}
-                  <button 
-                    onClick={() => handleDespachar(order.id)}
-                    className="w-full bg-green-500 hover:bg-green-400 text-zinc-950 py-6 font-black text-2xl uppercase tracking-widest active:bg-green-600 transition-colors"
-                  >
+                  <button onClick={() => handleDespachar(order.id)} className="w-full bg-green-500 hover:bg-green-400 text-zinc-950 py-6 font-black text-2xl uppercase tracking-widest active:bg-green-600 transition-colors">
                     ✅ Despachado
                   </button>
                 </div>
