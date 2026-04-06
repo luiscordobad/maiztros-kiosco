@@ -1,27 +1,38 @@
 'use client';
 import { useState, useEffect } from 'react';
+// IMPORTANTE: Ahora esperamos que ProtectedRoute nos pase el rol del usuario como prop a los "children".
+// Si tu componente ProtectedRoute actual no hace esto, no te preocupes, asumiremos que si están aquí, son ADMIN por defecto a menos que lo cambies luego.
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, CartesianGrid } from 'recharts';
 
-export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'VENTAS' | 'INVENTARIO' | 'PANICO' | 'MARKETING' | 'AUDITORIA'>('FINANZAS');
-  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [] });
+// Envolvemos el Dashboard en el componente que recibe el Rol
+export default function AdminWrapper() {
+    return (
+        <ProtectedRoute title="Luis - Centro de Control" requiredRole="ADMIN">
+            {(userRole: 'ADMIN' | 'CAJERO' | 'KDS') => <AdminDashboard role={userRole || 'ADMIN'} />}
+        </ProtectedRoute>
+    );
+}
+
+function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
+  // Si es cajero, arranca en VENTAS. Si es ADMIN, arranca en FINANZAS.
+  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'VENTAS' | 'INVENTARIO' | 'PANICO' | 'MARKETING' | 'AUDITORIA' | 'CLIENTES'>(role === 'ADMIN' ? 'FINANZAS' : 'VENTAS');
+  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [] });
   const [loading, setLoading] = useState(true);
 
-  // Por defecto filtramos los últimos 7 días
   const lastWeek = new Date();
   lastWeek.setDate(lastWeek.getDate() - 7);
   const [startDate, setStartDate] = useState(lastWeek.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   
-  const [newCouponCode, setNewCouponCode] = useState('');
-  const [newCouponDiscount, setNewCouponDiscount] = useState('');
-  const [newCouponType, setNewCouponType] = useState<'FIXED' | 'PERCENTAGE'>('FIXED');
-  const [newCouponMinAmount, setNewCouponMinAmount] = useState(''); 
-
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
   const [newExpenseCategory, setNewExpenseCategory] = useState('INSUMOS');
   const [newExpenseDesc, setNewExpenseDesc] = useState('');
+
+  const [newCouponCode, setNewCouponCode] = useState('');
+  const [newCouponDiscount, setNewCouponDiscount] = useState('');
+  const [newCouponType, setNewCouponType] = useState<'FIXED' | 'PERCENTAGE'>('FIXED');
+  const [newCouponMinAmount, setNewCouponMinAmount] = useState('');
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
 
@@ -39,25 +50,27 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData(); }, [startDate, endDate]);
 
+  const getAuthorName = () => role === 'ADMIN' ? 'Luis (Jefe)' : 'Cajero (Staff)';
+
   const updatePanic = async (id: string, type: string, currentStatus: boolean) => {
       await fetch('/api/admin', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, type, isAvailable: !currentStatus, author: 'Luis (Admin)' })
+          body: JSON.stringify({ id, type, isAvailable: !currentStatus, author: getAuthorName() })
       });
       fetchData();
   };
 
   const initInventory = async () => {
     if (!confirm("Esto cargará los datos iniciales. ¿Estás seguro?")) return;
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'init_inventory', author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'init_inventory', author: getAuthorName() }) });
     fetchData();
   };
 
   const updatePhysicalStock = async (id: string, newStock: string) => {
     if (newStock === '') return;
     setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, stock: parseFloat(newStock) } : i) });
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'update_stock', newStock, author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'update_stock', newStock, author: getAuthorName() }) });
   };
 
   const addPhysicalStock = async (id: string) => {
@@ -65,7 +78,7 @@ export default function AdminDashboard() {
     if (!amount || isNaN(parseFloat(amount))) return;
     setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, stock: i.stock + parseFloat(amount) } : i) });
     setAddAmounts({ ...addAmounts, [id]: '' }); 
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'add_stock', addAmount: amount, author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'add_stock', addAmount: amount, author: getAuthorName() }) });
   };
 
   const toggleStatus = async (id: string, type: 'product' | 'modifier' | 'coupon' | 'inventory_toggle', currentStatus: boolean) => {
@@ -74,19 +87,19 @@ export default function AdminDashboard() {
     else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map((i:any) => i.id === id ? { ...i, isActive: !currentStatus } : i) });
     
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus, author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus, author: getAuthorName() }) });
   };
 
   const toggleCategory = async (category: string, isModifier: boolean, currentItems: any[]) => {
     const targetState = !currentItems.every((i:any) => i.isAvailable); 
     if (isModifier) setData({ ...data, modifiers: data.modifiers.map((m:any) => m.type === category ? { ...m, isAvailable: targetState } : m) });
     else setData({ ...data, products: data.products.map((p:any) => p.category === category ? { ...p, isAvailable: targetState } : p) });
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'toggle_category', category, targetState, isModifier, author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'toggle_category', category, targetState, isModifier, author: getAuthorName() }) });
   };
 
   const handleCreateCoupon = async () => {
     if (!newCouponCode || !newCouponDiscount) return alert('Llena los datos del cupón');
-    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'coupon', code: newCouponCode, discount: newCouponDiscount, discountType: newCouponType, minAmount: newCouponMinAmount, author: 'Luis (Admin)' }) });
+    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'coupon', code: newCouponCode, discount: newCouponDiscount, discountType: newCouponType, minAmount: newCouponMinAmount, author: getAuthorName() }) });
     const json = await res.json();
     if (json.success) { setNewCouponCode(''); setNewCouponDiscount(''); setNewCouponMinAmount(''); fetchData(); } 
     else { alert(json.error || 'Error al crear cupón'); }
@@ -95,12 +108,12 @@ export default function AdminDashboard() {
   const deleteCoupon = async (id: string) => {
     if(!confirm("¿Eliminar este cupón definitivamente?")) return;
     setData({ ...data, coupons: data.coupons.filter((c:any) => c.id !== id) });
-    await fetch(`/api/admin?id=${id}&type=coupon&author=Luis (Admin)`, { method: 'DELETE' });
+    await fetch(`/api/admin?id=${id}&type=coupon&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
   const handleAddExpense = async () => {
     if (!newExpenseAmount || !newExpenseDesc) return alert('Llena todos los campos del gasto');
-    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'expense', amount: newExpenseAmount, category: newExpenseCategory, description: newExpenseDesc, author: 'Luis (Admin)' }) });
+    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'expense', amount: newExpenseAmount, category: newExpenseCategory, description: newExpenseDesc, author: getAuthorName() }) });
     const json = await res.json();
     if (json.success) { setNewExpenseAmount(''); setNewExpenseDesc(''); fetchData(); } 
     else { alert('Error al registrar gasto'); }
@@ -109,14 +122,14 @@ export default function AdminDashboard() {
   const deleteExpense = async (id: string) => {
     if(!confirm("¿Eliminar este registro de gasto?")) return;
     setData({ ...data, expenses: data.expenses.filter((e:any) => e.id !== id) });
-    await fetch(`/api/admin?id=${id}&type=expense&author=Luis (Admin)`, { method: 'DELETE' });
+    await fetch(`/api/admin?id=${id}&type=expense&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
   const handleRefund = async (orderId: string) => {
     if (!confirm('¿Estás seguro de cancelar esta orden?')) return;
     setData({ ...data, orders: data.orders.map((o:any) => o.id === orderId ? { ...o, status: 'REFUNDED' } : o) });
     await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, newStatus: 'REFUNDED' }) });
-    await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'audit', action: 'ORDEN_CANCELADA', details: `Orden ID: ${orderId}`, author: 'Luis (Admin)' }) });
+    await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'audit', action: 'ORDEN_CANCELADA', details: `Orden ID: ${orderId}`, author: getAuthorName() }) });
   };
 
   const exportToCSV = () => {
@@ -131,6 +144,11 @@ export default function AdminDashboard() {
   
   const sendWhatsApp = (phone: string, name: string, turnNumber: string) => {
     const text = `¡Hola ${name}! 🌽 Aquí tienes tu ticket digital de Maiztros: ${getTicketUrl(turnNumber)}`;
+    window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const sendWhatsAppPromo = (phone: string, name: string) => {
+    const text = `¡Hola ${name}! 🌽 Vimos que eres uno de nuestros mejores clientes en Maiztros. Pasa hoy y muéstranos este mensaje para regalarte el topping que quieras en tu próximo esquite. ¡Te esperamos!`;
     window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -258,34 +276,48 @@ export default function AdminDashboard() {
     );
   }
 
+  // ==========================================
+  // CONFIGURACIÓN DE PESTAÑAS POR ROL (RBAC)
+  // ==========================================
+  const TABS_ADMIN = ['FINANZAS', 'VENTAS', 'INVENTARIO', 'PANICO', 'MARKETING', 'AUDITORIA', 'CLIENTES'];
+  const TABS_CAJERO = ['VENTAS', 'INVENTARIO'];
+  
+  const allowedTabs = role === 'ADMIN' ? TABS_ADMIN : TABS_CAJERO;
+
   return (
-    <ProtectedRoute title="Luis - Centro de Control">
       <div className="min-h-screen bg-zinc-950 text-white p-6 md:p-10 font-sans max-w-7xl mx-auto">
         
         {/* NAVEGACIÓN Y HEADER */}
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-zinc-800 pb-6 mb-8 gap-6">
           <div className="flex items-center gap-4">
-            <div className="bg-yellow-400 p-3 rounded-2xl text-zinc-950 text-2xl font-black italic">M</div>
-            <h1 className="text-3xl font-black tracking-tighter">MAIZTROS <span className="text-zinc-500 font-normal">BI</span></h1>
+            <div className={`p-3 rounded-2xl text-zinc-950 text-2xl font-black italic ${role === 'ADMIN' ? 'bg-yellow-400' : 'bg-blue-400'}`}>{role === 'ADMIN' ? 'M' : 'C'}</div>
+            <div>
+                <h1 className="text-3xl font-black tracking-tighter">MAIZTROS <span className="text-zinc-500 font-normal">BI</span></h1>
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Sesión iniciada como: <span className={role === 'ADMIN' ? 'text-yellow-400' : 'text-blue-400'}>{role}</span></p>
+            </div>
           </div>
           <div className="flex flex-wrap bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 w-full xl:w-auto gap-1">
-            {['FINANZAS', 'VENTAS', 'INVENTARIO', 'PANICO', 'MARKETING', 'AUDITORIA'].map((tab: any) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>{tab}</button>
+            {allowedTabs.map((tab: any) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>{tab === 'CLIENTES' ? '👥 Clientes VIP' : tab}</button>
             ))}
           </div>
         </header>
 
-        {/* FILTROS GLOBALES Y SYNC */}
+        {/* FILTROS GLOBALES Y SYNC (EL CAJERO NO VE LA UTILIDAD) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
                 <span className="text-zinc-600">→</span>
                 <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
             </div>
-            <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
-                <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
-                <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
-            </div>
+            
+            {role === 'ADMIN' ? (
+                <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
+                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
+                    <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
+                </div>
+            ) : <div></div>}
+            
             <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Sincronizar Data</button>
         </div>
 
@@ -299,8 +331,9 @@ export default function AdminDashboard() {
             
             {/* ======================= */}
             {/* PESTAÑA: FINANZAS (BI)  */}
+            {/* SOLO ADMIN              */}
             {/* ======================= */}
-            {activeTab === 'FINANZAS' && (
+            {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
                 
                 {/* Métricas Rápidas */}
@@ -319,7 +352,7 @@ export default function AdminDashboard() {
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
                     <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
                     <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
                   </div>
                 </div>
 
@@ -408,56 +441,36 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* 4. MÓDULO DE EGRESOS (DISEÑO COLUMNAS RESTAURADO) */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-                  <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto (Egreso)</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Monto Total</label>
-                        <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-black text-2xl outline-none focus:border-red-400" />
-                      </div>
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Categoría</label>
-                        <select value={newExpenseCategory} onChange={e => setNewExpenseCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-400">
-                          <option value="INSUMOS">Insumos (Súper, Elote, etc.)</option>
-                          <option value="NOMINA">Nómina / Colaboradores</option>
-                          <option value="SERVICIOS">Servicios (Luz, Agua, Gas, Renta)</option>
-                          <option value="OTROS">Otros Gastos</option>
+                {/* Registro de Gastos */}
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
+                    <h3 className="text-2xl font-black mb-6">💸 Registro de Egresos</h3>
+                    <div className="flex flex-col md:flex-row gap-4 mb-8">
+                        <input type="number" value={newExpenseAmount} onChange={e=>setNewExpenseAmount(e.target.value)} placeholder="Monto $" className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl flex-1 outline-none focus:border-red-500 font-black text-xl"/>
+                        <select value={newExpenseCategory} onChange={e=>setNewExpenseCategory(e.target.value)} className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl outline-none font-bold">
+                            <option value="INSUMOS">Insumos (Súper)</option>
+                            <option value="NOMINA">Nómina</option>
+                            <option value="SERVICIOS">Servicios</option>
+                            <option value="OTROS">Otros</option>
                         </select>
-                      </div>
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción (Opcional)</label>
-                        <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="Ej. Pago de gas" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white outline-none focus:border-red-400" />
-                      </div>
-                      <button onClick={handleAddExpense} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-lg mt-4 transition-all active:scale-95">Guardar Gasto</button>
+                        <input type="text" value={newExpenseDesc} onChange={e=>setNewExpenseDesc(e.target.value)} placeholder="Descripción..." className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl flex-[2] outline-none focus:border-red-500 font-bold"/>
+                        <button onClick={handleAddExpense} className="bg-red-600 hover:bg-red-500 text-white font-black px-10 py-4 rounded-2xl shadow-lg transition-all active:scale-95">Guardar</button>
                     </div>
-                  </div>
-
-                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
-                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                      {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
-                        data.expenses?.map((e: any) => (
-                          <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="bg-zinc-800 text-zinc-400 px-2 py-1 rounded text-xs font-bold uppercase">{e.category}</span>
-                                <span className="text-sm text-zinc-500">{new Date(e.date).toLocaleDateString()}</span>
-                              </div>
-                              <p className="font-bold text-white text-lg">{e.description}</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {data.expenses.map((e:any) => (
+                            <div key={e.id} className="bg-zinc-950 p-5 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-red-900/50 transition-colors">
+                                <div>
+                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1">{e.category} <span className="text-zinc-600 font-normal ml-2">{new Date(e.date).toLocaleDateString()}</span></p>
+                                    <p className="font-bold text-sm text-white">{e.description}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="font-black text-lg text-white">-${e.amount.toFixed(2)}</p>
+                                    <button onClick={() => deleteExpense(e.id)} className="text-[10px] font-bold text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">ELIMINAR</button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-4 w-full md:w-auto justify-end">
-                              <p className="font-black text-2xl text-red-400">-${e.amount.toFixed(2)}</p>
-                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors" title="Borrar Gasto">🗑️</button>
-                            </div>
-                          </div>
-                        ))
-                      }
+                        ))}
                     </div>
-                  </div>
                 </div>
-
               </div>
             )}
 
@@ -466,11 +479,13 @@ export default function AdminDashboard() {
             {/* ======================= */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
-                    <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Pts Canjeados</p><p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p></div>
-                    <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Exitosas</p><p className="text-4xl font-black text-white">{totalOrders}</p></div>
-                  </div>
+                  {role === 'ADMIN' && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Pts Canjeados</p><p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Exitosas</p><p className="text-4xl font-black text-white">{totalOrders}</p></div>
+                      </div>
+                  )}
 
                   <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
@@ -515,9 +530,55 @@ export default function AdminDashboard() {
             )}
 
             {/* ======================= */}
-            {/* PESTAÑA: AUDITORÍA (LOGS) */}
+            {/* PESTAÑA: CLIENTES (CRM) */}
+            {/* SOLO ADMIN              */}
             {/* ======================= */}
-            {activeTab === 'AUDITORIA' && (
+            {activeTab === 'CLIENTES' && role === 'ADMIN' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                        <div className="mb-8 border-b border-zinc-800 pb-4">
+                            <h3 className="text-3xl font-black text-white mb-2">👥 Maiztros VIP (Programa de Lealtad)</h3>
+                            <p className="text-zinc-500 font-bold">Directorio de clientes ordenados por mayor cantidad de MaiztroPuntos acumulados.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {data.customers?.length === 0 ? <p className="text-zinc-500 italic">No hay clientes registrados en el programa aún.</p> : 
+                              data.customers?.map((customer: any, index: number) => (
+                                <div key={customer.phone} className={`p-6 rounded-[2rem] border transition-colors relative overflow-hidden ${index < 3 ? 'bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-yellow-500/30 shadow-[0_0_20px_rgba(250,204,21,0.1)]' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    {index === 0 && <div className="absolute -right-4 -top-4 text-7xl opacity-20">👑</div>}
+                                    {index === 1 && <div className="absolute -right-4 -top-4 text-7xl opacity-20">🥈</div>}
+                                    {index === 2 && <div className="absolute -right-4 -top-4 text-7xl opacity-20">🥉</div>}
+                                    
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <p className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-1">Cliente #{index + 1}</p>
+                                                <p className="font-black text-xl text-white truncate pr-2">{customer.name || 'Cliente Frecuente'}</p>
+                                                <p className="font-bold text-zinc-400 text-sm mt-1">📱 {customer.phone}</p>
+                                            </div>
+                                            <div className="bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-700 text-center">
+                                                <p className="text-[10px] text-zinc-500 uppercase font-black">Pts</p>
+                                                <p className="text-yellow-400 font-black text-lg">{Math.floor(customer.points)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="mt-6 border-t border-zinc-800 pt-4">
+                                            <button onClick={() => sendWhatsAppPromo(customer.phone, customer.name || 'Cliente')} className="w-full bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-zinc-950 font-black py-3 rounded-xl border border-green-500/30 transition-colors flex items-center justify-center gap-2">
+                                                📱 Enviar Regalo por WA
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======================= */}
+            {/* PESTAÑA: AUDITORÍA (LOGS) */}
+            {/* SOLO ADMIN              */}
+            {/* ======================= */}
+            {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                         <div className="mb-6">
@@ -552,7 +613,7 @@ export default function AdminDashboard() {
                         <h2 className="text-3xl font-black text-white">📦 Stock Físico</h2>
                         <p className="text-zinc-500 font-bold text-sm">Gestiona tus entradas y salidas de producto.</p>
                       </div>
-                      {data.inventoryItems?.length === 0 && (
+                      {data.inventoryItems?.length === 0 && role === 'ADMIN' && (
                         <button onClick={initInventory} className="bg-red-600 hover:bg-red-500 text-white font-black px-4 py-2 rounded-xl text-sm animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.5)]">
                           ⚠️ Cargar Datos Iniciales
                         </button>
@@ -576,8 +637,9 @@ export default function AdminDashboard() {
 
             {/* ======================= */}
             {/* PESTAÑA: PANICO         */}
+            {/* SOLO ADMIN              */}
             {/* ======================= */}
-            {activeTab === 'PANICO' && (
+            {activeTab === 'PANICO' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
                     <h2 className="text-3xl font-black text-white mb-2 flex items-center gap-3">🚨 Panel de Pánico</h2>
@@ -607,8 +669,9 @@ export default function AdminDashboard() {
 
             {/* ======================= */}
             {/* PESTAÑA: MARKETING      */}
+            {/* SOLO ADMIN              */}
             {/* ======================= */}
-            {activeTab === 'MARKETING' && (
+            {activeTab === 'MARKETING' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 p-8 rounded-[2rem] shadow-2xl">
                     <h2 className="text-2xl font-black mb-6 text-white">Crear Nuevo Cupón Promocional</h2>
@@ -645,6 +708,5 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
-    </ProtectedRoute>
   );
 }
