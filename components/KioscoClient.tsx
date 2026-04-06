@@ -39,6 +39,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   
+  // ESTADOS DE CLIENTE Y REGISTRO
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -48,6 +49,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, minSpend: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
+  // NUEVOS ESTADOS PARA REGISTRO EN EL KIOSCO
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [regData, setRegData] = useState({ firstName: '', lastName: '', email: '', acceptedTerms: false });
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showCookies, setShowCookies] = useState(false);
+
   const [couponCode, setCouponCode] = useState('');
   const [activeCoupon, setActiveCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
@@ -68,6 +76,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       .then(data => { if(data.success) setInventoryItems(data.inventoryItems); });
   }, [appState]);
 
+  // VERIFICACIÓN AUTOMÁTICA DEL CELULAR
   useEffect(() => {
     if (customerPhone.length === 10) {
       setIsCheckingPoints(true);
@@ -75,24 +84,58 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         .then(res => res.json())
         .then(data => {
           if (data.success) {
+            // Cliente existente
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
+            setIsNewCustomer(false);
+          } else {
+            // Cliente Nuevo -> Activar formulario de registro
+            setLoyaltyPoints(0);
+            setSelectedReward(null);
+            setActiveCoupon(null);
+            setIsNewCustomer(true);
           }
           setIsCheckingPoints(false);
         });
     } else {
-      setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null);
+      setLoyaltyPoints(0); 
+      setSelectedReward(null); 
+      setActiveCoupon(null);
+      setIsNewCustomer(false);
     }
   }, [customerPhone]);
+
+  // FUNCION PARA REGISTRAR DESDE EL KIOSCO
+  const handleRegisterInKiosk = async () => {
+    if (!regData.firstName || !regData.lastName || !regData.email) return alert('Por favor, llena tu nombre, apellido y correo.');
+    if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad para crear tu cuenta.');
+
+    setIsRegistering(true);
+    try {
+        const res = await fetch('/api/customer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: customerPhone, ...regData })
+        });
+        const data = await res.json();
+        if (data.success) {
+            setCustomerName(data.customer.name);
+            setLoyaltyPoints(data.customer.points);
+            setIsNewCustomer(false); // Cerramos el formulario y abrimos la bóveda
+        } else { alert('Error al registrar cuenta. Intenta pedir como invitado borrando tu celular.'); }
+    } catch(e) { alert('Error de red. Revisa tu conexión.'); }
+    setIsRegistering(false);
+  };
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
-      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
+      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies) {
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
+        setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
         setAppState('WELCOME');
       }
     };
@@ -101,7 +144,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     window.addEventListener('mousemove', resetTimer); window.addEventListener('scroll', resetTimer);
     resetTimer(); 
     return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
-  }, [appState, waitingTerminal, isSubmitting, showTipModal]);
+  }, [appState, waitingTerminal, isSubmitting, showTipModal, showPrivacy, showCookies]);
 
   const subtotal = getTotal();
 
@@ -115,13 +158,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   }, [subtotal, activeCoupon, selectedReward]);
 
-  // LÓGICA DE CUPONES ACTUALIZADA (LIMITADA Y CON CELULAR OBLIGATORIO)
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
 
-    if (customerPhone.length !== 10) {
-      setCouponError('⚠️ Ingresa tu celular en la sección de MaiztroPuntos para poder usar cupones.');
+    if (customerPhone.length !== 10 || isNewCustomer) {
+      setCouponError('⚠️ Debes ingresar y registrar tu celular arriba para poder usar cupones.');
       return;
     }
 
@@ -135,10 +177,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         return;
       }
 
-      // Verificación de uso único
       const alreadyUsed = data.history.some((o:any) => o.couponCode === coupon.code);
-      if (alreadyUsed) {
-        setCouponError('⚠️ Ya utilizaste este cupón en una orden pasada. Son de un solo uso por cliente.');
+      if (alreadyUsed && coupon.code !== 'MAIZTROVIP') { // Opcional: MAIZTROVIP podría ser de uso múltiple si quieres
+        setCouponError('⚠️ Ya utilizaste este cupón antes. Son de un solo uso.');
         return;
       }
 
@@ -147,10 +188,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setActiveCoupon(null);
       } else {
         setActiveCoupon(coupon); 
-        setSelectedReward(null); // No se pueden juntar cupones y bóveda
+        setSelectedReward(null); 
       }
     } else {
-      setCouponError('❌ Debes estar registrado para usar cupones. Regístrate en MaiztroVIP.');
+      setCouponError('❌ Error al validar tu cuenta.');
     }
   };
 
@@ -179,7 +220,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
-    
     if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite Mediano 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite Mediano 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
     if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
@@ -231,9 +271,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
         let baseCount = paidCount;
         
-        if (step.firstToppingFree && baseCount > 0) {
-          baseCount -= 1; 
-        }
+        if (step.firstToppingFree && baseCount > 0) { baseCount -= 1; }
         
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
@@ -273,7 +311,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, pointsDeducted: selectedReward?.pts || 0, 
-          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
+          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail: regData.email || customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
         })
       });
       const data = await response.json();
@@ -282,6 +320,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
+        setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
         setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000);
@@ -291,8 +330,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
-    if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos o descuentos. Pica 'Pagar en Caja' para registrarla.");
+    if (!customerName) return alert("Por favor ingresa un nombre para tu ticket.");
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus descuentos. Pica 'Pago en Caja' para registrarla.");
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -337,6 +376,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return true; 
   };
 
+  // VISTAS PRINCIPALES DEL KIOSCO
   if (appState === 'WELCOME') {
     return (
       <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
@@ -380,6 +420,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
+        {/* COLUMNA IZQUIERDA: RESUMEN DE ORDEN */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -413,83 +454,162 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
+        {/* COLUMNA DERECHA: LEALTAD, REGISTRO Y PAGO */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
             
-            {customerPhone.length < 10 ? (
-              <div className="mb-6 animate-in fade-in zoom-in duration-500">
-                <h3 className="text-2xl font-black text-white mb-1">¡No pierdas tus puntos!</h3>
-                <p className="text-yellow-400 font-bold text-sm mb-4">Ingresa tu celular y gana <span className="bg-yellow-400/20 px-2 py-1 rounded-md text-yellow-300 text-lg border border-yellow-400/50">{pointsToEarn} pts</span> con esta orden.</p>
-              </div>
-            ) : (
-              <div className="mb-6 animate-in fade-in duration-500">
-                <h3 className="text-xl font-black text-white mb-1">Hola, {customerName || 'Maiztro'} 👋</h3>
-                <p className="text-zinc-300 font-medium text-sm mb-4">Tienes <span className="text-yellow-400 font-black text-xl">{Math.floor(loyaltyPoints)} pts</span>. (+{pointsToEarn} hoy)</p>
-              </div>
-            )}
+            <div className="relative z-10">
+                {customerPhone.length < 10 ? (
+                  <div className="mb-6 animate-in fade-in zoom-in duration-500">
+                    <h3 className="text-2xl font-black text-white mb-1">¡No pierdas tus puntos!</h3>
+                    <p className="text-yellow-400 font-bold text-sm mb-4">Ingresa tu celular para ganar o usar recompensas.</p>
+                  </div>
+                ) : (
+                  <div className="mb-6 animate-in fade-in duration-500">
+                    {isNewCustomer ? (
+                        <h3 className="text-2xl font-black text-yellow-400 mb-1">¡Número Nuevo! ✨</h3>
+                    ) : (
+                        <h3 className="text-xl font-black text-white mb-1">Hola, {customerName || 'Maiztro'} 👋</h3>
+                    )}
+                    {!isNewCustomer && <p className="text-zinc-300 font-medium text-sm mb-4">Tienes <span className="text-yellow-400 font-black text-xl">{Math.floor(loyaltyPoints)} pts</span>. (+{pointsToEarn} hoy)</p>}
+                  </div>
+                )}
 
-            <div className="space-y-4 relative z-10">
-              <div className="relative">
-                <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
-                {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
-              </div>
+                <div className="space-y-4">
+                  <div className="relative">
+                    <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
+                    {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
+                  </div>
 
-              <div className="mt-6 border-t border-yellow-500/30 pt-6">
-                <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Bonos en Efectivo</p>
-                <div className="space-y-2">
-                  {REWARDS.map(reward => {
-                    const hasPoints = loyaltyPoints >= reward.pts;
-                    const minSpendMet = subtotal >= reward.minSpend;
-                    const isAffordable = hasPoints && minSpendMet && !activeCoupon; 
-                    const isSelected = selectedReward?.id === reward.id;
-                    
-                    return (
-                      <button 
-                        key={reward.id} 
-                        disabled={!isAffordable || customerPhone.length < 10} 
-                        onClick={() => setSelectedReward(isSelected ? null : reward)} 
-                        className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all 
-                          ${customerPhone.length < 10 ? 'opacity-40 bg-zinc-950/50 border-zinc-800' : 
-                            !isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : 
-                            isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 
-                            'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
-                      >
-                        <div>
-                          <p className="font-black">{reward.label}</p>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
-                            {!hasPoints ? `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts` : !minSpendMet ? `Min. Compra $${reward.minSpend}` : `Cuesta ${reward.pts} pts`}
-                          </p>
-                        </div>
-                        <span className="text-xl">{isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '💸'}</span>
-                      </button>
-                    );
-                  })}
+                  {/* FORMULARIO DINÁMICO DE REGISTRO */}
+                  {customerPhone.length === 10 && isNewCustomer ? (
+                      <div className="bg-zinc-950 p-6 rounded-2xl border border-yellow-500/50 mt-4 animate-in fade-in slide-in-from-top-4">
+                          <h3 className="text-xl font-black text-white mb-2">Gana {pointsToEarn + 50} pts hoy 🎁</h3>
+                          <p className="text-zinc-400 text-xs font-bold mb-4">Crea tu cuenta rápido para guardar tus puntos.</p>
+                          <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                  <input type="text" placeholder="Nombre" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                                  <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                              </div>
+                              <input type="email" placeholder="Correo (Para tus tickets)" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                              
+                              <div className="flex items-start gap-2 mt-2 bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                  <input type="checkbox" id="terms_kiosk" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-1 w-5 h-5 accent-yellow-400"/>
+                                  <label htmlFor="terms_kiosk" className="text-[10px] text-zinc-400 font-bold leading-relaxed">
+                                      Acepto la <button type="button" onClick={()=>setShowPrivacy(true)} className="text-yellow-400 underline">Privacidad</button> y <button type="button" onClick={()=>setShowCookies(true)} className="text-yellow-400 underline">Cookies</button>.
+                                  </label>
+                              </div>
+
+                              <button onClick={handleRegisterInKiosk} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black mt-2 active:scale-95 transition-transform shadow-lg">
+                                  {isRegistering ? 'Registrando...' : '¡Crear Cuenta y Ganar Puntos!'}
+                              </button>
+                              <button onClick={() => setCustomerPhone('')} className="w-full text-zinc-500 font-bold text-xs mt-2 underline hover:text-white">Borrar celular y pedir como invitado</button>
+                          </div>
+                      </div>
+                  ) : (
+                      customerPhone.length === 10 && !isNewCustomer && (
+                          <div className="mt-6 border-t border-yellow-500/30 pt-6 animate-in fade-in">
+                            <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Bonos en Efectivo</p>
+                            <div className="space-y-2">
+                              {REWARDS.map(reward => {
+                                const hasPoints = loyaltyPoints >= reward.pts;
+                                const minSpendMet = subtotal >= reward.minSpend;
+                                const isAffordable = hasPoints && minSpendMet && !activeCoupon; 
+                                const isSelected = selectedReward?.id === reward.id;
+                                
+                                return (
+                                  <button 
+                                    key={reward.id} 
+                                    disabled={!isAffordable} 
+                                    onClick={() => setSelectedReward(isSelected ? null : reward)} 
+                                    className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all 
+                                      ${!isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : 
+                                        isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 
+                                        'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
+                                  >
+                                    <div>
+                                      <p className="font-black">{reward.label}</p>
+                                      <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
+                                        {!hasPoints ? `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts` : !minSpendMet ? `Min. Compra $${reward.minSpend}` : `Cuesta ${reward.pts} pts`}
+                                      </p>
+                                    </div>
+                                    <span className="text-xl">{isSelected ? '✅' : !isAffordable ? '🔒' : '💸'}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                      )
+                  )}
                 </div>
-              </div>
             </div>
           </div>
 
-          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
-            <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6">
-              <input type="text" placeholder="Tu Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold"/>
+          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col relative overflow-hidden">
+            {/* BLOQUEO VISUAL SI ESTÁN REGISTRANDO */}
+            {isNewCustomer && customerPhone.length === 10 && (
+                <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-8 text-center">
+                    <span className="text-5xl mb-4">🛑</span>
+                    <p className="font-black text-xl text-white mb-2">Termina tu registro</p>
+                    <p className="text-sm font-bold text-zinc-400">Completa tus datos arriba para continuar con el pago, o borra tu celular para pedir como invitado.</p>
+                </div>
+            )}
+
+            <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6 relative z-10">
+              <input type="text" placeholder="Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold disabled:opacity-50 disabled:border-zinc-800 disabled:text-zinc-500"/>
               
               <div className="flex gap-2">
-                <input type="text" placeholder="Cupón o Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
+                <input type="text" placeholder="Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
                 <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
               </div>
-              {couponError && <p className="text-red-400 text-xs font-bold text-center mt-2">{couponError}</p>}
+              {couponError && <p className="text-red-400 text-xs font-bold text-center mt-2 animate-bounce">{couponError}</p>}
               {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center mt-2">✅ Promo aplicada con éxito</p>}
               {selectedReward && <p className="text-zinc-500 text-xs font-bold text-center mt-2">Desactiva tu bono para usar un cupón.</p>}
             </div>
 
-            <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center">Forma de Pago</h3>
-            <div className="flex-1 flex flex-col gap-3 justify-center">
+            <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center relative z-10">Forma de Pago</h3>
+            <div className="flex-1 flex flex-col gap-3 justify-center relative z-10">
               <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💳 Tarjeta</button>
               <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💵 Efectivo en Caja</button>
             </div>
           </div>
         </div>
+
+        {/* MODALES DEL KIOSCO (Privacidad, Terminal, Propinas) */}
+        {showPrivacy && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[70] p-6 animate-in fade-in">
+                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
+                    <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
+                    <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
+                        <p>Conforme a lo establecido en la <strong>Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP)</strong> de México, "Maiztros" (ubicado en Zibatá, Querétaro) informa:</p>
+                        <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroVIP". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas (si no opta por darse de baja).</p>
+                        <p><strong>2. Protección:</strong> Sus datos se almacenan en bases de datos cifradas. En Maiztros <strong>NUNCA</strong> venderemos, alquilaremos ni compartiremos su información con terceros, agencias de publicidad o entidades externas.</p>
+                        <p><strong>3. Derechos ARCO:</strong> Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y Oposición solicitándolo en el mostrador físico de la sucursal.</p>
+                    </div>
+                    <button onClick={() => setShowPrivacy(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
+                </div>
+            </div>
+        )}
+
+        {showCookies && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[70] p-6 animate-in fade-in">
+                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
+                    <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
+                    <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
+                        <p>Este Kiosco utiliza tecnologías de almacenamiento local estrictamente necesarias para procesar su orden temporalmente.</p>
+                        <p><strong>¿Para qué las usamos?</strong></p>
+                        <ul className="list-disc pl-5 space-y-2">
+                            <li>Almacenar temporalmente los productos en el "Carrito de Compras" antes de finalizar su pedido.</li>
+                            <li>Mantener la validación de sus puntos durante el proceso de pago.</li>
+                        </ul>
+                        <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario (como Facebook Pixel o Google Analytics).</p>
+                        <p>Toda la información se borra automáticamente 2 minutos después de inactividad o al completar su compra.</p>
+                    </div>
+                    <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
+                </div>
+            </div>
+        )}
 
         {waitingTerminal && (
           <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
@@ -528,6 +648,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
+  // RESTO DEL CÓDIGO (Menú, Productos, Carrito) SE MANTIENE INTACTO
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
