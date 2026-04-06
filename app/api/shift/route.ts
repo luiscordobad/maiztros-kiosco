@@ -5,10 +5,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Buscar si hay un turno abierto
     const activeShift = await prisma.shift.findFirst({
       where: { status: 'OPEN' },
-      include: { orders: true }
+      include: { 
+        orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } },
+        movements: true
+      }
     });
     return NextResponse.json({ success: true, shift: activeShift });
   } catch (error) {
@@ -18,14 +20,27 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { openedBy, startingCash } = await request.json();
+    const body = await request.json();
     
-    // Validar que no haya otro turno abierto
+    // Si la petición trae un 'type', es un movimiento de efectivo (Retiro)
+    if (body.type) {
+      const movement = await prisma.cashMovement.create({
+        data: { 
+          shiftId: body.shiftId, 
+          type: body.type, 
+          amount: parseFloat(body.amount), 
+          reason: body.reason 
+        }
+      });
+      return NextResponse.json({ success: true, movement });
+    }
+
+    // Si no, es apertura de turno
     const existing = await prisma.shift.findFirst({ where: { status: 'OPEN' } });
-    if (existing) return NextResponse.json({ success: false, error: 'Ya hay un turno abierto' });
+    if (existing) return NextResponse.json({ success: false, error: 'Turno ya abierto' });
 
     const newShift = await prisma.shift.create({
-      data: { openedBy, startingCash: parseFloat(startingCash), status: 'OPEN' }
+      data: { openedBy: body.openedBy, startingCash: parseFloat(body.startingCash), status: 'OPEN' }
     });
     return NextResponse.json({ success: true, shift: newShift });
   } catch (error) {
@@ -36,7 +51,6 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const { shiftId, reportedCash } = await request.json();
-    
     await prisma.shift.update({
       where: { id: shiftId },
       data: { reportedCash: parseFloat(reportedCash), status: 'CLOSED', closedAt: new Date() }
