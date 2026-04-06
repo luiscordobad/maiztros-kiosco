@@ -17,7 +17,7 @@ const REWARDS = [
 const APP_PROMOS = [
   { 
     id: 'p1', code: 'HAPPY2X1', title: '2x1 Happy Hour 🌽', desc: 'Compra 2 esquites y paga 1. Válido solo en la primera hora y media de apertura.', 
-    validDays: [1,2,3,4,5], startFloat: 17.5, endFloat: 19.0, timeLabel: 'L-V, 5:30 PM a 7:00 PM', icon: '⏳' 
+    validDays: [1,2,3,4,5], startFloat: 13.5, endFloat: 19.0, timeLabel: 'L-V, 5:30 PM a 7:00 PM', icon: '⏳' 
   },
   { 
     id: 'p2', code: 'NOCHEROS', title: 'Antojo Nocturno 🌙', desc: '15% de descuento en toda tu cuenta para cerrar bien el día.', 
