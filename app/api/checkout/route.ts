@@ -29,7 +29,6 @@ export async function POST(request: Request) {
         }
       });
 
-      // LÓGICA DE LEALTAD
       if (data.customerPhone && data.customerPhone.length === 10) {
          const earnedPoints = data.totalAmount; 
          const pointsToDeduct = data.pointsDeducted || 0; 
@@ -41,9 +40,7 @@ export async function POST(request: Request) {
          });
       }
 
-      // ==========================================
-      // MOTOR DE DEDUCCIÓN INTELIGENTE (SIN ELOTE)
-      // ==========================================
+      // MOTOR DE DEDUCCIÓN INTELIGENTE
       const inventoryUpdates: Record<string, number> = {};
       const addDeduction = (name: string, qty: number) => {
           if (!name) return;
@@ -53,44 +50,45 @@ export async function POST(request: Request) {
       data.cart.forEach((item: any) => {
           const pName = item.product.name || '';
           
-          // 1. Deducir Papas y Bebidas seleccionadas como "Opciones" en los combos
           if (item.notes) {
               const notesArray = item.notes.split(' | ');
               notesArray.forEach((note: string) => {
                   if (note.includes('Bolsa de Papas:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Sabor de Maruchan:')) addDeduction(note.split(': ')[1].trim(), 1);
+                  if (note.includes('Tu Sabor:')) addDeduction(note.split(': ')[1].trim(), 1); // Combo Especialista
                   if (note.includes('Tu Bebida:') || note.includes('Bebida 1:') || note.includes('Bebida 2:') || note.includes('Bebida 3:') || note.includes('Bebida 4:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Sabor de Boing:') || note.includes('Sabor de Refresco:')) addDeduction(note.split(': ')[1].trim(), 1);
               });
           }
 
-          // 2. Deducir si compraron bebida o papa sola
           if (pName === item.notes && (item.product.category === 'BEBIDA' || item.product.category === 'PAPA_SOLA')) {
               addDeduction(pName, 1);
           }
           
-          // Deducir Maruchan Sola (Incluye Tenedor)
           if (pName === item.notes && item.product.category === 'MARUCHAN_SOLA') {
               addDeduction(pName, 1);
               addDeduction('Tenedor', 1);
           }
 
-          // 3. RECETAS EXACTAS (Solo Empaques, Cucharas y Tenedores)
-          // --- ESQUITES (Llevan CUCHARA y Vaso) ---
-          if (pName.includes('Individual')) { addDeduction('Vaso Mediano', 1); addDeduction('Cuchara', 1); }
-          else if (pName.includes('Pareja')) { addDeduction('Vaso Mediano', 2); addDeduction('Cuchara', 2); }
-          else if (pName.includes('Familiar')) { addDeduction('Vaso Grande', 2); addDeduction('Vaso Chico', 2); addDeduction('Cuchara', 4); }
+          // RECETAS BASE
+          if (pName.includes('Individual') || pName.includes('Solitario')) { addDeduction('Vaso Mediano', 1); addDeduction('Cuchara', 1); }
+          else if (pName.includes('Pareja') || pName.includes('Dúo')) { addDeduction('Vaso Mediano', 2); addDeduction('Cuchara', 2); }
+          else if (pName.includes('Familiar') || pName.includes('Tribu')) { addDeduction('Vaso Grande', 2); addDeduction('Vaso Chico', 2); addDeduction('Cuchara', 4); }
+          else if (pName.includes('Especialidad') || pName.includes('Especialista')) {
+              if (item.notes.includes('Construpapas')) {
+                  addDeduction('Hamburguesero', 1); addDeduction('Tenedor', 1);
+              } else if (item.notes.includes('Obra Maestra')) {
+                  addDeduction('Vaso Grande', 1); addDeduction('Tenedor', 1);
+              }
+          }
           else if (pName.includes('Esquite Chico')) { addDeduction('Vaso Chico', 1); addDeduction('Cuchara', 1); }
           else if (pName.includes('Esquite Mediano')) { addDeduction('Vaso Mediano', 1); addDeduction('Cuchara', 1); }
           else if (pName.includes('Esquite Grande')) { addDeduction('Vaso Grande', 1); addDeduction('Cuchara', 1); }
-          
-          // --- ESPECIALIDADES (Llevan TENEDOR y Hamburguesero/Vaso Gde) ---
           else if (pName.includes('Construpapas')) { addDeduction('Hamburguesero', 1); addDeduction('Tenedor', 1); }
           else if (pName.includes('Obra Maestra')) { addDeduction('Vaso Grande', 1); addDeduction('Tenedor', 1); }
           else if (pName.includes('Don Maiztro')) { addDeduction('Hamburguesero', 1); addDeduction('Tenedor', 1); }
       });
 
-      // 4. Actualizar la Base de Datos con lo recolectado
       for (const [name, qty] of Object.entries(inventoryUpdates)) {
           await tx.inventoryItem.updateMany({
               where: { name },
