@@ -41,7 +41,7 @@ model Coupon {
   code          String   @unique
   discount      Float    
   discountType  String   
-  minAmount     Float    @default(0) // <-- NUEVO FILTRO
+  minAmount     Float    @default(0)
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 }
@@ -69,12 +69,13 @@ model CashMovement {
 }
 
 model InventoryItem {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  category  String
-  stock     Float    @default(0)
-  unit      String   @default("pz")
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String   @unique
+  category    String
+  stock       Float    @default(0)
+  unit        String   @default("pz")
+  isAvailable Boolean  @default(true) // <-- NUEVO: Para el panel de pánico específico
+  updatedAt   DateTime @updatedAt
 }
 
 model Order {
