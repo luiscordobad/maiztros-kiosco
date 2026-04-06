@@ -1,11 +1,11 @@
 'use client';
 import { useState } from 'react';
 
-// LA NUEVA BÓVEDA CON REGLAS DE NEGOCIO
+// LA NUEVA BÓVEDA: PURA LANA (DESCUENTOS EN EFECTIVO CON COMPRA MÍNIMA)
 const REWARDS = [
-  { id: 'tier1', pts: 250, minSpend: 150, label: 'Mini Topping Extra', icon: '🌶️', desc: 'Canjea un topping extra gratis en compras mayores a $150 MXN.' },
-  { id: 'tier2', pts: 500, minSpend: 250, label: 'Bebida Refrescante', icon: '🥤', desc: 'Llévate una bebida directa gratis al gastar más de $250 MXN.' },
-  { id: 'tier3', pts: 1000, minSpend: 350, label: 'Esquite Chico Gratis', icon: '🌽', desc: '¡Tu lealtad rinde frutos! Esquite chico gratis en tu consumo mayor a $350 MXN.' }
+  { id: 'tier1', pts: 250, minSpend: 150, discount: 15, label: 'Bono de $15 MXN', icon: '💸', desc: 'Ahorra $15 pesos en tu próxima compra mayor a $150.' },
+  { id: 'tier2', pts: 500, minSpend: 250, discount: 35, label: 'Bono de $35 MXN', icon: '💰', desc: 'Ahorra $35 pesos en tu próxima compra mayor a $250.' },
+  { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN', icon: '👑', desc: 'Ahorra $80 pesos en tu próxima compra mayor a $400.' }
 ];
 
 export default function MiCuenta() {
@@ -41,7 +41,7 @@ export default function MiCuenta() {
             setCustomer(data);
             setView('DASHBOARD');
         } else {
-            // Si no existe, lo mandamos a registrarse
+            // Si el cliente no existe, lo mandamos al SIGN UP
             setView('REGISTER');
         }
     } catch(e) { setError('Error de conexión.'); }
@@ -62,7 +62,7 @@ export default function MiCuenta() {
         });
         const data = await res.json();
         if (data.success) {
-            // Recargamos el perfil para traer el historial vacío y el bono de puntos
+            // Recargamos el perfil para traer la data fresca
             await fetchProfile(phone);
         } else { setError('Error al registrar cuenta.'); }
     } catch(e) { setError('Error de red.'); }
@@ -78,7 +78,7 @@ export default function MiCuenta() {
             customerName: customer.name,
             customerPhone: customer.phone,
             paymentMethod: 'EFECTIVO_CAJA',
-            orderType: 'TAKEOUT', // Asumimos que si lo pide desde el cel es para pasar por él
+            orderType: 'TAKEOUT', 
             orderNotes: '🚨 PEDIDO DESDE APP MÓVIL 🚨'
         };
 
@@ -134,7 +134,7 @@ export default function MiCuenta() {
       )}
 
       {/* ========================================== */}
-      {/* VISTA 2: REGISTRO                          */}
+      {/* VISTA 2: REGISTRO (SIGN UP)                */}
       {/* ========================================== */}
       {view === 'REGISTER' && (
         <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] w-full max-w-md shadow-2xl flex flex-col gap-6 animate-in slide-in-from-right duration-300">
@@ -215,11 +215,11 @@ export default function MiCuenta() {
             )}
           </div>
 
-          {/* 2. CUPONES ESPECIALES ACTIVOS */}
+          {/* 2. CUPONES ESPECIALES ACTIVOS (Se nutre del Admin Panel) */}
           {customer.activeCoupons && customer.activeCoupons.length > 0 && (
               <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 p-8 rounded-[3rem] shadow-2xl">
                   <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎟️ Promos Exclusivas</h3>
-                  <p className="text-zinc-400 font-bold mb-6 text-sm">Dicta estos códigos en caja o ingrésalos en el Kiosco.</p>
+                  <p className="text-zinc-400 font-bold mb-6 text-sm">Dicta estos códigos en caja o ingrésalos en el Kiosco al pagar.</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {customer.activeCoupons.map((coupon: any) => (
                           <div key={coupon.id} className="bg-zinc-950 p-6 rounded-2xl border border-purple-500/50 flex flex-col justify-center items-center text-center shadow-lg relative overflow-hidden">
@@ -233,10 +233,10 @@ export default function MiCuenta() {
               </div>
           )}
 
-          {/* 3. LA BÓVEDA DE RECOMPENSAS */}
+          {/* 3. LA BÓVEDA DE RECOMPENSAS (Descuentos en efectivo) */}
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] shadow-2xl">
             <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎁 La Bóveda de Premios</h3>
-            <p className="text-zinc-500 font-bold mb-8 text-sm">Usa tus puntos en el Kiosco. Revisa el consumo mínimo de cada premio.</p>
+            <p className="text-zinc-500 font-bold mb-8 text-sm">Canjea tus puntos por dinero a favor. Revisa el consumo mínimo de cada premio.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {REWARDS.map(reward => {
@@ -317,7 +317,7 @@ export default function MiCuenta() {
              <div className="bg-green-500 text-white p-10 rounded-[3rem] text-center max-w-sm w-full shadow-2xl">
                 <span className="text-8xl mb-6 block drop-shadow-lg">✅</span>
                 <h3 className="text-3xl font-black mb-2">¡Orden Enviada!</h3>
-                <p className="font-bold mb-8 opacity-90">Tu orden ya está sonando en la cocina de Maiztros.</p>
+                <p className="font-bold mb-8 opacity-90">Tu orden ya está sonando en la caja y cocina de Maiztros.</p>
                 <div className="bg-black/20 p-6 rounded-3xl mb-8">
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Tu Número de Turno</p>
                     <p className="text-5xl font-black italic">#{orderSuccess}</p>
@@ -334,8 +334,8 @@ export default function MiCuenta() {
             <div className="bg-zinc-900 border-2 border-green-500/50 p-10 rounded-[3rem] text-center max-w-md w-full relative">
                 <button onClick={() => setSelectedOrder(null)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
                 <span className="text-6xl mb-4 block">👨‍🍳</span>
-                <h3 className="text-3xl font-black text-green-400 mb-4">¿Enviar a Cocina?</h3>
-                <p className="text-zinc-300 text-sm font-bold mb-8">Si confirmas, esta orden aparecerá en la pantalla del mostrador para que la preparen inmediatamente.</p>
+                <h3 className="text-3xl font-black text-green-400 mb-4">¿Enviar a Caja?</h3>
+                <p className="text-zinc-300 text-sm font-bold mb-8">Si confirmas, esta orden sonará en el KDS y en el Mostrador para que te la preparen inmediatamente.</p>
                 
                 <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 text-left mb-8 shadow-inner">
                     <div className="space-y-4">
@@ -365,7 +365,7 @@ export default function MiCuenta() {
             <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] text-center max-w-sm w-full relative">
                 <button onClick={() => setShowQR(false)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
                 <h3 className="text-2xl font-black text-yellow-400 mb-2">Tu Pasaporte VIP</h3>
-                <p className="text-zinc-400 text-sm font-bold mb-8">Muestra este código al Maiztro en caja para sumar tus puntos rápidamente.</p>
+                <p className="text-zinc-400 text-sm font-bold mb-8">Si conectamos un escáner en caja, el cajero puede leer este código para sumar tus puntos rápidamente.</p>
                 <div className="bg-white p-4 rounded-3xl inline-block mb-6 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
                     <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${phone}&color=18181b`} alt="Código QR" className="w-56 h-56 rounded-xl" />
                 </div>
@@ -406,7 +406,7 @@ export default function MiCuenta() {
                 <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
                 <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
                     <p>Conforme a lo establecido en la <strong>Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP)</strong> de México, "Maiztros" (ubicado en Zibatá, Querétaro) informa:</p>
-                    <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroPuntos". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas vía WhatsApp o correo (si el usuario no opta por darse de baja).</p>
+                    <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroVIP". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas vía WhatsApp o correo (si el usuario no opta por darse de baja).</p>
                     <p><strong>2. Protección:</strong> Sus datos se almacenan en servidores cifrados y NO serán vendidos, alquilados ni compartidos con terceros ajenos a la operación del sistema de punto de venta.</p>
                     <p><strong>3. Derechos ARCO:</strong> Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y Oposición solicitándolo en el mostrador físico de la sucursal.</p>
                 </div>
@@ -421,13 +421,13 @@ export default function MiCuenta() {
             <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                 <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
                 <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                    <p>Este sitio web / aplicación de Kiosco utiliza "Cookies" y tecnologías de almacenamiento local (Local Storage / Session Storage) estrictamente necesarias para el funcionamiento del sistema.</p>
+                    <p>Este sitio web y aplicación utiliza "Cookies" y tecnologías de almacenamiento local (Local Storage / Session Storage) estrictamente necesarias para el funcionamiento del sistema.</p>
                     <p><strong>¿Para qué las usamos?</strong></p>
                     <ul className="list-disc pl-5 space-y-2">
-                        <li>Mantener su sesión activa de "MaiztroPuntos" para que no tenga que ingresar su número constantemente durante su visita.</li>
-                        <li>Almacenar temporalmente los productos en el "Carrito de Compras" antes de finalizar su pedido.</li>
+                        <li>Mantener su sesión activa de "MaiztroVIP" para que no tenga que ingresar su número constantemente durante su visita.</li>
+                        <li>Almacenar temporalmente los productos de sus re-órdenes para enviarlas correctamente a mostrador.</li>
                     </ul>
-                    <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario de terceros (como Facebook Pixel o Google Analytics) para seguir su navegación fuera de esta aplicación.</p>
+                    <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario de terceros (como Facebook Pixel o Analytics) para seguir su navegación fuera de esta aplicación.</p>
                     <p>Al utilizar este portal, usted acepta el almacenamiento de estas tecnologías esenciales en su dispositivo.</p>
                 </div>
                 <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-4 rounded-xl">Cerrar</button>
