@@ -138,8 +138,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const validOrders = data.orders ? data.orders.filter((o:any) => o.status === 'PAID') : []; 
+  // ==========================================
+  // CÁLCULOS FINANCIEROS Y DE BI (RESTAURADOS)
+  // ==========================================
+  
+  // SOLUCIÓN: Volvemos a contar todas las órdenes que no estén canceladas (REFUNDED)
+  const validOrders = data.orders ? data.orders.filter((o:any) => o.status !== 'REFUNDED') : []; 
   const totalOrders = validOrders.length;
+  
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
   const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
   const gastosTotales = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
@@ -148,6 +154,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
+  // Restaurados cálculos de Efectivo y Tarjeta
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
@@ -160,18 +167,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
-
-  const salesByDateMap = validOrders.reduce((acc: any, order: any) => {
-    const dateStr = new Date(order.createdAt).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' });
-    if (!acc[dateStr]) acc[dateStr] = 0;
-    acc[dateStr] += order.totalAmount;
-    return acc;
-  }, {});
-
-  const salesTrendData = Object.keys(salesByDateMap).map(date => ({
-    Fecha: date,
-    Ventas: salesByDateMap[date]
-  }));
 
   const hourMap = validOrders.reduce((acc: any, order: any) => {
     const hour = new Date(order.createdAt).getHours();
@@ -304,19 +299,23 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2">Ingresos Brutos</p>
-                    <p className="text-5xl font-black text-white">${ventasNetas.toFixed(2)}</p>
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">📈</div>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Ingresos Brutos</p>
+                    <p className="text-5xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
                   </div>
                   <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2">Gastos Operativos</p>
-                    <p className="text-5xl font-black text-red-400">-${gastosTotales.toFixed(2)}</p>
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Operativos</p>
+                    <p className="text-5xl font-black text-red-400 relative z-10">-${gastosTotales.toFixed(2)}</p>
                   </div>
                   <div className={`p-8 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                    <p className={`font-bold uppercase tracking-widest mb-2 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
-                    <p className={`text-5xl font-black ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                    <p className="text-sm font-bold mt-3 opacity-90">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
+                    <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
+                    <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
+                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
                   </div>
                 </div>
 
@@ -347,6 +346,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
 
                     <div className="flex flex-col gap-8">
+                        {/* ADOPCIÓN DE CANALES */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                           <h3 className="text-xl font-black mb-4">📱 Adopción de Canales</h3>
                           <div className="flex items-center gap-4">
@@ -372,84 +372,104 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                           </div>
                         </div>
 
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex-1">
-                            <h3 className="text-xl font-black mb-6">🏆 Los + Vendidos</h3>
-                            <div className="space-y-4">
-                                {topProductsData.length > 0 ? topProductsData.map((p, i) => (
-                                    <div key={p.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[120px]">{p.name}</p>
-                                                <p className="text-xs font-black text-yellow-400">{p.qty} pz</p>
-                                            </div>
-                                            <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                                                <div className="bg-yellow-400 h-full" style={{width: `${(p.qty / topProductsData[0].qty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos.</p>}
+                        {/* MÉTODOS DE PAGO (RESTAURADO) */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
+                          <h3 className="text-xl font-black mb-4">💳 Métodos de Pago</h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                              <span className="text-xs font-bold text-zinc-300 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Tarjeta</span>
+                              <span className="font-black text-blue-400">${ventasTarjeta.toFixed(2)}</span>
                             </div>
+                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                              <span className="text-xs font-bold text-zinc-300 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div> Efectivo</span>
+                              <span className="font-black text-green-400">${ventasEfectivo.toFixed(2)}</span>
+                            </div>
+                          </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-left">
-                          <thead>
-                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
-                                  <th className="pb-4 pl-4">Turno</th>
-                                  <th className="pb-4">Responsable</th>
-                                  <th className="pb-4">Fondo Inicial</th>
-                                  <th className="pb-4">Ventas Efectivo</th>
-                                  <th className="pb-4 text-red-400">Retiros</th>
-                                  <th className="pb-4 text-yellow-400 font-black">Esperado</th>
-                                  <th className="pb-4 text-white font-black">Reportado</th>
-                                  <th className="pb-4 text-right pr-4">Diferencia</th>
-                              </tr>
-                          </thead>
-                          <tbody className="text-sm font-bold">
-                              {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
-                                  const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
-                                  const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
-                                  const expectedCash = shift.startingCash + cashSales - withdrawals;
-                                  const reportedCash = shift.reportedCash || 0;
-                                  const difference = reportedCash - expectedCash;
-                                  const isShortage = difference < 0;
-                                  const isExact = difference === 0;
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* LOS + VENDIDOS (RESTAURADO) */}
+                    <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex-1">
+                        <h3 className="text-xl font-black mb-6">🏆 Los + Vendidos</h3>
+                        <div className="space-y-4">
+                            {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                                <div key={p.name} className="flex items-center gap-4">
+                                    <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                    <div className="flex-1">
+                                        <div className="flex justify-between mb-1">
+                                            <p className="text-sm font-bold truncate max-w-[150px]">{p.name}</p>
+                                            <p className="text-xs font-black text-yellow-400">{p.qty} pz</p>
+                                        </div>
+                                        <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                            <div className="bg-yellow-400 h-full" style={{width: `${(p.qty / topProductsData[0].qty) * 100}%`}}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )) : <p className="text-zinc-600 text-sm">Sin datos.</p>}
+                        </div>
+                    </div>
 
-                                  return (
-                                      <tr key={shift.id} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
-                                          <td className="py-4 pl-4 text-zinc-400">{new Date(shift.openedAt).toLocaleDateString()}</td>
-                                          <td className="py-4 text-white">{shift.openedBy}</td>
-                                          <td className="py-4">${shift.startingCash.toFixed(2)}</td>
-                                          <td className="py-4">${cashSales.toFixed(2)}</td>
-                                          <td className="py-4 text-red-400">-${withdrawals.toFixed(2)}</td>
-                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
-                                          <td className="py-4 text-white font-black">${reportedCash.toFixed(2)}</td>
-                                          <td className="py-4 pr-4 text-right">
-                                              {isExact ? (
-                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
-                                              ) : isShortage ? (
-                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black">Falta ${Math.abs(difference).toFixed(2)}</span>
-                                              ) : (
-                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black">Sobra ${difference.toFixed(2)}</span>
-                                              )}
-                                          </td>
-                                      </tr>
-                                  );
-                              })}
-                          </tbody>
-                      </table>
-                      {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
-                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
-                      )}
-                  </div>
+                    {/* AUDITORÍA DE CORTES DE CAJA */}
+                    <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col">
+                      <div className="flex justify-between items-center mb-6">
+                          <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
+                          <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                          <table className="w-full text-left min-w-[600px]">
+                              <thead>
+                                  <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
+                                      <th className="pb-4 pl-4">Turno</th>
+                                      <th className="pb-4">Responsable</th>
+                                      <th className="pb-4 text-green-400">Total Entradas</th>
+                                      <th className="pb-4 text-red-400">Total Retiros</th>
+                                      <th className="pb-4 text-yellow-400 font-black">Esperado</th>
+                                      <th className="pb-4 text-white font-black">Reportado</th>
+                                      <th className="pb-4 text-right pr-4">Diferencia</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="text-sm font-bold">
+                                  {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
+                                      const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
+                                      const totalEntradas = shift.startingCash + cashSales;
+                                      const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
+                                      
+                                      const expectedCash = totalEntradas - withdrawals;
+                                      const reportedCash = shift.reportedCash || 0;
+                                      const difference = reportedCash - expectedCash;
+                                      
+                                      const isShortage = difference < 0;
+                                      const isExact = difference === 0;
+
+                                      return (
+                                          <tr key={shift.id} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
+                                              <td className="py-4 pl-4 text-zinc-400">{new Date(shift.openedAt).toLocaleDateString()}</td>
+                                              <td className="py-4 text-white truncate max-w-[100px]">{shift.openedBy}</td>
+                                              <td className="py-4 text-green-400">${totalEntradas.toFixed(2)}</td>
+                                              <td className="py-4 text-red-400">-${withdrawals.toFixed(2)}</td>
+                                              <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
+                                              <td className="py-4 text-white font-black">${reportedCash.toFixed(2)}</td>
+                                              <td className="py-4 pr-4 text-right">
+                                                  {isExact ? (
+                                                      <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
+                                                  ) : isShortage ? (
+                                                      <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black">Falta ${Math.abs(difference).toFixed(2)}</span>
+                                                  ) : (
+                                                      <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black">Sobra ${difference.toFixed(2)}</span>
+                                                  )}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                          {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
+                              <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
+                          )}
+                      </div>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
@@ -571,7 +591,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Código</label><input type="text" value={newCouponCode} onChange={e => setNewCouponCode(e.target.value.toUpperCase())} placeholder="MAIZTROS10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black uppercase outline-none focus:border-yellow-400" /></div>
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Descuento</label><input type="number" value={newCouponDiscount} onChange={e => setNewCouponDiscount(e.target.value)} placeholder="Ej. 10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" /></div>
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Tipo</label><select value={newCouponType} onChange={e => setNewCouponType(e.target.value as 'FIXED'|'PERCENTAGE')} className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400"><option value="FIXED">Pesos MXN ($)</option><option value="PERCENTAGE">Porcentaje (%)</option></select></div>
-                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Mínimo Compra</label><input type="number" value={newCouponMinAmount} onChange={e => setNewCouponMinAmount(e.target.value)} placeholder="Ej. 250" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" /></div>
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Mínimo Compra</label><input type="number" value={newCouponMinAmount} onChange={e => setNewCouponMinAmount(e.target.value)} placeholder="Ej. 250" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" title="¿Cuánto deben gastar para usarlo?" /></div>
                     </div>
                     <button onClick={handleCreateCoupon} className="mt-6 w-full md:w-auto bg-purple-500 hover:bg-purple-400 text-white font-black px-8 py-4 rounded-xl shadow-lg transition-all active:scale-95">Crear Cupón</button>
                   </div>
@@ -608,7 +628,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
                                 <div className="flex gap-2 w-full lg:w-auto border-t lg:border-t-0 border-zinc-800 pt-4 lg:pt-0">
                                     <button onClick={() => toggleStatus(c.id, 'coupon', c.isActive)} className={`flex-1 lg:flex-none px-6 py-3 rounded-xl font-black text-sm uppercase ${c.isActive ? 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500 hover:text-zinc-900' : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'}`}>{c.isActive ? 'Apagar' : 'Prender'}</button>
-                                    <button onClick={() => deleteCoupon(c.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-black transition-colors">🗑️</button>
+                                    <button onClick={() => deleteCoupon(c.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-black transition-colors" title="Eliminar Cupón">🗑️</button>
                                 </div>
                             </div>
                         );
