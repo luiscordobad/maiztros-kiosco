@@ -39,10 +39,22 @@ model Customer {
 model Coupon {
   id            String   @id @default(uuid())
   code          String   @unique
-  discount      Float    // Cantidad o porcentaje
-  discountType  String   // 'FIXED' (Pesos) o 'PERCENTAGE' (Porcentaje)
+  discount      Float    
+  discountType  String   
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
+}
+
+// NUEVO: CONTROL DE TURNOS
+model Shift {
+  id           String   @id @default(uuid())
+  openedAt     DateTime @default(now())
+  closedAt     DateTime?
+  openedBy     String
+  startingCash Float
+  reportedCash Float?
+  status       String   @default("OPEN") // OPEN o CLOSED
+  orders       Order[]
 }
 
 model Order {
@@ -57,9 +69,13 @@ model Order {
   orderNotes     String?  
   totalAmount    Float    
   pointsDiscount Float    @default(0) 
-  couponCode     String?  // <-- NUEVO: Para saber si usó cupón
+  couponCode     String?  
   tipAmount      Float    @default(0) 
   status         String   @default("PENDING") 
+  
+  shiftId        String?  // <-- CONEXIÓN AL TURNO
+  shift          Shift?   @relation(fields: [shiftId], references: [id])
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
