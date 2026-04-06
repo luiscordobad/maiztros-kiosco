@@ -74,7 +74,7 @@ model InventoryItem {
   category    String
   stock       Float    @default(0)
   unit        String   @default("pz")
-  isAvailable Boolean  @default(true) // <-- NUEVO: Para el panel de pánico específico
+  isAvailable Boolean  @default(true)
   updatedAt   DateTime @updatedAt
 }
 
