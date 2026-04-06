@@ -61,20 +61,16 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { id, type, isAvailable, isActive, newStock, addAmount } = await request.json();
+    const { id, type, isAvailable, isActive, newStock, addAmount, category, targetState, isModifier } = await request.json();
     
-    if (type === 'init_inventory') {
-      await prisma.inventoryItem.createMany({ data: initialInventory, skipDuplicates: true });
-      return NextResponse.json({ success: true });
-    }
-    
-    if (type === 'update_stock') {
-      await prisma.inventoryItem.update({ where: { id }, data: { stock: parseFloat(newStock) } });
-      return NextResponse.json({ success: true });
-    }
+    if (type === 'init_inventory') { await prisma.inventoryItem.createMany({ data: initialInventory, skipDuplicates: true }); return NextResponse.json({ success: true }); }
+    if (type === 'update_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: parseFloat(newStock) } }); return NextResponse.json({ success: true }); }
+    if (type === 'add_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: { increment: parseFloat(addAmount) } } }); return NextResponse.json({ success: true }); }
 
-    if (type === 'add_stock') {
-      await prisma.inventoryItem.update({ where: { id }, data: { stock: { increment: parseFloat(addAmount) } } });
+    // NUEVO: APAGAR/PRENDER CATEGORÍAS COMPLETAS
+    if (type === 'toggle_category') {
+      if (isModifier) await prisma.modifier.updateMany({ where: { type: category }, data: { isAvailable: targetState } });
+      else await prisma.product.updateMany({ where: { category: category }, data: { isAvailable: targetState } });
       return NextResponse.json({ success: true });
     }
 
@@ -88,8 +84,20 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { code, discount, discountType } = await request.json();
-    await prisma.coupon.create({ data: { code: code.toUpperCase().trim(), discount: parseFloat(discount), discountType } });
+    const { code, discount, discountType, minAmount } = await request.json();
+    await prisma.coupon.create({ data: { code: code.toUpperCase().trim(), discount: parseFloat(discount), discountType, minAmount: parseFloat(minAmount) || 0 } });
     return NextResponse.json({ success: true });
-  } catch (error) { return NextResponse.json({ success: false, error: 'Cupón inválido' }, { status: 500 }); }
+  } catch (error) { return NextResponse.json({ success: false, error: 'El cupón ya existe o es inválido' }, { status: 500 }); }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (id) {
+      await prisma.coupon.delete({ where: { id } });
+      return NextResponse.json({ success: true });
+    }
+    return NextResponse.json({ success: false });
+  } catch(e) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
