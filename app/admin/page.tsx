@@ -13,7 +13,7 @@ export default function AdminDashboard() {
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponDiscount, setNewCouponDiscount] = useState('');
   const [newCouponType, setNewCouponType] = useState<'FIXED' | 'PERCENTAGE'>('FIXED');
-  const [newCouponMinAmount, setNewCouponMinAmount] = useState(''); // <-- NUEVO MIN AMOUNT
+  const [newCouponMinAmount, setNewCouponMinAmount] = useState(''); 
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
 
@@ -47,18 +47,19 @@ export default function AdminDashboard() {
     await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'add_stock', addAmount: amount }) });
   };
 
-  const toggleStatus = async (id: string, type: 'product' | 'modifier' | 'coupon', currentStatus: boolean) => {
+  const toggleStatus = async (id: string, type: 'product' | 'modifier' | 'coupon' | 'inventory_toggle', currentStatus: boolean) => {
     if (type === 'product') setData({ ...data, products: data.products.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
+    else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map(i => i.id === id ? { ...i, isActive: !currentStatus } : i) });
+    
     await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus }) });
   };
 
   const toggleCategory = async (category: string, isModifier: boolean, currentItems: any[]) => {
-    const targetState = !currentItems.every(i => i.isAvailable); // Si todos están ON, apaga. Si hay uno apagado, prende todos.
+    const targetState = !currentItems.every(i => i.isAvailable); 
     if (isModifier) setData({ ...data, modifiers: data.modifiers.map(m => m.type === category ? { ...m, isAvailable: targetState } : m) });
     else setData({ ...data, products: data.products.map(p => p.category === category ? { ...p, isAvailable: targetState } : p) });
-    
     await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'toggle_category', category, targetState, isModifier }) });
   };
 
@@ -118,30 +119,48 @@ export default function AdminDashboard() {
     );
   }
 
-  const renderMenuCategory = (categoryFilter: string, title: string, isModifier: boolean) => {
+  const renderPanicCategory = (categoryFilter: string, title: string, isModifier: boolean) => {
     const items = isModifier ? data.modifiers.filter(m => m.type === categoryFilter) : data.products.filter(p => p.category === categoryFilter);
     if (items.length === 0) return null;
     const allAvailable = items.every(i => i.isAvailable);
 
     return (
-      <div className="mb-8 bg-zinc-900 p-6 rounded-3xl border border-zinc-800">
-        <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-          <h3 className="text-2xl font-black text-white">{title}</h3>
-          <button onClick={() => toggleCategory(categoryFilter, isModifier, items)} className={`px-6 py-2 rounded-xl font-black text-xs uppercase shadow-lg transition-transform active:scale-95 ${allAvailable ? 'bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500 hover:text-white' : 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500 hover:text-zinc-900'}`}>
-            {allAvailable ? '🛑 Apagar Toda la Categoría' : '✅ Prender Toda la Categoría'}
+      <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
+        <div className="flex justify-between items-center mb-4 border-b border-zinc-800 pb-3">
+          <h3 className="text-lg font-black text-zinc-300">{title}</h3>
+          <button onClick={() => toggleCategory(categoryFilter, isModifier, items)} className={`px-4 py-1.5 rounded-lg font-black text-xs uppercase transition-transform active:scale-95 ${allAvailable ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white' : 'bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500 hover:text-zinc-900'}`}>
+            {allAvailable ? 'Apagar Todos' : 'Prender Todos'}
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {items.map((item: any) => (
-            <div key={item.id} className="bg-zinc-950 p-4 rounded-xl flex justify-between items-center border border-zinc-800">
-              <p className="font-bold text-sm text-zinc-300">{item.name}</p>
-              <button onClick={() => toggleStatus(item.id, isModifier ? 'modifier' : 'product', item.isAvailable)} className={`px-4 py-2 rounded-lg font-black text-xs uppercase w-24 ${item.isAvailable ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-red-500 text-white'}`}>{item.isAvailable ? 'En Menú' : 'Apagado'}</button>
-            </div>
+            <button key={item.id} onClick={() => toggleStatus(item.id, isModifier ? 'modifier' : 'product', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700 hover:border-red-400' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
+              <span className="font-bold text-sm truncate">{item.name}</span>
+              <span className="text-lg">{item.isAvailable ? '✅' : '❌'}</span>
+            </button>
           ))}
         </div>
       </div>
     );
   };
+
+  const renderPanicSubOptions = (category: string, title: string) => {
+    const items = data.inventoryItems.filter(i => i.category === category);
+    if (items.length === 0) return null;
+    return (
+      <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
+        <h3 className="text-lg font-black text-zinc-300 mb-4 border-b border-zinc-800 pb-3">{title} <span className="text-xs text-zinc-500 ml-2 font-normal">(Ocultar de las opciones del combo)</span></h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {items.map((item: any) => (
+            <button key={item.id} onClick={() => toggleStatus(item.id, 'inventory_toggle', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700 hover:border-red-400' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
+              <span className="font-bold text-sm truncate">{item.name}</span>
+              <span className="text-lg">{item.isAvailable ? '✅' : '❌'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const validOrders = data.orders.filter(o => o.status !== 'REFUNDED');
   const totalOrders = validOrders.length;
@@ -171,7 +190,9 @@ export default function AdminDashboard() {
                       <p className="text-zinc-500 font-bold text-sm">Gestiona tus entradas y salidas de producto.</p>
                     </div>
                     {data.inventoryItems?.length === 0 && (
-                      <button onClick={initInventory} className="bg-red-600 hover:bg-red-500 text-white font-black px-4 py-2 rounded-xl text-sm animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.5)]">⚠️ Cargar Datos Iniciales</button>
+                      <button onClick={initInventory} className="bg-red-600 hover:bg-red-500 text-white font-black px-4 py-2 rounded-xl text-sm animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.5)]">
+                        ⚠️ Cargar Datos Iniciales
+                      </button>
                     )}
                   </div>
                   {data.inventoryItems?.length > 0 && (
@@ -190,28 +211,32 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* LA NUEVA PESTAÑA: BOTÓN DE PÁNICO SECCIONADO */}
+            {/* PESTAÑA DE PÁNICO OPTIMIZADA */}
             {activeTab === 'PANICO' && (
               <div className="space-y-8 animate-in fade-in duration-300">
-                <div className="bg-red-950/20 border border-red-900/50 p-8 rounded-[2rem]">
-                  <h2 className="text-3xl font-black text-white mb-2 flex items-center gap-3">🚨 Panel de Pánico (Menú Digital)</h2>
-                  <p className="text-zinc-400 font-bold mb-8">Apaga productos y modificadores. Lo que apagues aquí desaparecerá instantáneamente del Kiosco de los clientes.</p>
+                <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
+                  <h2 className="text-3xl font-black text-white mb-2 flex items-center gap-3">🚨 Panel de Pánico</h2>
+                  <p className="text-zinc-400 font-bold mb-8">Apaga productos o sabores específicos. Lo que desactives desaparecerá instantáneamente del Kiosco.</p>
                   
-                  <div className="space-y-4">
-                    <h2 className="text-2xl font-black text-yellow-400 mt-8 mb-4 border-b border-zinc-800 pb-2">🌽 Antojos Principales</h2>
-                    {renderMenuCategory('COMBO', 'Combos', false)}
-                    {renderMenuCategory('ESQUITE', 'Esquites', false)}
-                    {renderMenuCategory('ESPECIALIDAD', 'Especialidades', false)}
-                    {renderMenuCategory('BEBIDA', 'Bebidas', false)}
-                    {renderMenuCategory('ANTOJO', 'Dulces y Gomitas', false)}
-                    
-                    <h2 className="text-2xl font-black text-orange-400 mt-12 mb-4 border-b border-zinc-800 pb-2">🧂 Modificadores (Toppings)</h2>
-                    {renderMenuCategory('ADEREZO', 'Aderezos', true)}
-                    {renderMenuCategory('QUESO', 'Quesos', true)}
-                    {renderMenuCategory('POLVO', 'Polvos', true)}
-                    {renderMenuCategory('CHILE', 'Chiles', true)}
-                    {renderMenuCategory('RESTRICCION', 'Restricciones (Sin...)', true)}
-                  </div>
+                  {/* SECCIÓN 1: PRODUCTOS PRINCIPALES */}
+                  <h2 className="text-2xl font-black text-yellow-400 mt-8 mb-4 border-l-4 border-yellow-400 pl-4">🍔 Menú Principal</h2>
+                  {renderMenuCategory('COMBO', 'Cajas de Combos', false)}
+                  {renderMenuCategory('ESQUITE', 'Esquites Sueltos', false)}
+                  {renderMenuCategory('ESPECIALIDAD', 'Especialidades', false)}
+                  {renderMenuCategory('BEBIDA', 'Bebidas Directas', false)}
+                  
+                  {/* SECCIÓN 2: OPCIONES INTERNAS (SABORES ESPECÍFICOS) */}
+                  <h2 className="text-2xl font-black text-orange-400 mt-12 mb-4 border-l-4 border-orange-400 pl-4">🎯 Opciones y Sabores (Dentro de los Combos)</h2>
+                  {renderPanicSubOptions('PAPAS', 'Tipos de Papas')}
+                  {renderPanicSubOptions('MARUCHAN', 'Sabores de Maruchan')}
+                  {renderPanicSubOptions('BEBIDA', 'Sabores de Boing / Refresco')}
+
+                  {/* SECCIÓN 3: TOPPINGS Y MODIFICADORES */}
+                  <h2 className="text-2xl font-black text-purple-400 mt-12 mb-4 border-l-4 border-purple-400 pl-4">🧂 Barra de Toppings</h2>
+                  {renderMenuCategory('ADEREZO', 'Aderezos', true)}
+                  {renderMenuCategory('QUESO', 'Quesos', true)}
+                  {renderMenuCategory('POLVO', 'Polvos Extras', true)}
+                  {renderMenuCategory('CHILE', 'Chiles', true)}
                 </div>
               </div>
             )}
@@ -251,6 +276,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* VENTAS / TESORERÍA */}
             {activeTab === 'VENTAS' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
@@ -262,7 +288,6 @@ export default function AdminDashboard() {
                   <button onClick={exportToCSV} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black">⬇️ Exportar CSV</button>
                 </div>
                 
-                {/* ... (Toda la sección de ventas / Tesorería queda igual que antes) */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ingresos Netos</p><p className="text-4xl font-black text-green-400">${ventasNetas.toFixed(2)}</p></div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${totalOrders > 0 ? (ventasNetas/totalOrders).toFixed(2) : '0.00'}</p></div>
