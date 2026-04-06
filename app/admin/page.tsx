@@ -83,7 +83,6 @@ export default function AdminDashboard() {
     await fetch(`/api/admin?id=${id}&type=coupon`, { method: 'DELETE' });
   };
 
-  // FINANZAS: Crear y Borrar Gastos
   const handleAddExpense = async () => {
     if (!newExpenseAmount || !newExpenseDesc) return alert('Llena todos los campos del gasto');
     const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'expense', amount: newExpenseAmount, category: newExpenseCategory, description: newExpenseDesc }) });
@@ -170,7 +169,7 @@ export default function AdminDashboard() {
     if (items.length === 0) return null;
     return (
       <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
-        <h3 className="text-lg font-black text-zinc-300 mb-4 border-b border-zinc-800 pb-3">{title} <span className="text-xs text-zinc-500 ml-2 font-normal">(Ocultar opciones)</span></h3>
+        <h3 className="text-lg font-black text-zinc-300 mb-4 border-b border-zinc-800 pb-3">{title} <span className="text-xs text-zinc-500 ml-2 font-normal">(Ocultar de las opciones del combo)</span></h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {items.map((item: any) => (
             <button key={item.id} onClick={() => toggleStatus(item.id, 'inventory_toggle', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700 hover:border-red-400' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
@@ -183,13 +182,15 @@ export default function AdminDashboard() {
     );
   }
 
-  // CÁLCULOS FINANCIEROS (P&L)
+  // CÁLCULOS FINANCIEROS (P&L) y MÉTRICAS
   const validOrders = data.orders.filter(o => o.status !== 'REFUNDED');
   const totalOrders = validOrders.length;
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
+  const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
   const gastosTotales = data.expenses?.reduce((acc: number, e: any) => acc + e.amount, 0) || 0;
   const utilidadNeta = ventasNetas - gastosTotales;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
+  const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
   return (
     <ProtectedRoute title="Dashboard Directivo">
@@ -387,8 +388,9 @@ export default function AdminDashboard() {
             {/* PESTAÑA: VENTAS Y TESORERÍA */}
             {activeTab === 'VENTAS' && (
               <div className="space-y-8 animate-in fade-in duration-300">
+                
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${totalOrders > 0 ? (ventasNetas/totalOrders).toFixed(2) : '0.00'}</p></div>
+                  <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Pts Canjeados</p><p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p></div>
                   <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Exitosas</p><p className="text-4xl font-black text-white">{totalOrders}</p></div>
                 </div>
