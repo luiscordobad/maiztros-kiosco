@@ -8,12 +8,10 @@ const OPCIONES = {
   BOING: ['Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa'],
   REFRESCO: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral'],
   BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
-  // NUEVAS OPCIONES PARA EL COMBO ESPECIALISTA
   ESPECIALIDAD_CHOICE: ['Construpapas', 'Obra Maestra'],
   PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
 };
 
-// NUEVA BÓVEDA SINCRONIZADA CON LA APP VIP (Bonos de Efectivo condicionados)
 const REWARDS = [
   { id: 'tier1', pts: 250, minSpend: 150, discount: 15, label: 'Bono de $15 MXN' },
   { id: 'tier2', pts: 500, minSpend: 250, discount: 35, label: 'Bono de $35 MXN' },
@@ -47,7 +45,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [orderNotes, setOrderNotes] = useState('');
 
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
-  // Reflejamos la estructura exacta de la bóveda
   const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, minSpend: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
@@ -84,7 +81,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           setIsCheckingPoints(false);
         });
     } else {
-      setLoyaltyPoints(0); setSelectedReward(null);
+      setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null);
     }
   }, [customerPhone]);
 
@@ -108,33 +105,53 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const subtotal = getTotal();
 
-  // Validación de Reglas Dinámicas (Cupones y Bóveda)
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null);
       setCouponError(`El cupón requiere mínimo de compra de $${activeCoupon.minAmount}`);
     }
-    // Si tenían un premio seleccionado pero quitaron algo del carrito y ya no llegan al gasto mínimo
     if (selectedReward && subtotal < selectedReward.minSpend) {
         setSelectedReward(null);
     }
   }, [subtotal, activeCoupon, selectedReward]);
 
+  // LÓGICA DE CUPONES ACTUALIZADA (LIMITADA Y CON CELULAR OBLIGATORIO)
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
-    const res = await fetch(`/api/customer?code=${couponCode.toUpperCase()}`);
+
+    if (customerPhone.length !== 10) {
+      setCouponError('⚠️ Ingresa tu celular en la sección de MaiztroPuntos para poder usar cupones.');
+      return;
+    }
+
+    const res = await fetch(`/api/customer?phone=${customerPhone}`);
     const data = await res.json();
-    if (data.success) { 
-      if (data.coupon.minAmount > 0 && subtotal < data.coupon.minAmount) {
-        setCouponError(`Compra mínima de $${data.coupon.minAmount} requerida.`);
+    
+    if (data.success && data.activeCoupons) { 
+      const coupon = data.activeCoupons.find((c:any) => c.code === couponCode.toUpperCase());
+      if (!coupon) {
+        setCouponError('❌ Cupón inválido o expirado.');
+        return;
+      }
+
+      // Verificación de uso único
+      const alreadyUsed = data.history.some((o:any) => o.couponCode === coupon.code);
+      if (alreadyUsed) {
+        setCouponError('⚠️ Ya utilizaste este cupón en una orden pasada. Son de un solo uso por cliente.');
+        return;
+      }
+
+      if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
+        setCouponError(`⚠️ Compra mínima de $${coupon.minAmount} requerida.`);
         setActiveCoupon(null);
       } else {
-        setActiveCoupon(data.coupon); 
-        setSelectedReward(null); // No se pueden juntar cupones con puntos
+        setActiveCoupon(coupon); 
+        setSelectedReward(null); // No se pueden juntar cupones y bóveda
       }
-    } 
-    else { setActiveCoupon(null); setCouponError(data.error); }
+    } else {
+      setCouponError('❌ Debes estar registrado para usar cupones. Regístrate en MaiztroVIP.');
+    }
   };
 
   let totalAfterCoupon = subtotal;
@@ -147,7 +164,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const totalNeto = totalAfterCoupon - actualDiscount;
   const pointsToEarn = Math.floor(totalNeto);
 
-  // DESCRIPCIONES COOL (MAIZTROS STYLE)
   const getProductDesc = (name: string) => {
     const n = name.toLowerCase();
     if(n.includes('solitario') || n.includes('individual')) return "1 Esq. Mediano + 1 Bebida Fría";
@@ -161,21 +177,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return "";
   };
 
-  // FLUJO DE PREGUNTAS DINÁMICO
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
     
-    // COMBOS NUEVOS
     if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite Mediano 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite Mediano 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
     if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
     if(n.includes('especialista') || n.includes('especialidad')) return [{t: 'Elige tu Especialidad', type: 'ESPECIALIDAD_CHOICE'}, {t: 'Tu Sabor', type: 'PAPAS_MARUCHAN'}, {t: 'Toppings', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
     
-    // PRODUCTOS SOLOS
     if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
     if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; // Don maiztro tb tiene 1ro gratis
+    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; 
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
     if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
@@ -218,15 +231,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
         let baseCount = paidCount;
         
-        // LÓGICA: PRIMER TOPPING GRATIS
         if (step.firstToppingFree && baseCount > 0) {
-          baseCount -= 1; // Le perdonamos 1 topping de los que cuestan
+          baseCount -= 1; 
         }
         
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
           if (baseCount === 2) totalExtra += 25;
-          if (baseCount >= 3) totalExtra += 35; // Escala 10 pesos más
+          if (baseCount >= 3) totalExtra += 35;
         }
         notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
       } else { 
@@ -317,7 +329,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     </div>
   );
 
-  // FILTRO DINÁMICO DE PÁNICO Y STOCK
   const isOptionAvailable = (optName: string) => {
     const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
     if (invItem) return invItem.isAvailable && invItem.stock > 0;
@@ -430,7 +441,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   {REWARDS.map(reward => {
                     const hasPoints = loyaltyPoints >= reward.pts;
                     const minSpendMet = subtotal >= reward.minSpend;
-                    const isAffordable = hasPoints && minSpendMet && !activeCoupon; // No se puede combinar con cupones
+                    const isAffordable = hasPoints && minSpendMet && !activeCoupon; 
                     const isSelected = selectedReward?.id === reward.id;
                     
                     return (
@@ -467,9 +478,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <input type="text" placeholder="Cupón o Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
                 <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
               </div>
-              {couponError && <p className="text-red-400 text-xs font-bold text-center">{couponError}</p>}
-              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center">✅ Promo aplicada con éxito</p>}
-              {selectedReward && <p className="text-zinc-500 text-xs font-bold text-center">Desactiva tu bono para usar un cupón.</p>}
+              {couponError && <p className="text-red-400 text-xs font-bold text-center mt-2">{couponError}</p>}
+              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center mt-2">✅ Promo aplicada con éxito</p>}
+              {selectedReward && <p className="text-zinc-500 text-xs font-bold text-center mt-2">Desactiva tu bono para usar un cupón.</p>}
             </div>
 
             <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center">Forma de Pago</h3>
