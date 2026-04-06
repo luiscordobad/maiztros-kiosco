@@ -42,7 +42,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [customerPhone, setCustomerPhone] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  // LEALTAD GAMIFICADA (Corregido el tipado de TypeScript)
+  // LEALTAD GAMIFICADA
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
@@ -104,7 +104,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     else { setActiveCoupon(null); setCouponError(data.error); }
   };
 
-  // MATEMÁTICAS: Subtotal -> Cupón -> Recompensa Puntos = Total Neto
+  // MATEMÁTICAS
   const subtotal = getTotal();
   let totalAfterCoupon = subtotal;
   if (activeCoupon) {
@@ -114,6 +114,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward.discount, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
+  
+  // Puntos que ganaría en esta orden (Monto neto redondeado)
+  const pointsToEarn = Math.floor(totalNeto);
 
   const getProductDesc = (name: string) => {
     if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
@@ -211,8 +214,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         body: JSON.stringify({ 
           cart, 
           totalAmount: totalNeto, 
-          pointsDiscount: actualDiscount, // Lo que se ahorró en dinero
-          pointsDeducted: selectedReward?.pts || 0, // Los puntos exactos a restar
+          pointsDiscount: actualDiscount, 
+          pointsDeducted: selectedReward?.pts || 0, 
           couponCode: activeCoupon?.code || null, 
           tipAmount, 
           customerName, customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
@@ -235,15 +238,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
-    if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
-    
-    // Validación de seguridad para que no quemen sus puntos a lo tonto
+    if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
     if (selectedReward && totalAfterCoupon < selectedReward.discount) {
-      alert(`Tu compra es menor a $${selectedReward.discount}. Te conviene guardar tus puntos para una orden más grande.`);
+      alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
       return;
     }
-    
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS. Pica 'Pagar en Caja' para registrarla."); return; }
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla."); return; }
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -358,63 +358,82 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: LEALTAD Y PAGOS */}
+        {/* COLUMNA DERECHA: LEALTAD SÚPER LLAMATIVA Y PAGOS */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
-          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl relative">
-            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Cuenta / Lealtad</h3>
-            <div className="space-y-4">
-              
-              <div>
-                <label className="text-yellow-500 font-bold text-xs uppercase mb-1 block">⭐ Celular (Acumula o Usa Puntos)</label>
-                <div className="relative">
-                  <input type="tel" placeholder="10 dígitos" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-yellow-500/10 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-black text-yellow-400 placeholder:text-yellow-600/50 tracking-widest"/>
-                  {isCheckingPoints && <span className="absolute right-4 top-5 text-yellow-500 animate-spin">⏳</span>}
-                </div>
+          
+          {/* TARJETA DE LEALTAD "NEÓN" */}
+          <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
+            <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
+            
+            {customerPhone.length < 10 ? (
+              <div className="mb-6 animate-in fade-in zoom-in duration-500">
+                <h3 className="text-2xl font-black text-white mb-1">¡No pierdas tus puntos!</h3>
+                <p className="text-yellow-400 font-bold text-sm mb-4">Ingresa tu celular y gana <span className="bg-yellow-400/20 px-2 py-1 rounded-md text-yellow-300 text-lg border border-yellow-400/50">{pointsToEarn} pts</span> con esta orden.</p>
+              </div>
+            ) : (
+              <div className="mb-6 animate-in fade-in duration-500">
+                <h3 className="text-xl font-black text-white mb-1">Hola, {customerName || 'Maiztro'} 👋</h3>
+                <p className="text-zinc-300 font-medium text-sm mb-4">Tienes <span className="text-yellow-400 font-black text-xl">{Math.floor(loyaltyPoints)} pts</span>. (+{pointsToEarn} en esta orden)</p>
+              </div>
+            )}
+
+            <div className="space-y-4 relative z-10">
+              <div className="relative">
+                <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
+                {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
               </div>
 
-              <input type="text" placeholder="Tu Nombre *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-xl font-bold"/>
-              
-              <div className="flex gap-2">
-                <input type="text" placeholder="Cupón (Opcional)" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-2xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest"/>
-                <button onClick={handleApplyCoupon} className="bg-purple-600 text-white px-4 rounded-2xl font-black">Aplicar</button>
-              </div>
-              {couponError && <p className="text-red-400 text-sm font-bold text-center">{couponError}</p>}
-              {activeCoupon && <p className="text-purple-400 text-sm font-bold text-center">✅ Cupón aplicado</p>}
-
-              {/* NIVELES DE RECOMPENSA (GAMIFICACIÓN) */}
-              {loyaltyPoints >= 250 && !activeCoupon && (
-                <div className="mt-6 border-t border-zinc-800 pt-6">
-                  <p className="text-center text-sm font-bold text-zinc-400 mb-4 uppercase tracking-widest">Tienes {Math.floor(loyaltyPoints)} puntos disponibles</p>
-                  <div className="space-y-3">
-                    {REWARDS.map(reward => {
-                      const isAffordable = loyaltyPoints >= reward.pts;
-                      const isSelected = selectedReward?.id === reward.id;
-                      return (
-                        <button 
-                          key={reward.id}
-                          disabled={!isAffordable}
-                          onClick={() => setSelectedReward(isSelected ? null : reward)}
-                          className={`w-full p-4 rounded-2xl border-2 text-left flex justify-between items-center transition-all ${!isAffordable ? 'opacity-30 cursor-not-allowed border-zinc-800 bg-zinc-950' : isSelected ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-zinc-950 border-zinc-700 hover:border-yellow-400'}`}
-                        >
-                          <div>
-                            <p className="font-black text-lg">{reward.label}</p>
-                            <p className="text-xs font-bold uppercase tracking-widest opacity-70">Cuesta {reward.pts} pts</p>
-                          </div>
-                          {isSelected && <span className="text-2xl">✅</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* LISTA DE PREMIOS SIEMPRE VISIBLE (GAMIFICACIÓN) */}
+              <div className="mt-6 border-t border-yellow-500/30 pt-6">
+                <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Recompensas</p>
+                <div className="space-y-2">
+                  {REWARDS.map(reward => {
+                    const isAffordable = loyaltyPoints >= reward.pts;
+                    const isSelected = selectedReward?.id === reward.id;
+                    // Lógica visual: Si no alcanza, se ve gris/bloqueado.
+                    return (
+                      <button 
+                        key={reward.id}
+                        disabled={!isAffordable || customerPhone.length < 10}
+                        onClick={() => setSelectedReward(isSelected ? null : reward)}
+                        className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all 
+                          ${customerPhone.length < 10 ? 'opacity-40 bg-zinc-950/50 border-zinc-800' : 
+                            !isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : 
+                            isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 
+                            'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
+                      >
+                        <div>
+                          <p className="font-black">{reward.label}</p>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
+                            {isAffordable ? `Cuesta ${reward.pts} pts` : `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts`}
+                          </p>
+                        </div>
+                        <span className="text-xl">
+                          {isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
-            <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-zinc-500">Forma de Pago</h3>
-            <div className="flex-1 flex flex-col gap-4 justify-center">
-              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta (Terminal)</button>
-              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Pagar en Caja</button>
+            <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6">
+              <input type="text" placeholder="Tu Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold"/>
+              <div className="flex gap-2">
+                <input type="text" placeholder="Cupón (Opcional)" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm"/>
+                <button onClick={handleApplyCoupon} className="bg-purple-600 hover:bg-purple-500 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
+              </div>
+              {couponError && <p className="text-red-400 text-xs font-bold text-center">{couponError}</p>}
+              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center">✅ Cupón aplicado</p>}
+            </div>
+
+            <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center">Forma de Pago</h3>
+            <div className="flex-1 flex flex-col gap-3 justify-center">
+              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta</button>
+              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Efectivo / Caja</button>
             </div>
           </div>
         </div>
@@ -457,6 +476,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
+  // ... renderizado de menú principal
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
