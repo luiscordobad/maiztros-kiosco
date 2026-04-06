@@ -67,6 +67,16 @@ model CashMovement {
   createdAt DateTime @default(now())
 }
 
+// INVENTARIO FÍSICO HÍBRIDO (Manual y Automático)
+model InventoryItem {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  category  String
+  stock     Float    @default(0)
+  unit      String   @default("pz")
+  updatedAt DateTime @updatedAt
+}
+
 model Order {
   id             String   @id @default(uuid())
   turnNumber     String   
