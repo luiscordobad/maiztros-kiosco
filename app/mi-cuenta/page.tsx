@@ -1,35 +1,60 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-// LA NUEVA BÓVEDA: PURA LANA (DESCUENTOS EN EFECTIVO CON COMPRA MÍNIMA)
+// ==========================================
+// CONFIGURACIÓN DE NEGOCIO (PREMIOS Y PROMOS)
+// ==========================================
+
+// 1. La Bóveda (Puntos por Dinero)
 const REWARDS = [
   { id: 'tier1', pts: 250, minSpend: 150, discount: 15, label: 'Bono de $15 MXN', icon: '💸', desc: 'Ahorra $15 pesos en tu próxima compra mayor a $150.' },
   { id: 'tier2', pts: 500, minSpend: 250, discount: 35, label: 'Bono de $35 MXN', icon: '💰', desc: 'Ahorra $35 pesos en tu próxima compra mayor a $250.' },
   { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN', icon: '👑', desc: 'Ahorra $80 pesos en tu próxima compra mayor a $400.' }
 ];
 
+// 2. Menú Secreto App-Only (Combos Dinámicos)
+// validDays: 0=Dom, 1=Lun, 2=Mar, 3=Mie, 4=Jue, 5=Vie, 6=Sab
+const APP_PROMOS = [
+  { id: 'p1', title: '2x1 Happy Hour 🌽', desc: 'En la compra de tu Esquite, te regalamos el segundo (igual o menor).', validDays: [1,2,3,4,5], startHour: 12, endHour: 19, timeLabel: 'Lunes a Viernes, 12:00 PM a 7:00 PM' },
+  { id: 'p2', title: 'Combo Pareja Nocturno 🌙', desc: '2 Esquites Medianos + 2 Bebidas con precio especial de locura.', validDays: [0,1,2,3,4,5,6], startHour: 20, endHour: 24, timeLabel: 'Todos los días después de las 8:00 PM' },
+  { id: 'p3', title: 'Godín Hambriento 🍜', desc: 'Maruchan preparada + Bebida con $20 pesos de descuento directo.', validDays: [1,2,3,4,5], startHour: 13, endHour: 17, timeLabel: 'Lunes a Viernes, 1:00 PM a 5:00 PM' },
+  { id: 'p4', title: 'Domingo Familiar 👨‍👩‍👧‍👦', desc: 'Lleva 4 esquites y paga solo 3. ¡Invita a toda la familia!', validDays: [0], startHour: 12, endHour: 23, timeLabel: 'Exclusivo los Domingos' },
+  { id: 'p5', title: 'Antojo Sabatino 🔥', desc: 'Todas las papas preparadas tienen un 20% de descuento.', validDays: [6], startHour: 12, endHour: 23, timeLabel: 'Exclusivo los Sábados' }
+];
+
+// 3. Cupones Dinámicos (Reglas en duro)
+const APP_COUPONS = [
+  { code: 'MAIZTROVIP', discount: '15%', minSpend: 0, desc: '15% OFF en toda tu cuenta. Promoción especial sin vigencia.', checkValid: () => true },
+  { code: 'DESVELADOS', discount: '$30 MXN', minSpend: 200, desc: '$30 OFF en pedidos nocturnos. Min. $200.', checkValid: (h: number) => h >= 21 || h < 2 },
+  { code: 'FINDE10', discount: '10%', minSpend: 0, desc: '10% OFF para disfrutar tu fin de semana.', checkValid: (h: number, d: number) => d === 0 || d === 5 || d === 6 }
+];
+
 export default function MiCuenta() {
-  // Estados de Navegación y Usuario
   const [view, setView] = useState<'LOGIN' | 'REGISTER' | 'DASHBOARD'>('LOGIN');
   const [phone, setPhone] = useState('');
   const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Estados del Formulario de Registro
+  // Tiempo Actual (Para calcular promos)
+  const [currentDate, setCurrentDate] = useState(new Date());
+
   const [regData, setRegData] = useState({ firstName: '', lastName: '', email: '', acceptedTerms: false });
 
-  // Estados de Modales
-  const [showQR, setShowQR] = useState(false);
+  // Modales
   const [selectedReward, setSelectedReward] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [showPromoModal, setShowPromoModal] = useState<any>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
 
-  // ==========================================
-  // FUNCIONES DE API
-  // ==========================================
+  // Mantiene el reloj actualizado cada minuto para activar/desactivar promos en tiempo real
+  useEffect(() => {
+      const timer = setInterval(() => setCurrentDate(new Date()), 60000);
+      return () => clearInterval(timer);
+  }, []);
+
   const fetchProfile = async (phoneToFetch: string) => {
     if (phoneToFetch.length !== 10) { setError('Ingresa 10 dígitos'); return; }
     setLoading(true); setError('');
@@ -41,7 +66,6 @@ export default function MiCuenta() {
             setCustomer(data);
             setView('DASHBOARD');
         } else {
-            // Si el cliente no existe, lo mandamos al SIGN UP
             setView('REGISTER');
         }
     } catch(e) { setError('Error de conexión.'); }
@@ -62,7 +86,6 @@ export default function MiCuenta() {
         });
         const data = await res.json();
         if (data.success) {
-            // Recargamos el perfil para traer la data fresca
             await fetchProfile(phone);
         } else { setError('Error al registrar cuenta.'); }
     } catch(e) { setError('Error de red.'); }
@@ -93,22 +116,26 @@ export default function MiCuenta() {
     setLoading(false);
   };
 
-  // ==========================================
-  // UTILIDADES
-  // ==========================================
+  // Funciones Utilitarias
+  const formatPhone = (p: string) => p.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
   const getRank = (pts: number) => {
     if (pts >= 1000) return { name: 'Maiztro Leyenda 👑', color: 'text-yellow-400', next: null };
     if (pts >= 500) return { name: 'Maiztro Experto 🔥', color: 'text-orange-400', next: 1000 };
     if (pts >= 250) return { name: 'Maiztro Frecuente ⭐', color: 'text-blue-400', next: 500 };
     return { name: 'Maiztro Novato 🌽', color: 'text-zinc-400', next: 250 };
   };
-
   const resetFlow = () => { setCustomer(null); setView('LOGIN'); setPhone(''); setOrderSuccess(null); };
+
+  // Validadores de Promos
+  const isPromoValid = (promo: any) => {
+      const h = currentDate.getHours();
+      const d = currentDate.getDay();
+      return promo.validDays.includes(d) && h >= promo.startHour && h < promo.endHour;
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans p-6 md:p-12 flex flex-col items-center relative pb-20">
       
-      {/* HEADER GLOBAL */}
       <h1 className="text-5xl font-black text-yellow-400 mb-2 tracking-tighter">⭐ MaiztroVIP</h1>
       <p className="text-zinc-400 font-bold mb-10 text-center">Tu lealtad sabe a esquite.</p>
 
@@ -150,7 +177,7 @@ export default function MiCuenta() {
                   <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-yellow-400 w-full" required/>
               </div>
               <input type="email" placeholder="Correo Electrónico" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-yellow-400 w-full" required/>
-              <input type="tel" value={phone} disabled className="bg-zinc-950/50 border border-zinc-800 p-4 rounded-xl text-zinc-500 font-black tracking-widest text-center w-full cursor-not-allowed"/>
+              <input type="tel" value={formatPhone(phone)} disabled className="bg-zinc-950/50 border border-zinc-800 p-4 rounded-xl text-zinc-500 font-black tracking-widest text-center w-full cursor-not-allowed"/>
               
               <div className="flex items-start gap-3 mt-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                   <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-1 w-5 h-5 accent-yellow-400"/>
@@ -175,7 +202,7 @@ export default function MiCuenta() {
       {view === 'DASHBOARD' && customer && (
         <div className="w-full max-w-4xl flex flex-col gap-10 animate-in fade-in duration-500">
           
-          {/* 1. TARJETA DE LEALTAD Y PASAPORTE (QR) */}
+          {/* 1. TARJETA DIGITAL VIP (Reemplazo del QR) */}
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500"></div>
             
@@ -184,19 +211,26 @@ export default function MiCuenta() {
                     <h2 className="text-3xl font-black mb-1 truncate max-w-[200px] md:max-w-full">Hola, {customer.name.split(' ')[0]} 👋</h2>
                     <p className={`font-black uppercase tracking-widest text-sm ${getRank(customer.points).color}`}>{getRank(customer.points).name}</p>
                 </div>
-                <button onClick={resetFlow} className="text-zinc-500 hover:text-white underline font-bold transition-colors text-xs bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800">Salir</button>
+                <button onClick={resetFlow} className="text-zinc-500 hover:text-white underline font-bold transition-colors text-xs bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800">Cerrar Sesión</button>
             </div>
             
-            <div className="bg-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-800 w-full shadow-inner flex flex-col md:flex-row items-center justify-between gap-8">
-                <div className="text-center md:text-left">
-                  <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2">Tu Saldo Actual</p>
-                  <p className="text-7xl font-black text-yellow-400 tracking-tighter">{Math.floor(customer.points)} <span className="text-2xl text-zinc-500 font-bold">pts</span></p>
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Saldo */}
+                <div className="bg-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-800 flex flex-col items-center justify-center shadow-inner relative overflow-hidden">
+                    <div className="absolute -right-6 -bottom-6 text-9xl opacity-5">🪙</div>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2 relative z-10">Tu Saldo Actual</p>
+                    <p className="text-7xl font-black text-yellow-400 tracking-tighter relative z-10">{Math.floor(customer.points)} <span className="text-2xl text-zinc-500 font-bold">pts</span></p>
                 </div>
-                
-                <button onClick={() => setShowQR(true)} className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-8 py-4 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-95 group shadow-lg w-full md:w-auto">
-                    <span className="text-4xl mb-2 group-hover:scale-110 transition-transform">📱</span>
-                    <span className="text-xs font-black uppercase tracking-widest text-white">Mi Código QR</span>
-                </button>
+
+                {/* Tarjeta Digital VIP */}
+                <div className="bg-gradient-to-br from-zinc-800 to-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-700 flex flex-col justify-between items-start shadow-xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full blur-3xl"></div>
+                    <p className="text-yellow-400 font-black uppercase tracking-widest text-xs mb-6 opacity-80 flex items-center gap-2">⭐ Tarjeta VIP Maiztros</p>
+                    <div className="w-full text-center">
+                        <p className="text-3xl font-black tracking-widest text-white drop-shadow-md mb-2">{formatPhone(phone)}</p>
+                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest bg-black/40 inline-block px-3 py-1 rounded-full">Dicta este número en caja</p>
+                    </div>
+                </div>
             </div>
 
             {getRank(customer.points).next && (
@@ -215,28 +249,56 @@ export default function MiCuenta() {
             )}
           </div>
 
-          {/* 2. CUPONES ESPECIALES ACTIVOS (Se nutre del Admin Panel) */}
-          {customer.activeCoupons && customer.activeCoupons.length > 0 && (
-              <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 p-8 rounded-[3rem] shadow-2xl">
-                  <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎟️ Promos Exclusivas</h3>
-                  <p className="text-zinc-400 font-bold mb-6 text-sm">Dicta estos códigos en caja o ingrésalos en el Kiosco al pagar.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {customer.activeCoupons.map((coupon: any) => (
-                          <div key={coupon.id} className="bg-zinc-950 p-6 rounded-2xl border border-purple-500/50 flex flex-col justify-center items-center text-center shadow-lg relative overflow-hidden">
-                              <div className="absolute -right-4 -top-4 text-6xl opacity-10">🎫</div>
-                              <p className="font-black text-2xl text-yellow-400 tracking-widest mb-1">{coupon.code}</p>
-                              <p className="text-sm font-bold text-zinc-300">Descuento de {coupon.discountType === 'FIXED' ? `$${coupon.discount}` : `${coupon.discount}%`}</p>
-                              {coupon.minAmount > 0 && <p className="text-[10px] text-purple-400 uppercase tracking-widest mt-3 font-black bg-purple-900/30 px-3 py-1 rounded-full">Min. Compra: ${coupon.minAmount}</p>}
+          {/* 2. MENÚ SECRETO Y CUPONES (DINÁMICO) */}
+          <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/30 p-8 rounded-[3rem] shadow-2xl">
+              <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🤫 Menú Secreto (App Only)</h3>
+              <p className="text-zinc-400 font-bold mb-6 text-sm">Pide estos combos y promos exclusivamente dictando tu número en caja. Las promos cambian por hora.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                  {APP_PROMOS.map((promo: any) => {
+                      const isValid = isPromoValid(promo);
+                      return (
+                          <div key={promo.id} onClick={() => isValid && setShowPromoModal(promo)} className={`p-6 rounded-2xl border flex flex-col justify-center transition-all ${isValid ? 'bg-zinc-950 border-purple-500/50 hover:border-yellow-400 cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-zinc-950/50 border-zinc-800 opacity-60 cursor-not-allowed'}`}>
+                              <h4 className={`text-lg font-black mb-1 ${isValid ? 'text-white' : 'text-zinc-500'}`}>{promo.title}</h4>
+                              <p className="text-xs font-bold text-zinc-400 mb-3 leading-relaxed">{promo.desc}</p>
+                              <div className="mt-auto pt-3 border-t border-zinc-800 flex justify-between items-center">
+                                  <p className="text-[9px] uppercase tracking-widest text-purple-400 font-black">{promo.timeLabel}</p>
+                                  {isValid ? <span className="text-xs bg-yellow-400 text-zinc-900 px-2 py-1 rounded font-black uppercase">¡Activo!</span> : <span className="text-xs text-zinc-600 font-bold">Inactivo</span>}
+                              </div>
                           </div>
-                      ))}
-                  </div>
+                      );
+                  })}
               </div>
-          )}
+
+              <h3 className="text-xl font-black mb-4 text-white border-t border-purple-500/30 pt-8">🎫 Cupones en tu cuenta</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {APP_COUPONS.map((coupon: any, idx: number) => {
+                      const h = currentDate.getHours();
+                      const d = currentDate.getDay();
+                      const isValid = coupon.checkValid(h, d);
+                      return (
+                          <div key={idx} className={`p-5 rounded-2xl border text-center relative overflow-hidden ${isValid ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 opacity-50'}`}>
+                              <p className="font-black text-xl text-yellow-400 tracking-widest mb-1">{coupon.code}</p>
+                              <p className="text-xs font-bold text-zinc-300">{coupon.desc}</p>
+                              {!isValid && <div className="absolute inset-0 bg-zinc-950/80 flex items-center justify-center font-black text-xs uppercase tracking-widest text-zinc-500">Fuera de Horario</div>}
+                          </div>
+                      );
+                  })}
+                  {/* Cupones creados desde el Admin */}
+                  {customer.activeCoupons?.map((c: any) => (
+                       <div key={c.id} className="bg-blue-900/20 border-blue-500/50 p-5 rounded-2xl border text-center">
+                          <p className="font-black text-xl text-yellow-400 tracking-widest mb-1">{c.code}</p>
+                          <p className="text-xs font-bold text-zinc-300">Descuento de {c.discountType === 'FIXED' ? `$${c.discount}` : `${c.discount}%`}</p>
+                          {c.minAmount > 0 && <p className="text-[9px] text-blue-400 uppercase tracking-widest mt-2 font-black">Min. Compra: ${c.minAmount}</p>}
+                       </div>
+                  ))}
+              </div>
+          </div>
 
           {/* 3. LA BÓVEDA DE RECOMPENSAS (Descuentos en efectivo) */}
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] shadow-2xl">
             <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎁 La Bóveda de Premios</h3>
-            <p className="text-zinc-500 font-bold mb-8 text-sm">Canjea tus puntos por dinero a favor. Revisa el consumo mínimo de cada premio.</p>
+            <p className="text-zinc-500 font-bold mb-8 text-sm">Canjea tus puntos por dinero a favor. Revisa el consumo mínimo de cada bono.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {REWARDS.map(reward => {
@@ -249,7 +311,7 @@ export default function MiCuenta() {
                             <p className="text-xs font-bold text-zinc-300 mb-6 h-10">{reward.desc}</p>
                             
                             <div className={`mt-auto w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex flex-col gap-1 ${canAfford ? 'bg-yellow-400 text-zinc-950' : 'bg-zinc-900 text-zinc-500'}`}>
-                                <span>{canAfford ? '¡Usar Ahora!' : `Cuesta ${reward.pts} pts`}</span>
+                                <span>{canAfford ? '¡Canjear Ahora!' : `Cuesta ${reward.pts} pts`}</span>
                                 <span className="opacity-80">Min. Compra ${reward.minSpend}</span>
                             </div>
                         </div>
@@ -304,6 +366,12 @@ export default function MiCuenta() {
             )}
           </div>
 
+          {/* FOOTER DE LEGALES */}
+          <div className="text-center text-zinc-500 text-xs font-bold pt-10 border-t border-zinc-800 flex justify-center gap-6">
+              <button onClick={() => setShowPrivacy(true)} className="hover:text-yellow-400 transition-colors">Aviso de Privacidad</button>
+              <button onClick={() => setShowCookies(true)} className="hover:text-yellow-400 transition-colors">Política de Cookies</button>
+          </div>
+
         </div>
       )}
 
@@ -322,7 +390,7 @@ export default function MiCuenta() {
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Tu Número de Turno</p>
                     <p className="text-5xl font-black italic">#{orderSuccess}</p>
                 </div>
-                <p className="text-sm font-bold mb-8">Acércate a la caja, menciona tu número y paga en efectivo o tarjeta física.</p>
+                <p className="text-sm font-bold mb-8">Acércate a la caja, menciona tu número y paga en efectivo o tarjeta.</p>
                 <button onClick={() => setOrderSuccess(null)} className="w-full bg-white text-green-600 font-black text-xl py-4 rounded-2xl active:scale-95 transition-transform">Entendido 👍</button>
              </div>
         </div>
@@ -359,22 +427,29 @@ export default function MiCuenta() {
         </div>
       )}
 
-      {/* MODAL QR PASAPORTE */}
-      {showQR && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-50 p-6 animate-in fade-in">
-            <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] text-center max-w-sm w-full relative">
-                <button onClick={() => setShowQR(false)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
-                <h3 className="text-2xl font-black text-yellow-400 mb-2">Tu Pasaporte VIP</h3>
-                <p className="text-zinc-400 text-sm font-bold mb-8">Si conectamos un escáner en caja, el cajero puede leer este código para sumar tus puntos rápidamente.</p>
-                <div className="bg-white p-4 rounded-3xl inline-block mb-6 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
-                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${phone}&color=18181b`} alt="Código QR" className="w-56 h-56 rounded-xl" />
-                </div>
-                <p className="font-black text-3xl tracking-[0.2em] text-white">{phone}</p>
-            </div>
-        </div>
+      {/* MODAL CÓMO USAR PROMO SECRETA */}
+      {showPromoModal && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-50 p-6 animate-in fade-in">
+              <div className="bg-zinc-900 border-2 border-purple-500/50 p-10 rounded-[3rem] text-center max-w-md w-full relative">
+                  <button onClick={() => setShowPromoModal(null)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
+                  <h3 className="text-3xl font-black text-purple-400 mb-2">{showPromoModal.title}</h3>
+                  <p className="text-zinc-300 text-sm font-bold mb-8">{showPromoModal.desc}</p>
+                  
+                  <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 text-left mb-8 shadow-inner">
+                      <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-3">¿Cómo hacer válida esta promoción?</p>
+                      <p className="text-sm text-white font-bold leading-relaxed">
+                          Acércate a nuestro mostrador y dile al Maiztro: <br/><br/>
+                          <span className="italic text-yellow-400">"Quiero la promoción de la app: {showPromoModal.title}. Mi número es {formatPhone(phone)}"</span>
+                      </p>
+                  </div>
+                  <button onClick={() => setShowPromoModal(null)} className="w-full bg-purple-500 hover:bg-purple-400 text-white font-black text-xl py-4 rounded-2xl shadow-lg transition-transform active:scale-95">
+                      ¡Entendido! 👍
+                  </button>
+              </div>
+          </div>
       )}
 
-      {/* MODAL CANJE DE BOVEDA */}
+      {/* MODAL CANJE DE BOVEDA (EFECTIVO) */}
       {selectedReward && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-50 p-6 animate-in fade-in">
             <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border-2 border-yellow-500/50 p-10 rounded-[3rem] text-center max-w-md w-full relative shadow-[0_0_50px_rgba(250,204,21,0.15)]">
@@ -385,10 +460,10 @@ export default function MiCuenta() {
                 <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 mb-8 text-left">
                     <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-3">Instrucciones de Canje</p>
                     <ol className="text-zinc-300 font-bold text-sm space-y-3">
-                        <li><span className="text-yellow-400 mr-2">1.</span> Asegúrate de que tu compra en el Kiosco sea de al menos <strong className="text-white">${selectedReward.minSpend} MXN</strong>.</li>
-                        <li><span className="text-yellow-400 mr-2">2.</span> Al pagar en el Kiosco, ingresa tu número: <strong>{phone}</strong>.</li>
-                        <li><span className="text-yellow-400 mr-2">3.</span> El sistema detectará tus puntos. Selecciona el <strong>{selectedReward.label}</strong> en la pantalla.</li>
-                        <li><span className="text-yellow-400 mr-2">4.</span> ¡El descuento de ${selectedReward.discount} se aplicará solo!</li>
+                        <li><span className="text-yellow-400 mr-2">1.</span> Arma tu pedido en el Kiosco por un total mayor a <strong className="text-white">${selectedReward.minSpend} MXN</strong>.</li>
+                        <li><span className="text-yellow-400 mr-2">2.</span> Al ir a pagar, ingresa tu número: <strong className="tracking-widest">{phone}</strong>.</li>
+                        <li><span className="text-yellow-400 mr-2">3.</span> El sistema detectará tus puntos. Selecciona el bono de <strong>${selectedReward.discount}</strong> en la pantalla.</li>
+                        <li><span className="text-yellow-400 mr-2">4.</span> ¡Listo! El descuento se aplicará automáticamente a tu total.</li>
                     </ol>
                 </div>
 
@@ -406,8 +481,8 @@ export default function MiCuenta() {
                 <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
                 <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
                     <p>Conforme a lo establecido en la <strong>Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP)</strong> de México, "Maiztros" (ubicado en Zibatá, Querétaro) informa:</p>
-                    <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroVIP". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas vía WhatsApp o correo (si el usuario no opta por darse de baja).</p>
-                    <p><strong>2. Protección:</strong> Sus datos se almacenan en servidores cifrados y NO serán vendidos, alquilados ni compartidos con terceros ajenos a la operación del sistema de punto de venta.</p>
+                    <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroVIP". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas (si no opta por darse de baja).</p>
+                    <p><strong>2. Protección:</strong> Sus datos se almacenan en bases de datos cifradas. En Maiztros <strong>NUNCA</strong> venderemos, alquilaremos ni compartiremos su información con terceros, agencias de publicidad o entidades externas.</p>
                     <p><strong>3. Derechos ARCO:</strong> Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y Oposición solicitándolo en el mostrador físico de la sucursal.</p>
                 </div>
                 <button onClick={() => setShowPrivacy(false)} className="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-4 rounded-xl">Cerrar</button>
@@ -421,14 +496,14 @@ export default function MiCuenta() {
             <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                 <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
                 <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                    <p>Este sitio web y aplicación utiliza "Cookies" y tecnologías de almacenamiento local (Local Storage / Session Storage) estrictamente necesarias para el funcionamiento del sistema.</p>
+                    <p>Este portal web / aplicación utiliza "Cookies" y tecnologías de almacenamiento local (Local Storage / Session Storage) estrictamente necesarias para el funcionamiento técnico del sistema.</p>
                     <p><strong>¿Para qué las usamos?</strong></p>
                     <ul className="list-disc pl-5 space-y-2">
-                        <li>Mantener su sesión activa de "MaiztroVIP" para que no tenga que ingresar su número constantemente durante su visita.</li>
-                        <li>Almacenar temporalmente los productos de sus re-órdenes para enviarlas correctamente a mostrador.</li>
+                        <li>Mantener su sesión activa de "MaiztroVIP" de forma segura.</li>
+                        <li>Almacenar temporalmente los productos de sus re-órdenes para enviarlas correctamente a mostrador sin perder conexión.</li>
                     </ul>
-                    <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario de terceros (como Facebook Pixel o Analytics) para seguir su navegación fuera de esta aplicación.</p>
-                    <p>Al utilizar este portal, usted acepta el almacenamiento de estas tecnologías esenciales en su dispositivo.</p>
+                    <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario (como Facebook Pixel o Google Analytics) para seguir su comportamiento de navegación en internet.</p>
+                    <p>Al utilizar este portal, usted acepta el uso de estas tecnologías esenciales.</p>
                 </div>
                 <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-4 rounded-xl">Cerrar</button>
             </div>
