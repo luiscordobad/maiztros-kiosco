@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-export default function ProtectedRoute({ children, title }: { children: any, title: string }) {
+// AQUÍ ESTÁ LA SOLUCIÓN: Agregamos requiredRole a las reglas de TypeScript
+export default function ProtectedRoute({ children, title, requiredRole }: { children: any, title: string, requiredRole?: string }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [role, setRole] = useState<'ADMIN' | 'CAJERO' | 'KDS' | null>(null);
   const [pin, setPin] = useState('');
@@ -10,7 +11,7 @@ export default function ProtectedRoute({ children, title }: { children: any, tit
   // ==========================================
   // AQUÍ DEFINES LOS PINES DE TU NEGOCIO
   // ==========================================
-  const PIN_JEFE = '5809';   // Ve finanzas, auditoría, marketing, etc.
+  const PIN_JEFE = '5809';   // Ve finanzas, auditoría, marketing, clientes, etc.
   const PIN_CAJERO = '2026'; // Solo ve Ventas e Inventario
   const PIN_KDS = '2026';    // (Para las pantallas de cocina)
 
@@ -82,9 +83,8 @@ export default function ProtectedRoute({ children, title }: { children: any, tit
     );
   }
 
-  // LA MAGIA DE CONEXIÓN:
-  // Si el componente hijo es una función (como lo pusimos en el page.tsx del Admin), le inyectamos el Rol.
-  // Si no (ej. en el KDS o Caja normal), solo mostramos la página, pero agregamos el botón de salir.
+  // Si pasamos la prueba del PIN, renderizamos el panel.
+  // Si el componente que lo llama le pasó una función (como el Admin), le inyectamos el ROL.
   return (
     <>
       <button onClick={handleLogout} className="fixed bottom-6 right-6 bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white hover:border-red-500 px-4 py-2 rounded-xl text-xs font-bold z-50 transition-colors shadow-xl">
