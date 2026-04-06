@@ -42,9 +42,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [customerPhone, setCustomerPhone] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  // LEALTAD GAMIFICADA
+  // LEALTAD GAMIFICADA (Corregido el tipado de TypeScript)
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
-  const [selectedReward, setSelectedReward] = useState<{pts: number, discount: number} | null>(null);
+  const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
   // CUPONES
@@ -236,11 +236,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Ingresa tu nombre para tu ticket.");
+    
     // Validación de seguridad para que no quemen sus puntos a lo tonto
     if (selectedReward && totalAfterCoupon < selectedReward.discount) {
       alert(`Tu compra es menor a $${selectedReward.discount}. Te conviene guardar tus puntos para una orden más grande.`);
       return;
     }
+    
     if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS. Pica 'Pagar en Caja' para registrarla."); return; }
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
@@ -455,7 +457,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // ... renderizado de menú principal
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
@@ -526,11 +527,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
             <h2 className="text-6xl md:text-7xl font-black text-white mb-4 text-center">¡Hazlo un festín!</h2>
             <p className="text-2xl text-zinc-400 mb-16 text-center font-medium">Agrega bebidas y antojitos a tu orden. Pica lo que quieras.</p>
+            
             <h3 className="text-3xl font-black mb-8 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🥤 Bebidas Frías</h3>
             {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
+
             <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
             {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango') || p.name.toLowerCase().includes('dulce'))))}
           </div>
+
           <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-50 flex justify-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
              <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-20 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-xl active:scale-95 transition-all flex items-center gap-4 w-full max-w-2xl justify-center">
               Continuar al Pago <span className="text-3xl">➔</span>
