@@ -9,6 +9,9 @@ export async function POST(request: Request) {
 
     const order = await prisma.$transaction(async (tx) => {
       
+      // BUSCAMOS EL TURNO ACTIVO
+      const activeShift = await tx.shift.findFirst({ where: { status: 'OPEN' } });
+
       const newOrder = await tx.order.create({
         data: {
           turnNumber,
@@ -19,31 +22,23 @@ export async function POST(request: Request) {
           paymentMethod: data.paymentMethod,
           items: data.cart || [],
           orderNotes: data.orderNotes || '',
-          totalAmount: data.totalAmount, // Monto final ya con el descuento
-          pointsDiscount: data.pointsDiscount || 0, // Descuento en pesos
+          totalAmount: data.totalAmount, 
+          pointsDiscount: data.pointsDiscount || 0, 
           couponCode: data.couponCode || null,
           tipAmount: data.tipAmount || 0,
-          status: initialStatus
+          status: initialStatus,
+          shiftId: activeShift?.id || null // LO ASIGNAMOS AL TURNO
         }
       });
 
       if (data.customerPhone && data.customerPhone.length === 10) {
-         // Gana puntos por lo que realmente pagó
          const earnedPoints = data.totalAmount; 
-         // Recibimos los puntos exactos a descontar desde el Kiosco (Ej. 500)
-         const pointsToDeduct = data.pointsDeducted || 0; 
+         const pointsToDeduct = (data.pointsDeducted || 0); 
 
          await tx.customer.upsert({
            where: { phone: data.customerPhone },
-           update: {
-             name: data.customerName, 
-             points: { increment: earnedPoints - pointsToDeduct }
-           },
-           create: {
-             phone: data.customerPhone,
-             name: data.customerName,
-             points: earnedPoints
-           }
+           update: { name: data.customerName, points: { increment: earnedPoints - pointsToDeduct } },
+           create: { phone: data.customerPhone, name: data.customerName, points: earnedPoints }
          });
       }
       return newOrder;
