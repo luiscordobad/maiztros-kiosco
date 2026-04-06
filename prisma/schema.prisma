@@ -99,11 +99,18 @@ model Order {
   updatedAt      DateTime @updatedAt
 }
 
-// NUEVO: CONTABILIDAD Y GASTOS
 model Expense {
   id          String   @id @default(uuid())
   amount      Float
-  category    String   // INSUMOS, SERVICIOS, NOMINA, OTROS
+  category    String
   description String
   date        DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  details   String
+  author    String
+  createdAt DateTime @default(now())
 }
