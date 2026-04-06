@@ -9,12 +9,10 @@ export async function GET(request: Request) {
   const endDateParam = searchParams.get('endDate');
 
   try {
-    // 1. Traer Inventario y Cupones
     const products = await prisma.product.findMany({ orderBy: { category: 'asc' } });
     const modifiers = await prisma.modifier.findMany({ orderBy: { type: 'asc' } });
     const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } });
 
-    // 2. Filtro de Fechas para el Historial
     let startDate = new Date();
     startDate.setHours(0, 0, 0, 0); 
     let endDate = new Date();
@@ -26,19 +24,27 @@ export async function GET(request: Request) {
       endDate.setHours(23, 59, 59, 999); 
     }
 
-    // 3. Traer TODAS las órdenes del rango
     const orders = await prisma.order.findMany({
       where: { createdAt: { gte: startDate, lte: endDate } },
       orderBy: { createdAt: 'desc' }
     });
 
-    return NextResponse.json({ success: true, products, modifiers, coupons, orders });
+    // NUEVO: TRAEMOS LOS TURNOS Y SUS MOVIMIENTOS
+    const shifts = await prisma.shift.findMany({
+      where: { openedAt: { gte: startDate, lte: endDate } },
+      include: { 
+        orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } },
+        movements: true 
+      },
+      orderBy: { openedAt: 'desc' }
+    });
+
+    return NextResponse.json({ success: true, products, modifiers, coupons, orders, shifts });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Error del servidor' }, { status: 500 });
   }
 }
 
-// Actualizar switches (Inventario y Cupones)
 export async function PATCH(request: Request) {
   try {
     const { id, type, isAvailable, isActive } = await request.json();
@@ -55,19 +61,14 @@ export async function PATCH(request: Request) {
   }
 }
 
-// Crear nuevos Cupones
 export async function POST(request: Request) {
   try {
     const { code, discount, discountType } = await request.json();
     await prisma.coupon.create({
-      data: { 
-        code: code.toUpperCase().trim(), 
-        discount: parseFloat(discount), 
-        discountType 
-      }
+      data: { code: code.toUpperCase().trim(), discount: parseFloat(discount), discountType }
     });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'El cupón ya existe o es inválido' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Cupón inválido' }, { status: 500 });
   }
 }
