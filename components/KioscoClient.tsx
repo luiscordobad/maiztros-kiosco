@@ -61,6 +61,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
+  // 1. Efecto: Buscar puntos por teléfono
   useEffect(() => {
     if (customerPhone.length === 10) {
       setIsCheckingPoints(true);
@@ -78,13 +79,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   }, [customerPhone]);
 
+  // 2. Efecto: Reset de inactividad
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
       if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal) {
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
-        setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
+        setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setAppState('WELCOME');
       }
@@ -96,17 +98,40 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
   }, [appState, waitingTerminal, isSubmitting, showTipModal]);
 
+  // MATEMÁTICAS BÁSICAS
+  const subtotal = getTotal();
+
+  // 3. Efecto: Quitar el cupón automáticamente si el usuario elimina cosas del carrito y ya no llega al mínimo
+  useEffect(() => {
+    if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
+      setActiveCoupon(null);
+      setCouponError(`El cupón requiere mínimo de compra de $${activeCoupon.minAmount}`);
+    }
+  }, [subtotal, activeCoupon]);
+
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
     const res = await fetch(`/api/customer?code=${couponCode}`);
     const data = await res.json();
-    if (data.success) { setActiveCoupon(data.coupon); setSelectedReward(null); } 
-    else { setActiveCoupon(null); setCouponError(data.error); }
+    
+    if (data.success) { 
+      // VERIFICACIÓN DEL MONTO MÍNIMO
+      if (data.coupon.minAmount > 0 && subtotal < data.coupon.minAmount) {
+        setCouponError(`Compra mínima de $${data.coupon.minAmount} requerida.`);
+        setActiveCoupon(null);
+      } else {
+        setActiveCoupon(data.coupon); 
+        setSelectedReward(null); // Apagamos recompensas si se usa un cupón
+      }
+    } 
+    else { 
+      setActiveCoupon(null); 
+      setCouponError(data.error); 
+    }
   };
 
-  // MATEMÁTICAS
-  const subtotal = getTotal();
+  // MATEMÁTICAS APLICADAS
   let totalAfterCoupon = subtotal;
   if (activeCoupon) {
     if (activeCoupon.discountType === 'FIXED') totalAfterCoupon = Math.max(0, subtotal - activeCoupon.discount);
@@ -115,8 +140,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward.discount, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
-  
-  // Puntos que ganaría en esta orden (Monto neto redondeado)
   const pointsToEarn = Math.floor(totalNeto);
 
   const getProductDesc = (name: string) => {
@@ -146,6 +169,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   };
 
   const handleStartOrder = (type: 'DINE_IN' | 'TAKEOUT') => { setOrderType(type); setAppState('MENU'); window.scrollTo(0,0); };
+  
   const handleProductClick = (product: any) => {
     const steps = getProductSteps(product);
     if (steps.length === 0) { addToCart(product, 0, product.name); if (appState === 'UPSELL') setAppState('MENU'); return; }
@@ -219,7 +243,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           pointsDeducted: selectedReward?.pts || 0, 
           couponCode: activeCoupon?.code || null, 
           tipAmount, 
-          customerName, customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
+          customerName, 
+          customerEmail, 
+          customerPhone, 
+          paymentMethod, 
+          orderType, 
+          orderNotes 
         })
       });
       const data = await response.json();
@@ -230,9 +259,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
         setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
         setAppState('SUCCESS');
-        
-        const resetDelay = paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000;
-        setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, resetDelay);
+        setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000);
       }
     } catch (error) { alert("Error guardando orden."); }
     setIsSubmitting(false);
@@ -240,11 +267,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
-    if (selectedReward && totalAfterCoupon < selectedReward.discount) {
-      alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
-      return;
-    }
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla."); return; }
+    if (selectedReward && totalAfterCoupon < selectedReward.discount) return alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla.");
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -325,6 +349,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
         
+        {/* RESUMEN DE ORDEN Y CÁLCULO NETO */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -358,9 +383,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
+        {/* COLUMNA DERECHA: LEALTAD SÚPER LLAMATIVA Y PAGOS */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
+          
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
+            
             {customerPhone.length < 10 ? (
               <div className="mb-6 animate-in fade-in zoom-in duration-500">
                 <h3 className="text-2xl font-black text-white mb-1">¡No pierdas tus puntos!</h3>
@@ -372,11 +400,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <p className="text-zinc-300 font-medium text-sm mb-4">Tienes <span className="text-yellow-400 font-black text-xl">{Math.floor(loyaltyPoints)} pts</span>. (+{pointsToEarn} hoy)</p>
               </div>
             )}
+
             <div className="space-y-4 relative z-10">
               <div className="relative">
                 <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
                 {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
               </div>
+
+              {/* LISTA DE PREMIOS GAMIFICADA */}
               <div className="mt-6 border-t border-yellow-500/30 pt-6">
                 <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Recompensas</p>
                 <div className="space-y-2">
@@ -388,13 +419,21 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                         key={reward.id} 
                         disabled={!isAffordable || customerPhone.length < 10} 
                         onClick={() => setSelectedReward(isSelected ? null : reward)} 
-                        className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all ${customerPhone.length < 10 ? 'opacity-40 bg-zinc-950/50 border-zinc-800' : !isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
+                        className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all 
+                          ${customerPhone.length < 10 ? 'opacity-40 bg-zinc-950/50 border-zinc-800' : 
+                            !isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : 
+                            isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 
+                            'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
                       >
                         <div>
                           <p className="font-black">{reward.label}</p>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>{isAffordable ? `Cuesta ${reward.pts} pts` : `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts`}</p>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
+                            {isAffordable ? `Cuesta ${reward.pts} pts` : `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts`}
+                          </p>
                         </div>
-                        <span className="text-xl">{isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}</span>
+                        <span className="text-xl">
+                          {isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}
+                        </span>
                       </button>
                     );
                   })}
@@ -402,9 +441,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               </div>
             </div>
           </div>
+
           <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col">
             <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6">
               <input type="text" placeholder="Tu Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold"/>
+              
               <div className="flex gap-2">
                 <input type="text" placeholder="Cupón (Opcional)" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm"/>
                 <button onClick={handleApplyCoupon} className="bg-purple-600 hover:bg-purple-500 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
@@ -412,6 +453,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               {couponError && <p className="text-red-400 text-xs font-bold text-center">{couponError}</p>}
               {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center">✅ Cupón aplicado</p>}
             </div>
+
             <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-3 justify-center">
               <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta</button>
@@ -420,6 +462,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
+        {/* ... MODALES ... */}
         {waitingTerminal && (
           <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
             <span className="text-[10rem] animate-pulse mb-8">💳</span>
@@ -457,6 +500,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
+  // RENDERIZADO DEL MENÚ PRINCIPAL
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
@@ -468,6 +512,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           <button onClick={() => setAppState('WELCOME')} className="text-zinc-500 hover:text-white font-bold text-sm underline">Cambiar</button>
         </div>
       </header>
+
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
         <section id="seccion-combos">
           <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
@@ -487,18 +532,22 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             ))}
           </div>
         </section>
+
         <section id="seccion-esquites">
           <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🌽</span> Esquites</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ESQUITE'))}
         </section>
+
         <section id="seccion-especialidades">
           <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🔥</span> Especialidades</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ESPECIALIDAD'))}
         </section>
+
         <section id="seccion-bebidas">
           <h2 className="text-3xl font-black mb-6 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🥤</span> Bebidas</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
         </section>
+
         <section id="seccion-otros">
           <h2 className="text-3xl font-black mb-6 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🍬</span> Otros Antojos</h2>
           {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' || p.category === 'PAPA_SOLA' || p.category === 'MARUCHAN_SOLA'))}
@@ -522,11 +571,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
             <h2 className="text-6xl md:text-7xl font-black text-white mb-4 text-center">¡Hazlo un festín!</h2>
             <p className="text-2xl text-zinc-400 mb-16 text-center font-medium">Agrega bebidas y antojitos a tu orden. Pica lo que quieras.</p>
+            
             <h3 className="text-3xl font-black mb-8 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🥤 Bebidas Frías</h3>
             {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
+
             <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
             {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango') || p.name.toLowerCase().includes('dulce'))))}
           </div>
+
           <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-50 flex justify-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
              <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-20 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-xl active:scale-95 transition-all flex items-center gap-4 w-full max-w-2xl justify-center">
               Continuar al Pago <span className="text-3xl">➔</span>
@@ -581,6 +633,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </div>
               )}
             </div>
+
             <div className="p-8 border-t border-zinc-800 bg-zinc-900 sticky bottom-0">
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="w-full bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-300 active:scale-[0.98] transition-transform">
                 {wizardStep === getProductSteps(activeProduct).length - 1 ? 'Terminar y Agregar' : 'Siguiente Paso ➔'}
