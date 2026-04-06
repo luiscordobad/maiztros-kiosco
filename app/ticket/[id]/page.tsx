@@ -153,7 +153,7 @@ export default function TicketBeeper({ params }: { params: { id: string } }) {
               {rating > 0 && rating < 5 && (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-300">
                       <p className="text-red-400 font-bold text-xs mb-3 uppercase tracking-widest">¡Ayúdanos a mejorar!</p>
-                      <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Cuéntanos en privado qué pasó para solucionarlo..." className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold h-24 resize-none mb-3 transition-colors" />
+                      <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Cuéntanos qué pasó para poder mejorar" className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold h-24 resize-none mb-3 transition-colors" />
                       <button onClick={handlePrivateFeedback} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-3 rounded-xl transition-colors text-sm">Enviar mensaje a Gerencia 📩</button>
                   </div>
               )}
