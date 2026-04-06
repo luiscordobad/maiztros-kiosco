@@ -23,7 +23,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { orderId, action, newPaymentMethod, etaMinutes, newStatus, updatedItems, newTotal } = body;
 
-    // 1. Acción: Guardar cambios y Pagar (Todo en uno para la caja)
+    // 1. Acción: Guardar cambios y Pagar (Caja)
     if (newStatus === 'PAID') {
         const dataToUpdate: any = { status: 'PAID' };
         if (updatedItems) dataToUpdate.items = JSON.stringify(updatedItems);
@@ -36,7 +36,16 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ success: true });
     }
 
-    // 2. Acción: Cambiar Método de Pago
+    // 2. Acción: Marcar como Despachado (Cocina / KDS) - ¡EL QUE FALTABA!
+    if (newStatus === 'COMPLETED') {
+        await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'COMPLETED' }
+        });
+        return NextResponse.json({ success: true });
+    }
+
+    // 3. Acción: Cambiar Método de Pago
     if (action === 'CHANGE_PAYMENT') {
         await prisma.order.update({
             where: { id: orderId },
@@ -45,7 +54,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ success: true });
     }
 
-    // 3. Acción: Aceptar pedido App VIP con ETA
+    // 4. Acción: Aceptar pedido App VIP con ETA
     if (action === 'ACCEPT_ORDER') {
         const etaDate = new Date();
         etaDate.setMinutes(etaDate.getMinutes() + parseInt(etaMinutes));
@@ -60,7 +69,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ success: true });
     }
 
-    // 4. Acción: Reembolso / Cancelación
+    // 5. Acción: Reembolso / Cancelación
     if (newStatus === 'REFUNDED') {
         await prisma.order.update({ where: { id: orderId }, data: { status: 'REFUNDED' } });
         return NextResponse.json({ success: true });
