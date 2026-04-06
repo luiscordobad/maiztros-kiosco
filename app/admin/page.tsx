@@ -119,6 +119,7 @@ export default function AdminDashboard() {
     );
   }
 
+  // AQUÍ ESTÁ LA CORRECCIÓN DEL NOMBRE: renderPanicCategory
   const renderPanicCategory = (categoryFilter: string, title: string, isModifier: boolean) => {
     const items = isModifier ? data.modifiers.filter(m => m.type === categoryFilter) : data.products.filter(p => p.category === categoryFilter);
     if (items.length === 0) return null;
@@ -211,37 +212,35 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA DE PÁNICO OPTIMIZADA */}
             {activeTab === 'PANICO' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
                   <h2 className="text-3xl font-black text-white mb-2 flex items-center gap-3">🚨 Panel de Pánico</h2>
                   <p className="text-zinc-400 font-bold mb-8">Apaga productos o sabores específicos. Lo que desactives desaparecerá instantáneamente del Kiosco.</p>
                   
-                  {/* SECCIÓN 1: PRODUCTOS PRINCIPALES */}
+                  {/* AQUÍ SE LLAMA A renderPanicCategory */}
                   <h2 className="text-2xl font-black text-yellow-400 mt-8 mb-4 border-l-4 border-yellow-400 pl-4">🍔 Menú Principal</h2>
-                  {renderMenuCategory('COMBO', 'Cajas de Combos', false)}
-                  {renderMenuCategory('ESQUITE', 'Esquites Sueltos', false)}
-                  {renderMenuCategory('ESPECIALIDAD', 'Especialidades', false)}
-                  {renderMenuCategory('BEBIDA', 'Bebidas Directas', false)}
+                  {renderPanicCategory('COMBO', 'Cajas de Combos', false)}
+                  {renderPanicCategory('ESQUITE', 'Esquites Sueltos', false)}
+                  {renderPanicCategory('ESPECIALIDAD', 'Especialidades', false)}
+                  {renderPanicCategory('BEBIDA', 'Bebidas Directas', false)}
+                  {renderPanicCategory('ANTOJO', 'Dulces y Gomitas', false)}
                   
-                  {/* SECCIÓN 2: OPCIONES INTERNAS (SABORES ESPECÍFICOS) */}
                   <h2 className="text-2xl font-black text-orange-400 mt-12 mb-4 border-l-4 border-orange-400 pl-4">🎯 Opciones y Sabores (Dentro de los Combos)</h2>
                   {renderPanicSubOptions('PAPAS', 'Tipos de Papas')}
                   {renderPanicSubOptions('MARUCHAN', 'Sabores de Maruchan')}
                   {renderPanicSubOptions('BEBIDA', 'Sabores de Boing / Refresco')}
 
-                  {/* SECCIÓN 3: TOPPINGS Y MODIFICADORES */}
                   <h2 className="text-2xl font-black text-purple-400 mt-12 mb-4 border-l-4 border-purple-400 pl-4">🧂 Barra de Toppings</h2>
-                  {renderMenuCategory('ADEREZO', 'Aderezos', true)}
-                  {renderMenuCategory('QUESO', 'Quesos', true)}
-                  {renderMenuCategory('POLVO', 'Polvos Extras', true)}
-                  {renderMenuCategory('CHILE', 'Chiles', true)}
+                  {renderPanicCategory('ADEREZO', 'Aderezos', true)}
+                  {renderPanicCategory('QUESO', 'Quesos', true)}
+                  {renderPanicCategory('POLVO', 'Polvos Extras', true)}
+                  {renderPanicCategory('CHILE', 'Chiles', true)}
+                  {renderPanicCategory('RESTRICCION', 'Restricciones (Sin...)', true)}
                 </div>
               </div>
             )}
 
-            {/* MARKETING MEJORADO */}
             {activeTab === 'MARKETING' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 p-8 rounded-[2rem] shadow-2xl">
@@ -276,7 +275,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* VENTAS / TESORERÍA */}
             {activeTab === 'VENTAS' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 flex flex-col md:flex-row justify-between items-center gap-4 shadow-xl">
