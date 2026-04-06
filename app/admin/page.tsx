@@ -589,5 +589,3 @@ export default function AdminDashboard() {
     </ProtectedRoute>
   );
 }
-``` Pídeme que modifique o elimine tu acción programada en cualquier momento. Cuando tu  acción programada esté lista, aparecerá un puntito junto a esta conversación en Recientes.
-http://googleusercontent.com/task_confirmation_content/0 http://googleusercontent.com/task_confirmation_content/1
