@@ -2,31 +2,45 @@
 import { useState, useEffect } from 'react';
 
 // ==========================================
-// CONFIGURACIÓN DE NEGOCIO (PREMIOS Y PROMOS)
+// 1. LA BÓVEDA (PUNTOS POR DINERO)
 // ==========================================
-
-// 1. La Bóveda (Puntos por Dinero)
 const REWARDS = [
   { id: 'tier1', pts: 250, minSpend: 150, discount: 15, label: 'Bono de $15 MXN', icon: '💸', desc: 'Ahorra $15 pesos en tu próxima compra mayor a $150.' },
   { id: 'tier2', pts: 500, minSpend: 250, discount: 35, label: 'Bono de $35 MXN', icon: '💰', desc: 'Ahorra $35 pesos en tu próxima compra mayor a $250.' },
   { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN', icon: '👑', desc: 'Ahorra $80 pesos en tu próxima compra mayor a $400.' }
 ];
 
-// 2. Menú Secreto App-Only (Combos Dinámicos)
-// validDays: 0=Dom, 1=Lun, 2=Mar, 3=Mie, 4=Jue, 5=Vie, 6=Sab
+// ==========================================
+// 2. PROMOCIONES DINÁMICAS (LÓGICA DE HORARIOS)
+// Apertura a partir de las 17:30 (5:30 PM)
+// ==========================================
 const APP_PROMOS = [
-  { id: 'p1', title: '2x1 Happy Hour 🌽', desc: 'En la compra de tu Esquite, te regalamos el segundo (igual o menor).', validDays: [1,2,3,4,5], startHour: 12, endHour: 19, timeLabel: 'Lunes a Viernes, 12:00 PM a 7:00 PM' },
-  { id: 'p2', title: 'Combo Pareja Nocturno 🌙', desc: '2 Esquites Medianos + 2 Bebidas con precio especial de locura.', validDays: [0,1,2,3,4,5,6], startHour: 20, endHour: 24, timeLabel: 'Todos los días después de las 8:00 PM' },
-  { id: 'p3', title: 'Godín Hambriento 🍜', desc: 'Maruchan preparada + Bebida con $20 pesos de descuento directo.', validDays: [1,2,3,4,5], startHour: 13, endHour: 17, timeLabel: 'Lunes a Viernes, 1:00 PM a 5:00 PM' },
-  { id: 'p4', title: 'Domingo Familiar 👨‍👩‍👧‍👦', desc: 'Lleva 4 esquites y paga solo 3. ¡Invita a toda la familia!', validDays: [0], startHour: 12, endHour: 23, timeLabel: 'Exclusivo los Domingos' },
-  { id: 'p5', title: 'Antojo Sabatino 🔥', desc: 'Todas las papas preparadas tienen un 20% de descuento.', validDays: [6], startHour: 12, endHour: 23, timeLabel: 'Exclusivo los Sábados' }
+  { 
+    id: 'p1', code: 'HAPPY2X1', title: '2x1 Happy Hour 🌽', desc: 'Compra 2 esquites y paga 1. Válido solo en la primera hora y media de apertura.', 
+    validDays: [1,2,3,4,5], startFloat: 17.5, endFloat: 19.0, timeLabel: 'L-V, 5:30 PM a 7:00 PM', icon: '⏳' 
+  },
+  { 
+    id: 'p2', code: 'NOCHEROS', title: 'Antojo Nocturno 🌙', desc: '15% de descuento en toda tu cuenta para cerrar bien el día.', 
+    validDays: [0,1,2,3,4,5,6], startFloat: 21.0, endFloat: 23.5, timeLabel: 'Todos los días, 9:00 PM al Cierre', icon: '🦉' 
+  },
+  { 
+    id: 'p3', code: 'SABADAZO', title: 'Sábado de Papas 🔥', desc: 'Pide unas papas preparadas y te descontamos $20 pesos directos.', 
+    validDays: [6], startFloat: 17.5, endFloat: 23.5, timeLabel: 'Exclusivo los Sábados', icon: '🍟' 
+  },
+  { 
+    id: 'p4', code: 'DOMINGOFAM', title: 'Domingo Familiar 👨‍👩‍👧‍👦', desc: '$50 MXN de descuento en tu compra mayor a $300.', 
+    validDays: [0], startFloat: 17.5, endFloat: 23.5, timeLabel: 'Exclusivo los Domingos', icon: '👨‍🍳' 
+  },
+  { 
+    id: 'p5', code: 'TOPPINGFREE', title: 'Topping de Regalo 🧀', desc: '$15 MXN de descuento para que le pongas extra queso o aderezo a tu elote.', 
+    validDays: [1,2,3,4], startFloat: 17.5, endFloat: 20.0, timeLabel: 'L-J, 5:30 PM a 8:00 PM', icon: '🧂' 
+  }
 ];
 
-// 3. Cupones Dinámicos (Reglas en duro)
 const APP_COUPONS = [
-  { code: 'MAIZTROVIP', discount: '15%', minSpend: 0, desc: '15% OFF en toda tu cuenta. Promoción especial sin vigencia.', checkValid: () => true },
-  { code: 'DESVELADOS', discount: '$30 MXN', minSpend: 200, desc: '$30 OFF en pedidos nocturnos. Min. $200.', checkValid: (h: number) => h >= 21 || h < 2 },
-  { code: 'FINDE10', discount: '10%', minSpend: 0, desc: '10% OFF para disfrutar tu fin de semana.', checkValid: (h: number, d: number) => d === 0 || d === 5 || d === 6 }
+  { id: 'c1', code: 'MAIZTROVIP', title: 'Cupón Constante 🎟️', desc: '10% OFF en toda tu cuenta. Tu beneficio por usar la app.', validDays: [0,1,2,3,4,5,6], startFloat: 17.5, endFloat: 24.0, timeLabel: 'Siempre Activo', icon: '⭐' },
+  { id: 'c2', code: 'DESVELADOS', title: 'Cupón Desvelados 🌃', desc: '$30 OFF en pedidos mayores a $200.', validDays: [5,6], startFloat: 22.0, endFloat: 24.0, timeLabel: 'Viernes y Sábado después de las 10 PM', icon: '🌌' },
+  { id: 'c3', code: 'MITADSEMANA', title: 'Ombligo de Semana 🐪', desc: '20% OFF en Maruchans preparadas.', validDays: [3], startFloat: 17.5, endFloat: 23.5, timeLabel: 'Exclusivo los Miércoles', icon: '🍜' }
 ];
 
 export default function MiCuenta() {
@@ -36,20 +50,16 @@ export default function MiCuenta() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Tiempo Actual (Para calcular promos)
   const [currentDate, setCurrentDate] = useState(new Date());
-
   const [regData, setRegData] = useState({ firstName: '', lastName: '', email: '', acceptedTerms: false });
 
-  // Modales
-  const [selectedReward, setSelectedReward] = useState<any>(null);
+  // Modales Unificados
+  const [selectedItem, setSelectedItem] = useState<any>(null); // Maneja Premios, Promos y Cupones
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [showPromoModal, setShowPromoModal] = useState<any>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
 
-  // Mantiene el reloj actualizado cada minuto para activar/desactivar promos en tiempo real
   useEffect(() => {
       const timer = setInterval(() => setCurrentDate(new Date()), 60000);
       return () => clearInterval(timer);
@@ -116,7 +126,6 @@ export default function MiCuenta() {
     setLoading(false);
   };
 
-  // Funciones Utilitarias
   const formatPhone = (p: string) => p.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
   const getRank = (pts: number) => {
     if (pts >= 1000) return { name: 'Maiztro Leyenda 👑', color: 'text-yellow-400', next: null };
@@ -126,11 +135,13 @@ export default function MiCuenta() {
   };
   const resetFlow = () => { setCustomer(null); setView('LOGIN'); setPhone(''); setOrderSuccess(null); };
 
-  // Validadores de Promos
+  // Validador de Tiempo: Convierte la hora actual a decimal (ej. 17:30 = 17.5)
   const isPromoValid = (promo: any) => {
       const h = currentDate.getHours();
+      const m = currentDate.getMinutes();
+      const timeFloat = h + (m / 60);
       const d = currentDate.getDay();
-      return promo.validDays.includes(d) && h >= promo.startHour && h < promo.endHour;
+      return promo.validDays.includes(d) && timeFloat >= promo.startFloat && timeFloat < promo.endFloat;
   };
 
   return (
@@ -157,6 +168,11 @@ export default function MiCuenta() {
           <button onClick={() => fetchProfile(phone)} disabled={loading || phone.length !== 10} className="bg-yellow-400 disabled:opacity-50 text-zinc-950 py-5 rounded-2xl font-black text-xl hover:bg-yellow-300 active:scale-95 transition-all shadow-[0_0_20px_rgba(250,204,21,0.3)]">
             {loading ? 'Conectando...' : 'Siguiente ➔'}
           </button>
+          
+          <div className="text-center text-zinc-600 text-[10px] font-bold mt-4 flex justify-center gap-4">
+              <button onClick={() => setShowPrivacy(true)} className="hover:text-zinc-400 uppercase tracking-widest">Privacidad</button>
+              <button onClick={() => setShowCookies(true)} className="hover:text-zinc-400 uppercase tracking-widest">Cookies</button>
+          </div>
         </div>
       )}
 
@@ -202,7 +218,7 @@ export default function MiCuenta() {
       {view === 'DASHBOARD' && customer && (
         <div className="w-full max-w-4xl flex flex-col gap-10 animate-in fade-in duration-500">
           
-          {/* 1. TARJETA DIGITAL VIP (Reemplazo del QR) */}
+          {/* 1. TARJETA VIP */}
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] shadow-2xl text-center flex flex-col items-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500"></div>
             
@@ -215,15 +231,13 @@ export default function MiCuenta() {
             </div>
             
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Saldo */}
                 <div className="bg-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-800 flex flex-col items-center justify-center shadow-inner relative overflow-hidden">
                     <div className="absolute -right-6 -bottom-6 text-9xl opacity-5">🪙</div>
                     <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2 relative z-10">Tu Saldo Actual</p>
                     <p className="text-7xl font-black text-yellow-400 tracking-tighter relative z-10">{Math.floor(customer.points)} <span className="text-2xl text-zinc-500 font-bold">pts</span></p>
                 </div>
 
-                {/* Tarjeta Digital VIP */}
-                <div className="bg-gradient-to-br from-zinc-800 to-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-700 flex flex-col justify-between items-start shadow-xl relative overflow-hidden group">
+                <div className="bg-gradient-to-br from-zinc-800 to-zinc-950 px-8 py-8 rounded-[2.5rem] border border-zinc-700 flex flex-col justify-between items-start shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full blur-3xl"></div>
                     <p className="text-yellow-400 font-black uppercase tracking-widest text-xs mb-6 opacity-80 flex items-center gap-2">⭐ Tarjeta VIP Maiztros</p>
                     <div className="w-full text-center">
@@ -249,69 +263,52 @@ export default function MiCuenta() {
             )}
           </div>
 
-          {/* 2. MENÚ SECRETO Y CUPONES (DINÁMICO) */}
+          {/* 2. MENÚ SECRETO Y CUPONES VIP (Dinámico con hora) */}
           <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/30 p-8 rounded-[3rem] shadow-2xl">
-              <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🤫 Menú Secreto (App Only)</h3>
-              <p className="text-zinc-400 font-bold mb-6 text-sm">Pide estos combos y promos exclusivamente dictando tu número en caja. Las promos cambian por hora.</p>
+              <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-2xl font-black text-white flex items-center gap-3">🤫 Ofertas Secretas</h3>
+                  <span className="bg-purple-500/20 text-purple-400 text-[10px] px-2 py-1 rounded font-black uppercase tracking-widest border border-purple-500/30">App Only</span>
+              </div>
+              <p className="text-zinc-400 font-bold mb-6 text-sm">Estas promociones y cupones se desbloquean dependiendo del día y la hora. ¡Aprovéchalos!</p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                  {APP_PROMOS.map((promo: any) => {
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Renderizamos Promos y Cupones Juntos */}
+                  {[...APP_PROMOS, ...APP_COUPONS].map((promo: any) => {
                       const isValid = isPromoValid(promo);
                       return (
-                          <div key={promo.id} onClick={() => isValid && setShowPromoModal(promo)} className={`p-6 rounded-2xl border flex flex-col justify-center transition-all ${isValid ? 'bg-zinc-950 border-purple-500/50 hover:border-yellow-400 cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-zinc-950/50 border-zinc-800 opacity-60 cursor-not-allowed'}`}>
-                              <h4 className={`text-lg font-black mb-1 ${isValid ? 'text-white' : 'text-zinc-500'}`}>{promo.title}</h4>
-                              <p className="text-xs font-bold text-zinc-400 mb-3 leading-relaxed">{promo.desc}</p>
-                              <div className="mt-auto pt-3 border-t border-zinc-800 flex justify-between items-center">
-                                  <p className="text-[9px] uppercase tracking-widest text-purple-400 font-black">{promo.timeLabel}</p>
-                                  {isValid ? <span className="text-xs bg-yellow-400 text-zinc-900 px-2 py-1 rounded font-black uppercase">¡Activo!</span> : <span className="text-xs text-zinc-600 font-bold">Inactivo</span>}
+                          <div key={promo.id} onClick={() => isValid && setSelectedItem({...promo, type: 'PROMO'})} className={`p-6 rounded-[2rem] border flex flex-col justify-center transition-all ${isValid ? 'bg-zinc-950 border-purple-500/50 cursor-pointer hover:scale-105 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-zinc-950/50 border-zinc-800 opacity-50 grayscale cursor-not-allowed'}`}>
+                              <div className="flex items-center gap-3 mb-2">
+                                  <span className="text-3xl">{promo.icon}</span>
+                                  <h4 className={`text-lg font-black ${isValid ? 'text-white' : 'text-zinc-500'}`}>{promo.title}</h4>
+                              </div>
+                              <p className="text-xs font-bold text-zinc-400 mb-4 leading-relaxed">{promo.desc}</p>
+                              <div className="mt-auto pt-3 border-t border-zinc-800/50 flex justify-between items-center">
+                                  <p className="text-[9px] uppercase tracking-widest text-purple-400 font-black truncate max-w-[60%]">{promo.timeLabel}</p>
+                                  {isValid ? <span className="text-[10px] bg-yellow-400 text-zinc-900 px-2 py-1 rounded font-black uppercase">Obtener Código</span> : <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">Expirado 🔒</span>}
                               </div>
                           </div>
                       );
                   })}
               </div>
-
-              <h3 className="text-xl font-black mb-4 text-white border-t border-purple-500/30 pt-8">🎫 Cupones en tu cuenta</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {APP_COUPONS.map((coupon: any, idx: number) => {
-                      const h = currentDate.getHours();
-                      const d = currentDate.getDay();
-                      const isValid = coupon.checkValid(h, d);
-                      return (
-                          <div key={idx} className={`p-5 rounded-2xl border text-center relative overflow-hidden ${isValid ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 opacity-50'}`}>
-                              <p className="font-black text-xl text-yellow-400 tracking-widest mb-1">{coupon.code}</p>
-                              <p className="text-xs font-bold text-zinc-300">{coupon.desc}</p>
-                              {!isValid && <div className="absolute inset-0 bg-zinc-950/80 flex items-center justify-center font-black text-xs uppercase tracking-widest text-zinc-500">Fuera de Horario</div>}
-                          </div>
-                      );
-                  })}
-                  {/* Cupones creados desde el Admin */}
-                  {customer.activeCoupons?.map((c: any) => (
-                       <div key={c.id} className="bg-blue-900/20 border-blue-500/50 p-5 rounded-2xl border text-center">
-                          <p className="font-black text-xl text-yellow-400 tracking-widest mb-1">{c.code}</p>
-                          <p className="text-xs font-bold text-zinc-300">Descuento de {c.discountType === 'FIXED' ? `$${c.discount}` : `${c.discount}%`}</p>
-                          {c.minAmount > 0 && <p className="text-[9px] text-blue-400 uppercase tracking-widest mt-2 font-black">Min. Compra: ${c.minAmount}</p>}
-                       </div>
-                  ))}
-              </div>
           </div>
 
-          {/* 3. LA BÓVEDA DE RECOMPENSAS (Descuentos en efectivo) */}
+          {/* 3. LA BÓVEDA DE RECOMPENSAS (Dinero) */}
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[3rem] shadow-2xl">
-            <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎁 La Bóveda de Premios</h3>
-            <p className="text-zinc-500 font-bold mb-8 text-sm">Canjea tus puntos por dinero a favor. Revisa el consumo mínimo de cada bono.</p>
+            <h3 className="text-2xl font-black mb-2 text-white flex items-center gap-3">🎁 Bóveda de Efectivo</h3>
+            <p className="text-zinc-500 font-bold mb-8 text-sm">Tus puntos equivalen a dinero. Cánjealos como saldo a favor en el Kiosco.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {REWARDS.map(reward => {
                     const canAfford = customer.points >= reward.pts;
                     return (
-                        <div key={reward.id} onClick={() => canAfford && setSelectedReward(reward)} className={`relative p-6 rounded-[2rem] border-2 flex flex-col items-center text-center transition-all ${canAfford ? 'bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-yellow-500/50 cursor-pointer hover:scale-105 shadow-[0_0_30px_rgba(250,204,21,0.15)]' : 'bg-zinc-950 border-zinc-800 opacity-60 grayscale cursor-not-allowed'}`}>
+                        <div key={reward.id} onClick={() => canAfford && setSelectedItem({...reward, type: 'REWARD'})} className={`relative p-6 rounded-[2rem] border-2 flex flex-col items-center text-center transition-all ${canAfford ? 'bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-yellow-500/50 cursor-pointer hover:scale-105 shadow-[0_0_30px_rgba(250,204,21,0.15)]' : 'bg-zinc-950 border-zinc-800 opacity-60 grayscale cursor-not-allowed'}`}>
                             {!canAfford && <div className="absolute top-4 right-4 text-xl">🔒</div>}
                             <span className="text-5xl mb-4 drop-shadow-lg">{reward.icon}</span>
                             <h4 className={`text-xl font-black mb-1 ${canAfford ? 'text-yellow-400' : 'text-zinc-400'}`}>{reward.label}</h4>
                             <p className="text-xs font-bold text-zinc-300 mb-6 h-10">{reward.desc}</p>
                             
                             <div className={`mt-auto w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex flex-col gap-1 ${canAfford ? 'bg-yellow-400 text-zinc-950' : 'bg-zinc-900 text-zinc-500'}`}>
-                                <span>{canAfford ? '¡Canjear Ahora!' : `Cuesta ${reward.pts} pts`}</span>
+                                <span>{canAfford ? '¡Usar Ahora!' : `Cuesta ${reward.pts} pts`}</span>
                                 <span className="opacity-80">Min. Compra ${reward.minSpend}</span>
                             </div>
                         </div>
@@ -366,10 +363,10 @@ export default function MiCuenta() {
             )}
           </div>
 
-          {/* FOOTER DE LEGALES */}
-          <div className="text-center text-zinc-500 text-xs font-bold pt-10 border-t border-zinc-800 flex justify-center gap-6">
-              <button onClick={() => setShowPrivacy(true)} className="hover:text-yellow-400 transition-colors">Aviso de Privacidad</button>
-              <button onClick={() => setShowCookies(true)} className="hover:text-yellow-400 transition-colors">Política de Cookies</button>
+          {/* FOOTER DE LEGALES SIEMPRE VISIBLE */}
+          <div className="text-center text-zinc-600 text-xs font-bold pt-8 border-t border-zinc-800 flex justify-center gap-6">
+              <button onClick={() => setShowPrivacy(true)} className="hover:text-yellow-400 transition-colors uppercase tracking-widest">Aviso de Privacidad</button>
+              <button onClick={() => setShowCookies(true)} className="hover:text-yellow-400 transition-colors uppercase tracking-widest">Política de Cookies</button>
           </div>
 
         </div>
@@ -385,7 +382,7 @@ export default function MiCuenta() {
              <div className="bg-green-500 text-white p-10 rounded-[3rem] text-center max-w-sm w-full shadow-2xl">
                 <span className="text-8xl mb-6 block drop-shadow-lg">✅</span>
                 <h3 className="text-3xl font-black mb-2">¡Orden Enviada!</h3>
-                <p className="font-bold mb-8 opacity-90">Tu orden ya está sonando en la caja y cocina de Maiztros.</p>
+                <p className="font-bold mb-8 opacity-90">Tu orden ya está sonando en la caja de Maiztros.</p>
                 <div className="bg-black/20 p-6 rounded-3xl mb-8">
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Tu Número de Turno</p>
                     <p className="text-5xl font-black italic">#{orderSuccess}</p>
@@ -403,7 +400,7 @@ export default function MiCuenta() {
                 <button onClick={() => setSelectedOrder(null)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
                 <span className="text-6xl mb-4 block">👨‍🍳</span>
                 <h3 className="text-3xl font-black text-green-400 mb-4">¿Enviar a Caja?</h3>
-                <p className="text-zinc-300 text-sm font-bold mb-8">Si confirmas, esta orden sonará en el KDS y en el Mostrador para que te la preparen inmediatamente.</p>
+                <p className="text-zinc-300 text-sm font-bold mb-8">Si confirmas, esta orden sonará en el KDS para que te la preparen inmediatamente.</p>
                 
                 <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 text-left mb-8 shadow-inner">
                     <div className="space-y-4">
@@ -427,47 +424,50 @@ export default function MiCuenta() {
         </div>
       )}
 
-      {/* MODAL CÓMO USAR PROMO SECRETA */}
-      {showPromoModal && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-50 p-6 animate-in fade-in">
-              <div className="bg-zinc-900 border-2 border-purple-500/50 p-10 rounded-[3rem] text-center max-w-md w-full relative">
-                  <button onClick={() => setShowPromoModal(null)} className="absolute top-6 right-6 text-zinc-500 hover:text-white text-xl font-bold">✕</button>
-                  <h3 className="text-3xl font-black text-purple-400 mb-2">{showPromoModal.title}</h3>
-                  <p className="text-zinc-300 text-sm font-bold mb-8">{showPromoModal.desc}</p>
-                  
-                  <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 text-left mb-8 shadow-inner">
-                      <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-3">¿Cómo hacer válida esta promoción?</p>
-                      <p className="text-sm text-white font-bold leading-relaxed">
-                          Acércate a nuestro mostrador y dile al Maiztro: <br/><br/>
-                          <span className="italic text-yellow-400">"Quiero la promoción de la app: {showPromoModal.title}. Mi número es {formatPhone(phone)}"</span>
-                      </p>
-                  </div>
-                  <button onClick={() => setShowPromoModal(null)} className="w-full bg-purple-500 hover:bg-purple-400 text-white font-black text-xl py-4 rounded-2xl shadow-lg transition-transform active:scale-95">
-                      ¡Entendido! 👍
-                  </button>
-              </div>
-          </div>
-      )}
-
-      {/* MODAL CANJE DE BOVEDA (EFECTIVO) */}
-      {selectedReward && (
+      {/* MODAL ÚNICO: CANJE DE BOVEDA Y PROMOS SECRETA */}
+      {selectedItem && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-50 p-6 animate-in fade-in">
-            <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border-2 border-yellow-500/50 p-10 rounded-[3rem] text-center max-w-md w-full relative shadow-[0_0_50px_rgba(250,204,21,0.15)]">
-                <span className="text-7xl mb-6 block drop-shadow-2xl">{selectedReward.icon}</span>
-                <h3 className="text-3xl font-black text-white mb-2">{selectedReward.label}</h3>
-                <p className="text-yellow-400 font-black text-xl mb-8 border-b border-zinc-800 pb-6">Te descontaremos ${selectedReward.discount} MXN</p>
+            <div className={`border-2 p-10 rounded-[3rem] text-center max-w-md w-full relative shadow-2xl bg-gradient-to-b from-zinc-900 to-zinc-950 ${selectedItem.type === 'PROMO' ? 'border-purple-500/50 shadow-[0_0_50px_rgba(168,85,247,0.15)]' : 'border-yellow-500/50 shadow-[0_0_50px_rgba(250,204,21,0.15)]'}`}>
+                <span className="text-7xl mb-6 block drop-shadow-2xl">{selectedItem.icon}</span>
+                <h3 className="text-3xl font-black text-white mb-2">{selectedItem.title || selectedItem.label}</h3>
                 
-                <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 mb-8 text-left">
-                    <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-3">Instrucciones de Canje</p>
-                    <ol className="text-zinc-300 font-bold text-sm space-y-3">
-                        <li><span className="text-yellow-400 mr-2">1.</span> Arma tu pedido en el Kiosco por un total mayor a <strong className="text-white">${selectedReward.minSpend} MXN</strong>.</li>
-                        <li><span className="text-yellow-400 mr-2">2.</span> Al ir a pagar, ingresa tu número: <strong className="tracking-widest">{phone}</strong>.</li>
-                        <li><span className="text-yellow-400 mr-2">3.</span> El sistema detectará tus puntos. Selecciona el bono de <strong>${selectedReward.discount}</strong> en la pantalla.</li>
-                        <li><span className="text-yellow-400 mr-2">4.</span> ¡Listo! El descuento se aplicará automáticamente a tu total.</li>
+                {selectedItem.type === 'REWARD' ? (
+                    <p className="text-yellow-400 font-black text-xl mb-6">Te descontaremos ${selectedItem.discount} MXN</p>
+                ) : (
+                    <p className="text-purple-400 font-black text-lg mb-6">{selectedItem.desc}</p>
+                )}
+                
+                <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 mb-8">
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-3">Tu Código Promocional</p>
+                    {selectedItem.type === 'REWARD' ? (
+                         <p className="text-4xl font-black tracking-widest text-white border-dashed border-2 border-zinc-700 py-4 rounded-xl opacity-50">AUTOMÁTICO</p>
+                    ) : (
+                         <div className="flex items-center justify-center gap-3 bg-white p-4 rounded-xl cursor-pointer hover:bg-zinc-200 transition-colors" onClick={() => { navigator.clipboard.writeText(selectedItem.code); alert('Código copiado'); }}>
+                             <p className="text-3xl font-black tracking-widest text-zinc-950">{selectedItem.code}</p>
+                             <span className="text-zinc-400 text-xl">📋</span>
+                         </div>
+                    )}
+                </div>
+
+                <div className="text-left mb-8 px-4">
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-3">Instrucciones de Uso</p>
+                    <ol className="text-zinc-300 font-bold text-xs space-y-3">
+                        {selectedItem.type === 'REWARD' ? (
+                            <>
+                                <li><span className="text-yellow-400 mr-2">1.</span> Arma tu pedido en el Kiosco (Mínimo ${selectedItem.minSpend} MXN).</li>
+                                <li><span className="text-yellow-400 mr-2">2.</span> Ingresa tu celular al pagar. El Kiosco detectará tus puntos y aplicará tu saldo automáticamente al seleccionarlo.</li>
+                            </>
+                        ) : (
+                            <>
+                                <li><span className="text-purple-400 mr-2">1.</span> Ve al Kiosco de Maiztros.</li>
+                                <li><span className="text-purple-400 mr-2">2.</span> En la pantalla de pago, toca el botón de "Ingresar Código".</li>
+                                <li><span className="text-purple-400 mr-2">3.</span> Teclea el código <strong className="text-white bg-zinc-800 px-2 py-0.5 rounded">{selectedItem.code}</strong>. El descuento se aplicará solo.</li>
+                            </>
+                        )}
                     </ol>
                 </div>
 
-                <button onClick={() => setSelectedReward(null)} className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black text-xl py-4 rounded-2xl shadow-lg transition-transform active:scale-95">
+                <button onClick={() => setSelectedItem(null)} className={`w-full font-black text-xl py-4 rounded-2xl shadow-lg transition-transform active:scale-95 ${selectedItem.type === 'PROMO' ? 'bg-purple-500 hover:bg-purple-400 text-white' : 'bg-yellow-400 hover:bg-yellow-300 text-zinc-950'}`}>
                     ¡Entendido! ➔
                 </button>
             </div>
