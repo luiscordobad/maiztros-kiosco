@@ -7,7 +7,10 @@ const OPCIONES = {
   MARUCHAN: ['Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín'],
   BOING: ['Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa'],
   REFRESCO: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral'],
-  BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural']
+  BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
+  // NUEVAS OPCIONES PARA EL COMBO ESPECIALISTA
+  ESPECIALIDAD_CHOICE: ['Construpapas', 'Obra Maestra'],
+  PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
 };
 
 const REWARDS = [
@@ -19,7 +22,6 @@ const REWARDS = [
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   
-  // FILTRO: Solo muestra en menú principal si isAvailable es true
   const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable);
 
   const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
@@ -59,16 +61,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
-  // NUEVO ESTADO: INVENTARIO FÍSICO
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
   useEffect(() => {
-    // Jalamos la data del inventario al cargar la app para saber qué ocultar
     fetch('/api/admin?action=kiosco_sync')
       .then(res => res.json())
-      .then(data => {
-        if(data.success) setInventoryItems(data.inventoryItems);
-      });
+      .then(data => { if(data.success) setInventoryItems(data.inventoryItems); });
   }, [appState]);
 
   useEffect(() => {
@@ -142,25 +140,35 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const totalNeto = totalAfterCoupon - actualDiscount;
   const pointsToEarn = Math.floor(totalNeto);
 
+  // DESCRIPCIONES COOL (MAIZTROS STYLE)
   const getProductDesc = (name: string) => {
-    if(name.includes('Individual')) return "Esquite Mediano + 1 Bebida";
-    if(name.includes('Pareja')) return "2 Esquites (Toppings full) + 2 Bebidas";
-    if(name.includes('Familiar')) return "2 Gdes + 2 Chicos (Toppings full) + 4 Bebidas";
-    if(name === 'Construpapas') return "Tus papas con esquite encima";
-    if(name === 'Obra Maestra') return "Maruchan con nuestro esquite";
-    if(name === 'Don Maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
+    const n = name.toLowerCase();
+    if(n.includes('solitario') || n.includes('individual')) return "1 Esq. Mediano + 1 Bebida Fría";
+    if(n.includes('dúo') || n.includes('pareja')) return "2 Esq. Medianos + 2 Bebidas (1er Topping Gratis)";
+    if(n.includes('tribu') || n.includes('familiar')) return "2 Gdes + 2 Chicos + 4 Bebidas (1er Topping Gratis)";
+    if(n.includes('especialista') || n.includes('especialidad')) return "Construpapas u Obra Maestra a elegir + 1 Bebida";
+    
+    if(n === 'construpapas') return "Tus papas con esquite encima";
+    if(n === 'obra maestra') return "Maruchan con nuestro esquite";
+    if(n === 'don maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
     return "";
   };
 
+  // FLUJO DE PREGUNTAS DINÁMICO
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
+    
+    // COMBOS NUEVOS
+    if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
+    if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite Mediano 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite Mediano 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
+    if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
+    if(n.includes('especialista') || n.includes('especialidad')) return [{t: 'Elige tu Especialidad', type: 'ESPECIALIDAD_CHOICE'}, {t: 'Tu Sabor', type: 'PAPAS_MARUCHAN'}, {t: 'Toppings', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
+    
+    // PRODUCTOS SOLOS
     if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
-    if(n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
-    if(n.includes('pareja')) return [{t: 'Esquite 1', type: 'TOPPINGS', isFree: true}, {t: 'Esquite 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
-    if(n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', isFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', isFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
     if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; // Don maiztro tb tiene 1ro gratis
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
     if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
@@ -195,20 +203,28 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if (!isLastStep) { setWizardStep(prev => prev + 1); return; }
 
     let totalExtra = 0; let notesLines: string[] = [];
-    activeSteps.forEach((step, index) => {
+    activeSteps.forEach((step: any, index: number) => {
       const selections = wizardData[index] || [];
       if (selections.length === 0) return;
+      
       if (step.type === 'TOPPINGS') {
         const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
         let baseCount = paidCount;
-        if (activeProduct.name === 'Don Maiztro' && baseCount > 0) baseCount -= 1; 
+        
+        // LÓGICA: PRIMER TOPPING GRATIS
+        if (step.firstToppingFree && baseCount > 0) {
+          baseCount -= 1; // Le perdonamos 1 topping de los que cuestan
+        }
+        
         if (!step.isFree) {
           if (baseCount === 1) totalExtra += 15;
           if (baseCount === 2) totalExtra += 25;
-          if (baseCount >= 3) totalExtra += 35;
+          if (baseCount >= 3) totalExtra += 35; // Escala 10 pesos más
         }
         notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
-      } else { notesLines.push(`${step.t}: ${selections[0]}`); }
+      } else { 
+        notesLines.push(`${step.t}: ${selections[0]}`); 
+      }
     });
 
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
@@ -237,18 +253,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          cart, 
-          totalAmount: totalNeto, 
-          pointsDiscount: actualDiscount, 
-          pointsDeducted: selectedReward?.pts || 0, 
-          couponCode: activeCoupon?.code || null, 
-          tipAmount, 
-          customerName, 
-          customerEmail, 
-          customerPhone, 
-          paymentMethod, 
-          orderType, 
-          orderNotes 
+          cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, pointsDeducted: selectedReward?.pts || 0, 
+          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
         })
       });
       const data = await response.json();
@@ -267,11 +273,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
-    if (selectedReward && totalAfterCoupon < selectedReward.discount) {
-      alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
-      return;
-    }
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla."); return; }
+    if (selectedReward && totalAfterCoupon < selectedReward.discount) return alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla.");
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -307,6 +310,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       ))}
     </div>
   );
+
+  // FILTRO DINÁMICO DE PÁNICO Y STOCK
+  const isOptionAvailable = (optName: string) => {
+    const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
+    if (invItem) return invItem.isAvailable && invItem.stock > 0;
+    const prodItem = products.find(p => p.name.toLowerCase() === optName.toLowerCase());
+    if (prodItem) return prodItem.isAvailable;
+    return true; 
+  };
 
   if (appState === 'WELCOME') {
     return (
@@ -429,9 +441,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                             {isAffordable ? `Cuesta ${reward.pts} pts` : `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts`}
                           </p>
                         </div>
-                        <span className="text-xl">
-                          {isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}
-                        </span>
+                        <span className="text-xl">{isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}</span>
                       </button>
                     );
                   })}
@@ -496,21 +506,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       </div>
     );
   }
-
-  // ==========================================
-  // FILTRO DINÁMICO DE OPCIONES (PANEL DE PÁNICO)
-  // ==========================================
-  const isOptionAvailable = (optName: string) => {
-    // 1. Verificar si está en el inventario físico y apagado por Pánico o por Stock 0
-    const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
-    if (invItem) return invItem.isAvailable && invItem.stock > 0;
-    
-    // 2. Verificar si es un producto directo
-    const prodItem = products.find(p => p.name.toLowerCase() === optName.toLowerCase());
-    if (prodItem) return prodItem.isAvailable;
-    
-    return true; // Por defecto prendido
-  };
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
@@ -639,9 +634,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
-                    .filter((opt: string) => isOptionAvailable(opt)) // FILTRO MAGICO DE PÁNICO Y STOCK CERO
+                    .filter((opt: string) => {
+                       // LÓGICA DINÁMICA DE ESPECIALIDAD (Filtra papas o maruchans)
+                       if (getProductSteps(activeProduct)[wizardStep].type === 'PAPAS_MARUCHAN') {
+                          const baseChoice = wizardData[0]?.[0]; // Sabe qué eligió en el Paso 1
+                          if (baseChoice === 'Construpapas') return OPCIONES.PAPAS.includes(opt) && isOptionAvailable(opt);
+                          if (baseChoice === 'Obra Maestra') return OPCIONES.MARUCHAN.includes(opt) && isOptionAvailable(opt);
+                       }
+                       return isOptionAvailable(opt);
+                    })
                     .map((opt: string) => (
-                      <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98] shadow-lg' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{opt}</button>
+                    <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98] shadow-lg' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{opt}</button>
                   ))}
                 </div>
               )}
