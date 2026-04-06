@@ -49,11 +49,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const getAuthorName = () => role === 'ADMIN' ? 'Luis (Jefe)' : 'Cajero (Staff)';
 
   const updatePanic = async (id: string, type: string, currentStatus: boolean) => {
-      await fetch('/api/admin', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, type, isAvailable: !currentStatus, author: getAuthorName() })
-      });
+      await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, isAvailable: !currentStatus, author: getAuthorName() }) });
       fetchData();
   };
 
@@ -82,7 +78,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map((i:any) => i.id === id ? { ...i, isActive: !currentStatus } : i) });
-    
     await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus, author: getAuthorName() }) });
   };
 
@@ -143,10 +138,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  // ==========================================
-  // CÁLCULOS FINANCIEROS Y DE BI (NUEVOS)
-  // ==========================================
-  const validOrders = data.orders ? data.orders.filter((o:any) => o.status === 'PAID') : []; // Solo procesamos pagadas y completas para P&L
+  const validOrders = data.orders ? data.orders.filter((o:any) => o.status === 'PAID') : []; 
   const totalOrders = validOrders.length;
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
   const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
@@ -159,17 +151,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
-  // NUEVO: Adopción App vs Kiosco
   const ventasApp = validOrders.filter((o:any) => o.orderType === 'TAKEOUT').length;
   const ventasKiosco = validOrders.filter((o:any) => o.orderType === 'DINE_IN' || !o.orderType).length;
   const canalData = [
     { name: 'App VIP', value: ventasApp, color: '#a855f7' },
-    { name: 'Kiosco Físico', value: ventasKiosco, color: '#eab308' }
+    { name: 'Kiosco', value: ventasKiosco, color: '#eab308' }
   ];
 
-  // NUEVO: Pasivo de Lealtad
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
-  // Considerando que el premio mayor da $80 por 1000 pts (cada punto vale $0.08 aprox de descuento)
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
 
   const salesByDateMap = validOrders.reduce((acc: any, order: any) => {
@@ -197,16 +186,77 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       if(o.items) {
           const itemsArr = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
           itemsArr.forEach((item: any) => {
-              const name = item.product?.name || 'Producto Desconocido';
+              const name = item.product?.name || 'Prod. Desconocido';
               productVolume[name] = (productVolume[name] || 0) + 1;
           });
       }
   });
   const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 5);
 
-  // ==========================================
-  // CONFIGURACIÓN DE PESTAÑAS POR ROL (RBAC)
-  // ==========================================
+  const renderInventoryGroup = (category: string, title: string, isManual: boolean = false) => {
+    const items = data.inventoryItems?.filter((i: any) => i.category === category) || [];
+    if (items.length === 0) return null;
+    return (
+      <div className={`mb-10 p-6 rounded-[2rem] border ${isManual ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-zinc-800 bg-zinc-950/30'}`}>
+        <h3 className={`text-xl font-black mb-4 ${isManual ? 'text-yellow-400' : 'text-purple-400'}`}>{title}</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {items.map((item: any) => (
+            <div key={item.id} className={`bg-zinc-900 p-5 rounded-2xl border ${item.stock <= 5 ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-zinc-800'}`}>
+              <div className="flex justify-between items-center mb-3"><p className="font-bold text-white truncate text-lg">{item.name}</p><span className={`font-black text-xl ${item.stock <= 5 ? 'text-red-400' : 'text-green-400'}`}>{item.stock.toFixed(2)} <span className="text-xs text-zinc-500 uppercase">{item.unit}</span></span></div>
+              <div className="flex gap-2">
+                <div className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl overflow-hidden focus-within:border-yellow-400"><p className="text-[9px] text-zinc-500 font-bold uppercase text-center mt-1">Total</p><input type="number" defaultValue={item.stock} onBlur={(e) => updatePhysicalStock(item.id, e.target.value)} className="bg-transparent w-full p-2 text-center text-white font-bold outline-none"/></div>
+                <div className="flex-1 flex bg-zinc-950 border border-blue-500/50 rounded-xl overflow-hidden focus-within:border-blue-400"><input type="number" value={addAmounts[item.id] || ''} onChange={(e) => setAddAmounts({...addAmounts, [item.id]: e.target.value})} placeholder="+ Sumar" className="bg-transparent w-full p-2 text-center text-blue-300 font-bold outline-none placeholder:text-blue-900/50 placeholder:text-xs"/><button onClick={() => addPhysicalStock(item.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-black px-3 transition-colors">+</button></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const renderPanicCategory = (categoryFilter: string, title: string, isModifier: boolean) => {
+    const items = isModifier ? data.modifiers.filter((m:any) => m.type === categoryFilter) : data.products.filter((p:any) => p.category === categoryFilter);
+    if (items.length === 0) return null;
+    const allAvailable = items.every((i:any) => i.isAvailable);
+
+    return (
+      <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
+        <div className="flex justify-between items-center mb-4 border-b border-zinc-800 pb-3">
+          <h3 className="text-lg font-black text-zinc-300">{title}</h3>
+          <button onClick={() => toggleCategory(categoryFilter, isModifier, items)} className={`px-4 py-1.5 rounded-lg font-black text-xs uppercase transition-transform active:scale-95 ${allAvailable ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/30'}`}>
+            {allAvailable ? 'Apagar Todos' : 'Prender Todos'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {items.map((item: any) => (
+            <button key={item.id} onClick={() => toggleStatus(item.id, isModifier ? 'modifier' : 'product', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
+              <span className="font-bold text-sm truncate">{item.name}</span>
+              <span className="text-lg">{item.isAvailable ? '✅' : '❌'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPanicSubOptions = (category: string, title: string) => {
+    const items = data.inventoryItems.filter((i:any) => i.category === category);
+    if (items.length === 0) return null;
+    return (
+      <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
+        <h3 className="text-lg font-black text-zinc-300 mb-4 border-b border-zinc-800 pb-3">{title}</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {items.map((item: any) => (
+            <button key={item.id} onClick={() => toggleStatus(item.id, 'inventory_toggle', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
+              <span className="font-bold text-sm truncate">{item.name}</span>
+              <span className="text-lg">{item.isAvailable ? '✅' : '❌'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const TABS_ADMIN = ['FINANZAS', 'VENTAS', 'INVENTARIO', 'PANICO', 'MARKETING', 'AUDITORIA', 'CLIENTES'];
   const TABS_CAJERO = ['VENTAS', 'INVENTARIO'];
   const allowedTabs = role === 'ADMIN' ? TABS_ADMIN : TABS_CAJERO;
@@ -214,13 +264,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   return (
       <div className="min-h-screen bg-zinc-950 text-white p-6 md:p-10 font-sans max-w-7xl mx-auto pb-40">
         
-        {/* NAVEGACIÓN Y HEADER */}
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-zinc-800 pb-6 mb-8 gap-6">
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-2xl text-zinc-950 text-2xl font-black italic ${role === 'ADMIN' ? 'bg-yellow-400' : 'bg-blue-400'}`}>{role === 'ADMIN' ? 'M' : 'C'}</div>
             <div>
                 <h1 className="text-3xl font-black tracking-tighter">MAIZTROS <span className="text-zinc-500 font-normal">BI</span></h1>
-                <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Sesión iniciada como: <span className={role === 'ADMIN' ? 'text-yellow-400' : 'text-blue-400'}>{role}</span></p>
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Sesión: <span className={role === 'ADMIN' ? 'text-yellow-400' : 'text-blue-400'}>{role}</span></p>
             </div>
           </div>
           <div className="flex flex-wrap bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 w-full xl:w-auto gap-1">
@@ -230,22 +279,19 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
-        {/* FILTROS GLOBALES Y SYNC */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
                 <span className="text-zinc-600">→</span>
                 <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
             </div>
-            
             {role === 'ADMIN' ? (
                 <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
                     <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
                     <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
                 </div>
             ) : <div></div>}
-            
-            <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Sincronizar Data</button>
+            <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Sync Data</button>
         </div>
 
         {loading ? (
@@ -256,37 +302,27 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         ) : (
           <div className="animate-in fade-in duration-500">
             
-            {/* ======================= */}
-            {/* PESTAÑA: FINANZAS (BI)  */}
-            {/* SOLO ADMIN              */}
-            {/* ======================= */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
-                
-                {/* Métricas Rápidas */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">📈</div>
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Ingresos Brutos</p>
-                    <p className="text-5xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2">Ingresos Brutos</p>
+                    <p className="text-5xl font-black text-white">${ventasNetas.toFixed(2)}</p>
                   </div>
                   <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Operativos</p>
-                    <p className="text-5xl font-black text-red-400 relative z-10">-${gastosTotales.toFixed(2)}</p>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2">Gastos Operativos</p>
+                    <p className="text-5xl font-black text-red-400">-${gastosTotales.toFixed(2)}</p>
                   </div>
                   <div className={`p-8 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
-                    <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
-                    <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                    <p className={`font-bold uppercase tracking-widest mb-2 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
+                    <p className={`text-5xl font-black ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
+                    <p className="text-sm font-bold mt-3 opacity-90">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Gráfica de Horas Pico (BI) */}
                     <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex flex-col">
-                        <h3 className="text-xl font-black mb-6 flex items-center gap-2">🔥 Horas con más Movimiento <span className="text-[10px] bg-zinc-800 px-2 py-1 rounded text-zinc-500 tracking-widest">ZIBATÁ PEAK</span></h3>
+                        <h3 className="text-xl font-black mb-6 flex items-center gap-2">🔥 Horas con más Movimiento</h3>
                         {hourChartData.length > 0 ? (
                           <div className="h-[300px] w-full">
                               <ResponsiveContainer width="100%" height="100%">
@@ -310,7 +346,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         )}
                     </div>
 
-                    {/* Adopción App vs Kiosco y Top Productos */}
                     <div className="flex flex-col gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                           <h3 className="text-xl font-black mb-4">📱 Adopción de Canales</h3>
@@ -327,11 +362,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                               <div className="flex-1 space-y-2">
                                   <div className="flex justify-between items-center bg-zinc-950 p-2 rounded-lg border border-zinc-800">
                                       <span className="text-xs font-bold text-purple-400">App VIP</span>
-                                      <span className="text-sm font-black">{ventasApp} ord.</span>
+                                      <span className="text-sm font-black">{ventasApp}</span>
                                   </div>
                                   <div className="flex justify-between items-center bg-zinc-950 p-2 rounded-lg border border-zinc-800">
                                       <span className="text-xs font-bold text-yellow-400">Kiosco</span>
-                                      <span className="text-sm font-black">{ventasKiosco} ord.</span>
+                                      <span className="text-sm font-black">{ventasKiosco}</span>
                                   </div>
                               </div>
                           </div>
@@ -359,11 +394,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                 </div>
 
-                {/* NUEVO: AUDITORÍA DE CORTES DE CAJA (FALTANTES Y SOBRANTES) */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Matemático Exacto</span>
+                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
                   </div>
                   <div className="overflow-x-auto">
                       <table className="w-full text-left">
@@ -374,14 +408,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   <th className="pb-4">Fondo Inicial</th>
                                   <th className="pb-4">Ventas Efectivo</th>
                                   <th className="pb-4 text-red-400">Retiros</th>
-                                  <th className="pb-4 text-yellow-400 font-black">Efectivo Esperado</th>
-                                  <th className="pb-4 text-white font-black">Reportado Físico</th>
+                                  <th className="pb-4 text-yellow-400 font-black">Esperado</th>
+                                  <th className="pb-4 text-white font-black">Reportado</th>
                                   <th className="pb-4 text-right pr-4">Diferencia</th>
                               </tr>
                           </thead>
                           <tbody className="text-sm font-bold">
                               {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
-                                  // Cálculo para la auditoría: Solo sumamos ventas pagadas en efectivo
                                   const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
                                   const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
                                   const expectedCash = shift.startingCash + cashSales - withdrawals;
@@ -414,15 +447,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                           </tbody>
                       </table>
                       {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
-                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados registrados para auditar.</div>
+                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
                       )}
                   </div>
                 </div>
 
-                {/* 4. MÓDULO DE EGRESOS (DISEÑO COLUMNAS RESTAURADO) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                   <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto (Egreso)</h3>
+                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto</h3>
                     <div className="space-y-4">
                       <div>
                         <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Monto Total</label>
@@ -438,7 +470,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </select>
                       </div>
                       <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción (Opcional)</label>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción</label>
                         <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="Ej. Pago de gas" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white outline-none focus:border-red-400" />
                       </div>
                       <button onClick={handleAddExpense} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-lg mt-4 transition-all active:scale-95">Guardar Gasto</button>
@@ -460,7 +492,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                             <div className="flex items-center gap-4 w-full md:w-auto justify-end">
                               <p className="font-black text-2xl text-red-400">-${e.amount.toFixed(2)}</p>
-                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors" title="Borrar Gasto">🗑️</button>
+                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors">🗑️</button>
                             </div>
                           </div>
                         ))
@@ -472,18 +504,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: CLIENTES (CRM) */}
-            {/* SOLO ADMIN              */}
-            {/* ======================= */}
             {activeTab === 'CLIENTES' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
-                    
-                    {/* NUEVO: PASIVO DE LEALTAD */}
                     <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-2 border-yellow-500/30 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_0_30px_rgba(250,204,21,0.1)]">
                         <div>
-                            <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2">🏦 Riesgo Financiero (Pasivo de Lealtad)</h3>
-                            <p className="text-zinc-400 text-sm font-bold">Valor monetario estimado si todos tus clientes canjearan sus puntos hoy mismo.</p>
+                            <h3 className="text-2xl font-black text-white mb-2 flex items-center gap-2">🏦 Riesgo Financiero</h3>
+                            <p className="text-zinc-400 text-sm font-bold">Valor estimado si todos los clientes canjearan sus puntos hoy mismo.</p>
                         </div>
                         <div className="flex items-center gap-8 bg-zinc-950 p-6 rounded-2xl border border-yellow-500/20">
                             <div className="text-center">
@@ -537,10 +563,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: MARKETING      */}
-            {/* SOLO ADMIN              */}
-            {/* ======================= */}
             {activeTab === 'MARKETING' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 p-8 rounded-[2rem] shadow-2xl">
@@ -549,7 +571,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Código</label><input type="text" value={newCouponCode} onChange={e => setNewCouponCode(e.target.value.toUpperCase())} placeholder="MAIZTROS10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black uppercase outline-none focus:border-yellow-400" /></div>
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Descuento</label><input type="number" value={newCouponDiscount} onChange={e => setNewCouponDiscount(e.target.value)} placeholder="Ej. 10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" /></div>
                       <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Tipo</label><select value={newCouponType} onChange={e => setNewCouponType(e.target.value as 'FIXED'|'PERCENTAGE')} className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400"><option value="FIXED">Pesos MXN ($)</option><option value="PERCENTAGE">Porcentaje (%)</option></select></div>
-                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Mínimo Compra</label><input type="number" value={newCouponMinAmount} onChange={e => setNewCouponMinAmount(e.target.value)} placeholder="Ej. 250" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" title="¿Cuánto deben gastar para usarlo?" /></div>
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Mínimo Compra</label><input type="number" value={newCouponMinAmount} onChange={e => setNewCouponMinAmount(e.target.value)} placeholder="Ej. 250" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" /></div>
                     </div>
                     <button onClick={handleCreateCoupon} className="mt-6 w-full md:w-auto bg-purple-500 hover:bg-purple-400 text-white font-black px-8 py-4 rounded-xl shadow-lg transition-all active:scale-95">Crear Cupón</button>
                   </div>
@@ -558,7 +580,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Rendimiento de Cupones Activos</h3>
                     <div className="space-y-4">
                       {data.coupons.map((c: any) => {
-                        // NUEVO: Analítica ROI de Cupón
                         const usosDelCupon = validOrders.filter((o:any) => o.couponCode === c.code);
                         const revenueGenerado = usosDelCupon.reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
@@ -573,7 +594,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                     {c.minAmount > 0 && <p className="text-xs font-bold text-purple-400 mt-2 bg-purple-500/10 inline-block px-3 py-1 rounded-full border border-purple-500/30">Compra mínima: ${c.minAmount}</p>}
                                 </div>
                                 
-                                {/* CAJA DE ROI */}
                                 <div className="bg-zinc-900 px-6 py-4 rounded-xl border border-zinc-800 flex gap-6 items-center w-full lg:w-auto">
                                     <div className="text-center">
                                         <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Usos</p>
@@ -588,7 +608,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
                                 <div className="flex gap-2 w-full lg:w-auto border-t lg:border-t-0 border-zinc-800 pt-4 lg:pt-0">
                                     <button onClick={() => toggleStatus(c.id, 'coupon', c.isActive)} className={`flex-1 lg:flex-none px-6 py-3 rounded-xl font-black text-sm uppercase ${c.isActive ? 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500 hover:text-zinc-900' : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'}`}>{c.isActive ? 'Apagar' : 'Prender'}</button>
-                                    <button onClick={() => deleteCoupon(c.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-black transition-colors" title="Eliminar Cupón">🗑️</button>
+                                    <button onClick={() => deleteCoupon(c.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-black transition-colors">🗑️</button>
                                 </div>
                             </div>
                         );
@@ -598,9 +618,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: VENTAS Y TICKETS */}
-            {/* ======================= */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
                   {role === 'ADMIN' && (
@@ -642,10 +659,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                       </div>
                                       <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
                                           {o.customerPhone && (
-                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar WhatsApp">📱</button>
+                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors">📱</button>
                                           )}
                                           <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
-                                          {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors" title="Cancelar Orden">🛑</button>}
+                                          {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
                                       </div>
                                   </div>
                               </div>
@@ -655,9 +672,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: AUDITORÍA (LOGS) */}
-            {/* ======================= */}
             {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
@@ -682,9 +696,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: INVENTARIO     */}
-            {/* ======================= */}
             {activeTab === 'INVENTARIO' && (
                 <div className="space-y-12 animate-in fade-in duration-300">
                   <section className="bg-zinc-900/50 p-8 rounded-[2rem] border border-zinc-800">
@@ -701,7 +712,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                     {data.inventoryItems?.length > 0 && (
                       <>
-                        {renderInventoryGroup('INSUMO', '🌽 Producción de Elote (Control por Lotes - Manual)', true)}
+                        {renderInventoryGroup('INSUMO', '🌽 Producción de Elote (Control por Lotes)', true)}
                         <div className="mt-8 border-t border-zinc-800 pt-8">
                           <h3 className="text-2xl font-black text-white mb-6">Descuento Automático en Caja</h3>
                           {renderInventoryGroup('PAPAS', '🔥 Bolsas de Papas')}
@@ -715,10 +726,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================= */}
-            {/* PESTAÑA: PANICO         */}
-            {/* SOLO ADMIN              */}
-            {/* ======================= */}
             {activeTab === 'PANICO' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
