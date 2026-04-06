@@ -6,7 +6,6 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
-
   try {
     const orders = await prisma.order.findMany({
       where: status ? { status } : {},
@@ -22,49 +21,48 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { orderId, action, newPaymentMethod, etaMinutes, newStatus } = body;
+    const { orderId, action, newPaymentMethod, etaMinutes, newStatus, updatedItems, newTotal } = body;
 
-    // 1. Cambiar Método de Pago (Efectivo <-> Terminal)
+    // 1. Acción: Guardar cambios y Pagar (Todo en uno para la caja)
+    if (newStatus === 'PAID') {
+        const dataToUpdate: any = { status: 'PAID' };
+        if (updatedItems) dataToUpdate.items = JSON.stringify(updatedItems);
+        if (newTotal !== undefined) dataToUpdate.totalAmount = newTotal;
+
+        await prisma.order.update({
+            where: { id: orderId },
+            data: dataToUpdate
+        });
+        return NextResponse.json({ success: true });
+    }
+
+    // 2. Acción: Cambiar Método de Pago
     if (action === 'CHANGE_PAYMENT') {
-        const updatedOrder = await prisma.order.update({
+        await prisma.order.update({
             where: { id: orderId },
             data: { paymentMethod: newPaymentMethod }
         });
-        
-        // Registramos en Auditoría para que tú (Jefe) lo veas en el Admin
-        await prisma.auditLog.create({
-            data: { 
-              action: 'CAMBIO_METODO_PAGO', 
-              details: `Orden ${updatedOrder.turnNumber} cambió a ${newPaymentMethod === 'TERMINAL' ? 'TARJETA' : 'EFECTIVO'}`, 
-              author: 'Caja' 
-            }
-        });
-        return NextResponse.json({ success: true, order: updatedOrder });
+        return NextResponse.json({ success: true });
     }
 
-    // 2. Aceptar Pedido Web con ETA (Click & Collect)
+    // 3. Acción: Aceptar pedido App VIP con ETA
     if (action === 'ACCEPT_ORDER') {
         const etaDate = new Date();
         etaDate.setMinutes(etaDate.getMinutes() + parseInt(etaMinutes));
-
-        // Como no tenemos campo ETA en Prisma, lo inyectamos al inicio de las notas para que el KDS y el cliente lo vean
         const order = await prisma.order.findUnique({ where: { id: orderId } });
         const existingNotes = order?.orderNotes ? `\n${order.orderNotes}` : '';
         const newNotes = `⏱️ [RECOGER EN ${etaMinutes} MIN] (${etaDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})${existingNotes}`;
 
-        const updatedOrder = await prisma.order.update({
+        await prisma.order.update({
             where: { id: orderId },
-            data: { 
-                status: 'PREPARING', // Lo mandamos directo a preparar (KDS)
-                orderNotes: newNotes
-            }
+            data: { status: 'PREPARING', orderNotes: newNotes }
         });
-        return NextResponse.json({ success: true, order: updatedOrder });
+        return NextResponse.json({ success: true });
     }
 
-    // 3. Cancelar / Reembolsar o Pagar (Lo que ya tenías)
-    if (newStatus) {
-        await prisma.order.update({ where: { id: orderId }, data: { status: newStatus } });
+    // 4. Acción: Reembolso / Cancelación
+    if (newStatus === 'REFUNDED') {
+        await prisma.order.update({ where: { id: orderId }, data: { status: 'REFUNDED' } });
         return NextResponse.json({ success: true });
     }
 
