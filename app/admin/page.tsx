@@ -2,11 +2,11 @@
 import { useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 // IMPORTAMOS RECHARTS PARA LA MAGIA VISUAL
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, CartesianGrid } from 'recharts';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'INVENTARIO' | 'PANICO' | 'VENTAS' | 'MARKETING'>('FINANZAS');
-  const [data, setData] = useState<{ products: any[], modifiers: any[], coupons: any[], orders: any[], shifts: any[], inventoryItems: any[], expenses: any[] }>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [] });
+  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'INVENTARIO' | 'PANICO' | 'VENTAS' | 'MARKETING' | 'AUDITORIA'>('FINANZAS');
+  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [] });
   const [loading, setLoading] = useState(true);
 
   // Por defecto filtramos los últimos 7 días
@@ -38,57 +38,57 @@ export default function AdminDashboard() {
 
   const initInventory = async () => {
     if (!confirm("Esto cargará los datos iniciales. ¿Estás seguro?")) return;
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'init_inventory' }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'init_inventory', author: 'Luis (Admin)' }) });
     fetchData();
   };
 
   const updatePhysicalStock = async (id: string, newStock: string) => {
     if (newStock === '') return;
-    setData({ ...data, inventoryItems: data.inventoryItems.map(i => i.id === id ? { ...i, stock: parseFloat(newStock) } : i) });
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'update_stock', newStock }) });
+    setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, stock: parseFloat(newStock) } : i) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'update_stock', newStock, author: 'Luis (Admin)' }) });
   };
 
   const addPhysicalStock = async (id: string) => {
     const amount = addAmounts[id];
     if (!amount || isNaN(parseFloat(amount))) return;
-    setData({ ...data, inventoryItems: data.inventoryItems.map(i => i.id === id ? { ...i, stock: i.stock + parseFloat(amount) } : i) });
+    setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, stock: i.stock + parseFloat(amount) } : i) });
     setAddAmounts({ ...addAmounts, [id]: '' }); 
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'add_stock', addAmount: amount }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'add_stock', addAmount: amount, author: 'Luis (Admin)' }) });
   };
 
   const toggleStatus = async (id: string, type: 'product' | 'modifier' | 'coupon' | 'inventory_toggle', currentStatus: boolean) => {
-    if (type === 'product') setData({ ...data, products: data.products.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
-    else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
-    else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map(i => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
-    else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map(i => i.id === id ? { ...i, isActive: !currentStatus } : i) });
+    if (type === 'product') setData({ ...data, products: data.products.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
+    else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
+    else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
+    else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map((i:any) => i.id === id ? { ...i, isActive: !currentStatus } : i) });
     
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus }) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus, author: 'Luis (Admin)' }) });
   };
 
   const toggleCategory = async (category: string, isModifier: boolean, currentItems: any[]) => {
-    const targetState = !currentItems.every(i => i.isAvailable); 
-    if (isModifier) setData({ ...data, modifiers: data.modifiers.map(m => m.type === category ? { ...m, isAvailable: targetState } : m) });
-    else setData({ ...data, products: data.products.map(p => p.category === category ? { ...p, isAvailable: targetState } : p) });
-    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'toggle_category', category, targetState, isModifier }) });
+    const targetState = !currentItems.every((i:any) => i.isAvailable); 
+    if (isModifier) setData({ ...data, modifiers: data.modifiers.map((m:any) => m.type === category ? { ...m, isAvailable: targetState } : m) });
+    else setData({ ...data, products: data.products.map((p:any) => p.category === category ? { ...p, isAvailable: targetState } : p) });
+    await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'toggle_category', category, targetState, isModifier, author: 'Luis (Admin)' }) });
   };
 
   const handleCreateCoupon = async () => {
     if (!newCouponCode || !newCouponDiscount) return alert('Llena los datos del cupón');
-    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: newCouponCode, discount: newCouponDiscount, discountType: newCouponType, minAmount: newCouponMinAmount }) });
+    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: newCouponCode, discount: newCouponDiscount, discountType: newCouponType, minAmount: newCouponMinAmount, author: 'Luis (Admin)' }) });
     const json = await res.json();
     if (json.success) { setNewCouponCode(''); setNewCouponDiscount(''); setNewCouponMinAmount(''); fetchData(); } 
-    else { alert(json.error); }
+    else { alert(json.error || 'Error al crear cupón'); }
   };
 
   const deleteCoupon = async (id: string) => {
     if(!confirm("¿Eliminar este cupón definitivamente?")) return;
-    setData({ ...data, coupons: data.coupons.filter(c => c.id !== id) });
-    await fetch(`/api/admin?id=${id}&type=coupon`, { method: 'DELETE' });
+    setData({ ...data, coupons: data.coupons.filter((c:any) => c.id !== id) });
+    await fetch(`/api/admin?id=${id}&type=coupon&author=Luis (Admin)`, { method: 'DELETE' });
   };
 
   const handleAddExpense = async () => {
     if (!newExpenseAmount || !newExpenseDesc) return alert('Llena todos los campos del gasto');
-    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'expense', amount: newExpenseAmount, category: newExpenseCategory, description: newExpenseDesc }) });
+    const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'expense', amount: newExpenseAmount, category: newExpenseCategory, description: newExpenseDesc, author: 'Luis (Admin)' }) });
     const json = await res.json();
     if (json.success) { setNewExpenseAmount(''); setNewExpenseDesc(''); fetchData(); } 
     else { alert('Error al registrar gasto'); }
@@ -96,19 +96,20 @@ export default function AdminDashboard() {
 
   const deleteExpense = async (id: string) => {
     if(!confirm("¿Eliminar este registro de gasto?")) return;
-    setData({ ...data, expenses: data.expenses.filter(e => e.id !== id) });
-    await fetch(`/api/admin?id=${id}&type=expense`, { method: 'DELETE' });
+    setData({ ...data, expenses: data.expenses.filter((e:any) => e.id !== id) });
+    await fetch(`/api/admin?id=${id}&type=expense&author=Luis (Admin)`, { method: 'DELETE' });
   };
 
   const handleRefund = async (orderId: string) => {
     if (!confirm('¿Estás seguro de cancelar esta orden?')) return;
-    setData({ ...data, orders: data.orders.map(o => o.id === orderId ? { ...o, status: 'REFUNDED' } : o) });
+    setData({ ...data, orders: data.orders.map((o:any) => o.id === orderId ? { ...o, status: 'REFUNDED' } : o) });
     await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, newStatus: 'REFUNDED' }) });
+    await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'audit', action: 'ORDEN_CANCELADA', details: `Orden ID: ${orderId}`, author: 'Luis (Admin)' }) });
   };
 
   const exportToCSV = () => {
     let csv = 'Turno,Estado,Fecha,Cliente,MetodoPago,MontoBruto,Descuento,MontoNeto\n';
-    data.orders.forEach(o => { const date = new Date(o.createdAt); csv += `${o.turnNumber},${o.status},${date.toLocaleDateString()},${o.customerName},${o.paymentMethod},${o.totalAmount + (o.pointsDiscount||0)},${o.pointsDiscount||0},${o.totalAmount}\n`; });
+    data.orders.forEach((o:any) => { const date = new Date(o.createdAt); csv += `${o.turnNumber},${o.status},${date.toLocaleDateString()},${o.customerName},${o.paymentMethod},${o.totalAmount + (o.pointsDiscount||0)},${o.pointsDiscount||0},${o.totalAmount}\n`; });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `Maiztros_Ventas.csv`; a.click();
@@ -130,7 +131,7 @@ export default function AdminDashboard() {
   // ==========================================
   // CÁLCULOS FINANCIEROS Y DE INTELIGENCIA DE NEGOCIOS (BI)
   // ==========================================
-  const validOrders = data.orders.filter(o => o.status !== 'REFUNDED');
+  const validOrders = data.orders.filter((o:any) => o.status !== 'REFUNDED');
   const totalOrders = validOrders.length;
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
   const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
@@ -141,8 +142,8 @@ export default function AdminDashboard() {
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
   // 1. Desglose Tarjeta vs Efectivo
-  const ventasEfectivo = validOrders.filter(o => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc, o) => acc + o.totalAmount, 0);
-  const ventasTarjeta = validOrders.filter(o => o.paymentMethod === 'TERMINAL').reduce((acc, o) => acc + o.totalAmount, 0);
+  const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+  const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
   const paymentData = [
     { name: 'Efectivo en Caja', value: ventasEfectivo, color: '#22c55e' }, // Verde
@@ -161,6 +162,27 @@ export default function AdminDashboard() {
     Fecha: date,
     Ventas: salesByDateMap[date]
   }));
+
+  // 3. Heatmap de Horas Pico (NUEVO)
+  const hourMap = validOrders.reduce((acc: any, order: any) => {
+    const hour = new Date(order.createdAt).getHours();
+    const label = `${hour}:00`;
+    acc[label] = (acc[label] || 0) + order.totalAmount;
+    return acc;
+  }, {});
+  const hourChartData = Object.keys(hourMap).map(h => ({ Hora: h, Ventas: hourMap[h] })).sort((a,b) => parseInt(a.Hora) - parseInt(b.Hora));
+
+  // 4. Top 5 Productos (NUEVO)
+  const productVolume: any = {};
+  validOrders.forEach((o: any) => {
+      if(o.items) {
+          o.items.forEach((item: any) => {
+              const name = item.product?.name || 'Producto Desconocido';
+              productVolume[name] = (productVolume[name] || 0) + 1;
+          });
+      }
+  });
+  const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a,b) => b.qty - a.qty).slice(0, 5);
 
   // ==========================================
 
@@ -186,9 +208,9 @@ export default function AdminDashboard() {
   }
 
   const renderPanicCategory = (categoryFilter: string, title: string, isModifier: boolean) => {
-    const items = isModifier ? data.modifiers.filter(m => m.type === categoryFilter) : data.products.filter(p => p.category === categoryFilter);
+    const items = isModifier ? data.modifiers.filter((m:any) => m.type === categoryFilter) : data.products.filter((p:any) => p.category === categoryFilter);
     if (items.length === 0) return null;
-    const allAvailable = items.every(i => i.isAvailable);
+    const allAvailable = items.every((i:any) => i.isAvailable);
 
     return (
       <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
@@ -211,7 +233,7 @@ export default function AdminDashboard() {
   };
 
   const renderPanicSubOptions = (category: string, title: string) => {
-    const items = data.inventoryItems.filter(i => i.category === category);
+    const items = data.inventoryItems.filter((i:any) => i.category === category);
     if (items.length === 0) return null;
     return (
       <div className="mb-6 bg-zinc-950 p-6 rounded-[2rem] border border-zinc-800">
@@ -241,6 +263,8 @@ export default function AdminDashboard() {
             <button onClick={() => setActiveTab('INVENTARIO')} className={`px-4 py-2 font-bold transition-all text-sm md:text-base flex-1 md:flex-none ${activeTab === 'INVENTARIO' ? 'bg-yellow-400 text-zinc-950 rounded-full' : 'text-zinc-500 hover:text-white'}`}>📦 Stock</button>
             <button onClick={() => setActiveTab('PANICO')} className={`px-4 py-2 font-bold transition-all text-sm md:text-base flex items-center gap-2 flex-1 md:flex-none ${activeTab === 'PANICO' ? 'bg-red-500 text-white rounded-full' : 'text-zinc-500 hover:text-red-400'}`}>🚨 Pánico</button>
             <button onClick={() => setActiveTab('MARKETING')} className={`px-4 py-2 font-bold transition-all text-sm md:text-base flex-1 md:flex-none ${activeTab === 'MARKETING' ? 'bg-yellow-400 text-zinc-950 rounded-full' : 'text-zinc-500 hover:text-white'}`}>🎟️ Marketing</button>
+            {/* NUEVA PESTAÑA */}
+            <button onClick={() => setActiveTab('AUDITORIA')} className={`px-4 py-2 font-bold transition-all text-sm md:text-base flex-1 md:flex-none ${activeTab === 'AUDITORIA' ? 'bg-blue-500 text-white rounded-full' : 'text-zinc-500 hover:text-blue-400'}`}>🛡️ Auditoría</button>
           </div>
         </header>
 
@@ -251,10 +275,11 @@ export default function AdminDashboard() {
             <span className="text-zinc-600 font-black mt-4">→</span>
             <div className="flex flex-col flex-1 md:flex-none"><label className="text-zinc-500 text-xs font-bold uppercase mb-1">Hasta</label><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-950 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 w-full" /></div>
           </div>
+          <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black px-6 py-4 rounded-xl transition-colors">🔄 Sincronizar Data</button>
           {activeTab === 'VENTAS' && <button onClick={exportToCSV} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black w-full md:w-auto">⬇️ Exportar CSV</button>}
         </div>
 
-        {loading ? <p className="text-center text-zinc-500 text-xl py-20 animate-pulse">Analizando Servidores...</p> : (
+        {loading ? <div className="flex flex-col items-center justify-center py-20"><div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div><p className="text-zinc-500 text-xl font-bold mt-4 animate-pulse">Analizando Servidores...</p></div> : (
           <>
             {/* ========================================== */}
             {/* PESTAÑA: FINANZAS Y ANALÍTICA (P&L)          */}
@@ -286,10 +311,10 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                   
                   {/* Gráfica de Líneas: Tendencia */}
-                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
+                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl flex flex-col">
                     <h3 className="text-xl font-black text-white mb-6">Tendencia de Ventas (Rango Seleccionado)</h3>
                     {salesTrendData.length > 0 ? (
-                      <div className="h-[300px] w-full">
+                      <div className="flex-1 w-full min-h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={salesTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <XAxis dataKey="Fecha" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
@@ -300,7 +325,7 @@ export default function AdminDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="h-[300px] flex items-center justify-center text-zinc-600 font-bold">No hay ventas registradas en esta fecha.</div>
+                      <div className="flex-1 flex items-center justify-center text-zinc-600 font-bold min-h-[300px]">No hay ventas registradas en esta fecha.</div>
                     )}
                   </div>
 
@@ -339,7 +364,57 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* 3. MÓDULO DE EGRESOS (GASTOS) */}
+                {/* 3. NUEVAS GRÁFICAS AVANZADAS */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                    {/* Gráfica de Horas Pico */}
+                    <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex flex-col">
+                        <h3 className="text-xl font-black mb-6 flex items-center gap-2">🔥 Horas con más Movimiento <span className="text-[10px] bg-zinc-800 px-2 py-1 rounded text-zinc-500 tracking-widest">ZIBATÁ PEAK</span></h3>
+                        {hourChartData.length > 0 ? (
+                          <div className="flex-1 w-full min-h-[300px]">
+                              <ResponsiveContainer width="100%" height="100%">
+                                  <AreaChart data={hourChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                      <defs>
+                                          <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                                              <stop offset="5%" stopColor="#facc15" stopOpacity={0.3}/>
+                                              <stop offset="95%" stopColor="#facc15" stopOpacity={0}/>
+                                          </linearGradient>
+                                      </defs>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                                      <XAxis dataKey="Hora" axisLine={false} tickLine={false} tick={{fill: '#71717a', fontSize: 12}} />
+                                      <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                      <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a', color: '#fff'}} itemStyle={{ color: '#eab308', fontWeight: 'bold' }} />
+                                      <Area type="monotone" dataKey="Ventas" stroke="#facc15" strokeWidth={4} fillOpacity={1} fill="url(#colorSales)" />
+                                  </AreaChart>
+                              </ResponsiveContainer>
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center text-zinc-600 font-bold min-h-[300px]">Sin datos suficientes</div>
+                        )}
+                    </div>
+
+                    {/* Top 5 Productos */}
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
+                        <h3 className="text-xl font-black mb-6">🏆 Los + Vendidos</h3>
+                        <div className="space-y-6">
+                            {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                                <div key={p.name} className="flex items-center gap-4">
+                                    <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                    <div className="flex-1">
+                                        <div className="flex justify-between mb-1">
+                                            <p className="text-sm font-bold truncate max-w-[150px]">{p.name}</p>
+                                            <p className="text-sm font-black text-yellow-400">{p.qty} pz</p>
+                                        </div>
+                                        <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                            <div className="bg-yellow-400 h-full" style={{width: `${(p.qty / topProductsData[0].qty) * 100}%`}}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )) : <p className="text-zinc-600 text-sm">Sin datos.</p>}
+                        </div>
+                    </div>
+                </div>
+
+                {/* 4. MÓDULO DE EGRESOS (GASTOS) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                   <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
                     <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto (Egreso)</h3>
@@ -367,7 +442,7 @@ export default function AdminDashboard() {
 
                   <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
                     <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
-                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
                       {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
                         data.expenses?.map((e: any) => (
                           <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
@@ -406,7 +481,6 @@ export default function AdminDashboard() {
                   <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Auditoría de Caja (Control de Efectivo)</h3>
                   <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2">
                     {data.shifts?.map((shift: any) => {
-                        // Solo sumamos lo pagado en EFECTIVO para la caja física
                         const cashOrders = shift.orders.reduce((acc: number, o: any) => acc + (o.totalAmount + o.tipAmount), 0);
                         const shiftWithdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((acc: number, m: any) => acc + m.amount, 0) || 0;
                         const systemCash = shift.startingCash + cashOrders - shiftWithdrawals;
@@ -445,7 +519,7 @@ export default function AdminDashboard() {
                 <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl mt-8">
                   <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Historial de Tickets y Operaciones</h3>
                   <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
-                    {data.orders.map(order => (
+                    {data.orders.map((order:any) => (
                       <div key={order.id} className={`p-5 rounded-[1.5rem] flex flex-col xl:flex-row justify-between items-center border hover:border-zinc-700 transition-colors ${order.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800'}`}>
                         <div className="flex items-center gap-6 mb-4 xl:mb-0 w-full xl:w-auto">
                           <div className="bg-zinc-900 p-3 rounded-xl">
@@ -467,7 +541,6 @@ export default function AdminDashboard() {
                           </div>
                           
                           <div className="flex flex-wrap gap-2 justify-end w-full md:w-auto border-t md:border-t-0 border-zinc-800 pt-4 md:pt-0">
-                            {/* BOTONES MANUALES PARA ENVIAR TICKET */}
                             {order.customerPhone && (
                               <button onClick={() => sendWhatsApp(order.customerPhone, order.customerName, order.turnNumber)} className="flex-1 md:flex-none bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-zinc-900 border border-green-500/30 px-4 py-3 rounded-xl font-black transition-colors flex items-center justify-center gap-2" title="Re-enviar por WhatsApp">
                                 📱 WA
@@ -489,7 +562,36 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: INVENTARIO */}
+            {/* ========================================== */}
+            {/* PESTAÑA: AUDITORÍA (LOGS DE SEGURIDAD)     */}
+            {/* ========================================== */}
+            {activeTab === 'AUDITORIA' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
+                        <div className="mb-6">
+                          <h3 className="text-2xl font-black">🛡️ Registro de Seguridad (Logs)</h3>
+                          <p className="text-zinc-500 text-sm font-bold mt-1">Historial inmutable de acciones críticas en el sistema.</p>
+                        </div>
+                        <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                            {data.auditLogs.length === 0 ? <p className="text-zinc-500 italic">No hay registros de seguridad recientes.</p> : 
+                              data.auditLogs.map((log: any) => (
+                                <div key={log.id} className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex flex-col md:flex-row md:justify-between md:items-center gap-3 text-xs hover:border-zinc-700 transition-colors">
+                                    <div className="flex flex-col md:flex-row gap-2 md:gap-4 md:items-center">
+                                        <span className="text-zinc-600 font-bold whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</span>
+                                        <span className="bg-zinc-900 px-3 py-1.5 rounded-lg text-blue-400 font-black uppercase text-[10px] tracking-widest border border-zinc-800 self-start md:self-auto">{log.action}</span>
+                                        <p className="font-bold text-zinc-300 text-sm">{log.details}</p>
+                                    </div>
+                                    <span className="text-zinc-500 font-black uppercase italic whitespace-nowrap">👤 {log.author}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======================= */}
+            {/* PESTAÑA: INVENTARIO     */}
+            {/* ======================= */}
             {activeTab === 'INVENTARIO' && (
               <div className="space-y-12 animate-in fade-in duration-300">
                 <section className="bg-zinc-900/50 p-8 rounded-[2rem] border border-zinc-800">
@@ -520,7 +622,9 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: PÁNICO */}
+            {/* ======================= */}
+            {/* PESTAÑA: PÁNICO         */}
+            {/* ======================= */}
             {activeTab === 'PANICO' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
@@ -549,7 +653,9 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: MARKETING */}
+            {/* ======================= */}
+            {/* PESTAÑA: MARKETING      */}
+            {/* ======================= */}
             {activeTab === 'MARKETING' && (
               <div className="space-y-8 animate-in fade-in duration-300">
                 <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 p-8 rounded-[2rem] shadow-2xl">
@@ -583,7 +689,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
             )}
-          </>
+
+          </div>
         )}
       </div>
     </ProtectedRoute>
