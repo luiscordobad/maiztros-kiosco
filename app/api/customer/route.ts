@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get('phone');
@@ -23,7 +25,7 @@ export async function GET(request: Request) {
       take: 10
     });
 
-    // Traemos cupones activos para la sección de promociones
+    // Traemos cupones globales activos de la base de datos (Admin)
     const activeCoupons = await prisma.coupon.findMany({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' }
@@ -46,11 +48,11 @@ export async function POST(request: Request) {
 
     const newCustomer = await prisma.customer.upsert({
       where: { phone },
-      update: { name: fullName }, // Si ya existía, actualiza su nombre
+      update: { name: fullName }, // Si ya existía el número, actualiza su nombre
       create: { 
         phone, 
         name: fullName,
-        points: 50 // ¡Bono de bienvenida de 50 pts por registrarse!
+        points: 50 // Bono de bienvenida
       }
     });
 
