@@ -39,6 +39,13 @@ const initialInventory = [
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  
+  // Ruta ultrarrápida para que el Kiosco lea el inventario y sepa qué ocultar
+  if (searchParams.get('action') === 'kiosco_sync') {
+    const inventoryItems = await prisma.inventoryItem.findMany();
+    return NextResponse.json({ success: true, inventoryItems });
+  }
+
   const startDateParam = searchParams.get('startDate');
   const endDateParam = searchParams.get('endDate');
 
@@ -67,15 +74,17 @@ export async function PATCH(request: Request) {
     if (type === 'update_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: parseFloat(newStock) } }); return NextResponse.json({ success: true }); }
     if (type === 'add_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: { increment: parseFloat(addAmount) } } }); return NextResponse.json({ success: true }); }
 
-    // NUEVO: APAGAR/PRENDER CATEGORÍAS COMPLETAS
+    // BOTÓN MAESTRO DE CATEGORÍAS
     if (type === 'toggle_category') {
       if (isModifier) await prisma.modifier.updateMany({ where: { type: category }, data: { isAvailable: targetState } });
       else await prisma.product.updateMany({ where: { category: category }, data: { isAvailable: targetState } });
       return NextResponse.json({ success: true });
     }
 
+    // BOTONES INDIVIDUALES
     if (type === 'product') await prisma.product.update({ where: { id }, data: { isAvailable } });
     else if (type === 'modifier') await prisma.modifier.update({ where: { id }, data: { isAvailable } });
+    else if (type === 'inventory_toggle') await prisma.inventoryItem.update({ where: { id }, data: { isAvailable } });
     else if (type === 'coupon') await prisma.coupon.update({ where: { id }, data: { isActive } });
     
     return NextResponse.json({ success: true });
