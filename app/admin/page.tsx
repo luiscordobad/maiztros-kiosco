@@ -14,14 +14,14 @@ export default function AdminDashboard() {
   const [startDate, setStartDate] = useState(lastWeek.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   
-  const [newExpenseAmount, setNewExpenseAmount] = useState('');
-  const [newExpenseCategory, setNewExpenseCategory] = useState('INSUMOS');
-  const [newExpenseDesc, setNewExpenseDesc] = useState('');
-
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponDiscount, setNewCouponDiscount] = useState('');
   const [newCouponType, setNewCouponType] = useState<'FIXED' | 'PERCENTAGE'>('FIXED');
-  const [newCouponMinAmount, setNewCouponMinAmount] = useState('');
+  const [newCouponMinAmount, setNewCouponMinAmount] = useState(''); 
+
+  const [newExpenseAmount, setNewExpenseAmount] = useState('');
+  const [newExpenseCategory, setNewExpenseCategory] = useState('INSUMOS');
+  const [newExpenseDesc, setNewExpenseDesc] = useState('');
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
 
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
   const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 5);
 
   // ==========================================
-  // COMPONENTES REUTILIZABLES (RESTAURADOS)
+  // COMPONENTES REUTILIZABLES
   // ==========================================
   const renderInventoryGroup = (category: string, title: string, isManual: boolean = false) => {
     const items = data.inventoryItems?.filter((i: any) => i.category === category) || [];
@@ -319,16 +319,16 @@ export default function AdminDashboard() {
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
                     <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
                     <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Gráfica de Horas Pico */}
-                    <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
-                        <h3 className="text-xl font-black mb-6 flex items-center gap-2">🔥 Horas Pico <span className="text-[10px] bg-zinc-800 px-2 py-1 rounded text-zinc-500">ZIBATÁ PEAK</span></h3>
+                    {/* Gráfica de Horas Pico (BI) */}
+                    <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex flex-col">
+                        <h3 className="text-xl font-black mb-6 flex items-center gap-2">🔥 Horas con más Movimiento <span className="text-[10px] bg-zinc-800 px-2 py-1 rounded text-zinc-500 tracking-widest">ZIBATÁ PEAK</span></h3>
                         {hourChartData.length > 0 ? (
-                          <div className="h-[300px]">
+                          <div className="h-[300px] w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                   <AreaChart data={hourChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                       <defs>
@@ -350,17 +350,17 @@ export default function AdminDashboard() {
                         )}
                     </div>
 
-                    {/* Top 5 Productos y Canal de Pago */}
+                    {/* Top 5 Productos y Canal de Pago (BI) */}
                     <div className="flex flex-col gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex-1">
-                            <h3 className="text-xl font-black mb-6">🏆 Top Productos</h3>
+                            <h3 className="text-xl font-black mb-6">🏆 Los + Vendidos</h3>
                             <div className="space-y-6">
                                 {topProductsData.length > 0 ? topProductsData.map((p, i) => (
                                     <div key={p.name} className="flex items-center gap-4">
                                         <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
                                         <div className="flex-1">
                                             <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[120px]">{p.name}</p>
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{p.name}</p>
                                                 <p className="text-sm font-black text-yellow-400">{p.qty} pz</p>
                                             </div>
                                             <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
@@ -393,7 +393,7 @@ export default function AdminDashboard() {
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col">
                   <h3 className="text-xl font-black text-white mb-6">Tendencia de Ventas (Rango Seleccionado)</h3>
                   {salesTrendData.length > 0 ? (
-                    <div className="flex-1 w-full min-h-[300px]">
+                    <div className="h-[300px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={salesTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <XAxis dataKey="Fecha" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
@@ -404,40 +404,60 @@ export default function AdminDashboard() {
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <div className="flex-1 flex items-center justify-center text-zinc-600 font-bold min-h-[300px]">No hay ventas registradas en esta fecha.</div>
+                    <div className="h-[300px] flex items-center justify-center text-zinc-600 font-bold">No hay ventas registradas en esta fecha.</div>
                   )}
                 </div>
 
-                {/* Registro de Gastos */}
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
-                    <h3 className="text-2xl font-black mb-6">💸 Registro de Egresos</h3>
-                    <div className="flex flex-col md:flex-row gap-4 mb-8">
-                        <input type="number" value={newExpenseAmount} onChange={e=>setNewExpenseAmount(e.target.value)} placeholder="Monto $" className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl flex-1 outline-none focus:border-red-500 font-black text-xl"/>
-                        <select value={newExpenseCategory} onChange={e=>setNewExpenseCategory(e.target.value)} className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl outline-none font-bold">
-                            <option value="INSUMOS">Insumos (Súper)</option>
-                            <option value="NOMINA">Nómina</option>
-                            <option value="SERVICIOS">Servicios</option>
-                            <option value="OTROS">Otros</option>
+                {/* 4. MÓDULO DE EGRESOS (DISEÑO COLUMNAS RESTAURADO) */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                  <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
+                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto (Egreso)</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Monto Total</label>
+                        <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-black text-2xl outline-none focus:border-red-400" />
+                      </div>
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Categoría</label>
+                        <select value={newExpenseCategory} onChange={e => setNewExpenseCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-400">
+                          <option value="INSUMOS">Insumos (Súper, Elote, etc.)</option>
+                          <option value="NOMINA">Nómina / Colaboradores</option>
+                          <option value="SERVICIOS">Servicios (Luz, Agua, Gas, Renta)</option>
+                          <option value="OTROS">Otros Gastos</option>
                         </select>
-                        <input type="text" value={newExpenseDesc} onChange={e=>setNewExpenseDesc(e.target.value)} placeholder="Descripción..." className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl flex-[2] outline-none focus:border-red-500 font-bold"/>
-                        <button onClick={handleAddExpense} className="bg-red-600 hover:bg-red-500 text-white font-black px-10 py-4 rounded-2xl shadow-lg transition-all active:scale-95">Guardar</button>
+                      </div>
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción (Opcional)</label>
+                        <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="Ej. Pago de gas" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white outline-none focus:border-red-400" />
+                      </div>
+                      <button onClick={handleAddExpense} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-lg mt-4 transition-all active:scale-95">Guardar Gasto</button>
                     </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {data.expenses.map((e:any) => (
-                            <div key={e.id} className="bg-zinc-950 p-5 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-red-900/50 transition-colors">
-                                <div>
-                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1">{e.category} <span className="text-zinc-600 font-normal ml-2">{new Date(e.date).toLocaleDateString()}</span></p>
-                                    <p className="font-bold text-sm text-white">{e.description}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-black text-lg text-white">-${e.amount.toFixed(2)}</p>
-                                    <button onClick={() => deleteExpense(e.id)} className="text-[10px] font-bold text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">ELIMINAR</button>
-                                </div>
+                  </div>
+
+                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
+                    <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                      {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
+                        data.expenses?.map((e: any) => (
+                          <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="bg-zinc-800 text-zinc-400 px-2 py-1 rounded text-xs font-bold uppercase">{e.category}</span>
+                                <span className="text-sm text-zinc-500">{new Date(e.date).toLocaleDateString()}</span>
+                              </div>
+                              <p className="font-bold text-white text-lg">{e.description}</p>
                             </div>
-                        ))}
+                            <div className="flex items-center gap-4 w-full md:w-auto justify-end">
+                              <p className="font-black text-2xl text-red-400">-${e.amount.toFixed(2)}</p>
+                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors" title="Borrar Gasto">🗑️</button>
+                            </div>
+                          </div>
+                        ))
+                      }
                     </div>
+                  </div>
                 </div>
+
               </div>
             )}
 
@@ -498,7 +518,7 @@ export default function AdminDashboard() {
             {/* PESTAÑA: AUDITORÍA (LOGS) */}
             {/* ======================= */}
             {activeTab === 'AUDITORIA' && (
-                <div className="space-y-6">
+                <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                         <div className="mb-6">
                           <h3 className="text-2xl font-black">🛡️ Registro de Seguridad (Logs)</h3>
