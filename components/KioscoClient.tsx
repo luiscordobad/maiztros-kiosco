@@ -37,7 +37,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
-  const [editingCartItem, setEditingCartItem] = useState<any>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
@@ -131,7 +130,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
-        setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null); setEditingCartItem(null);
+        setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
         setAppState('WELCOME');
       }
@@ -238,39 +237,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const handleProductClick = (product: any) => {
     const steps = getProductSteps(product);
     if (steps.length === 0) { addToCart(product, 0, product.name); if (appState === 'UPSELL') setAppState('MENU'); return; }
-    setActiveProduct(product); setWizardStep(0); setWizardData({}); setEditingCartItem(null); if (appState === 'UPSELL') setAppState('MENU');
-  };
-
-  // FUNCION DE EDICIÓN: Extrae notas y las convierte a wizardData
-  const handleEditCartItem = (item: any) => {
-      const steps = getProductSteps(item.product);
-      if (steps.length === 0) {
-          alert('Este producto no tiene opciones para modificar. Puedes duplicarlo o eliminarlo directamente.');
-          return;
-      }
-      
-      const newWizardData: any = {};
-      if (item.notes) {
-          const noteParts = item.notes.split(' | ');
-          steps.forEach((step: any, idx: number) => {
-              const matchingNote = noteParts.find((n: string) => n.startsWith(step.t));
-              if (matchingNote) {
-                  const selectionsStr = matchingNote.split(': ')[1];
-                  if (step.type === 'TOPPINGS') {
-                      const selNames = selectionsStr.split(', ');
-                      const foundMods = modifiers.filter(m => selNames.includes(m.name));
-                      newWizardData[idx] = foundMods;
-                  } else {
-                      newWizardData[idx] = [selectionsStr];
-                  }
-              }
-          });
-      }
-      
-      setWizardData(newWizardData);
-      setActiveProduct(item.product);
-      setEditingCartItem(item);
-      setWizardStep(0);
+    setActiveProduct(product); setWizardStep(0); setWizardData({}); if (appState === 'UPSELL') setAppState('MENU');
   };
 
   const handleToggleModifier = (mod: any) => {
@@ -313,15 +280,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       }
     });
 
-    if (editingCartItem) {
-        removeFromCart(editingCartItem.id);
-        setEditingCartItem(null);
-    }
-
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
     const wasDrinkOrAntojoOrCombo = activeProduct.category === 'BEBIDA' || activeProduct.category === 'ANTOJO' || activeProduct.category === 'COMBO';
     setActiveProduct(null);
-    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo && !editingCartItem) { setUpsellView('OPTIONS'); setAppState('UPSELL'); }
+    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) { setUpsellView('OPTIONS'); setAppState('UPSELL'); }
   };
 
   const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
@@ -453,6 +415,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
+        {/* COLUMNA IZQUIERDA: RESUMEN DE ORDEN */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -466,9 +429,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   <div className="flex flex-wrap gap-2 mt-5">
                     <button onClick={() => addToCart(item.product, item.totalPrice - item.product.basePrice, item.notes)} className="text-green-400 bg-green-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
                         <span>➕</span> Duplicar
-                    </button>
-                    <button onClick={() => handleEditCartItem(item)} className="text-blue-400 bg-blue-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
-                        <span>✏️</span> Modificar
                     </button>
                     <button onClick={() => removeFromCart(item.id)} className="text-red-400 bg-red-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
                         <span>🗑️</span> Eliminar
@@ -498,6 +458,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
+        {/* COLUMNA DERECHA: LEALTAD, REGISTRO Y PAGO */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
@@ -781,11 +742,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-900 sticky top-0 z-10">
               <div>
                 <p className="text-yellow-400 font-bold tracking-widest uppercase text-sm mb-2">
-                  {editingCartItem ? '✏️ Editando Antojo' : `Paso ${wizardStep + 1} de ${getProductSteps(activeProduct).length}`}
+                  Paso {wizardStep + 1} de {getProductSteps(activeProduct).length}
                 </p>
                 <h2 className="text-3xl font-black text-white">{getProductSteps(activeProduct)[wizardStep].t}</h2>
               </div>
-              <button onClick={() => { setActiveProduct(null); setEditingCartItem(null); }} className="bg-zinc-800 text-zinc-400 h-16 w-16 rounded-full flex items-center justify-center text-3xl font-bold hover:text-white hover:bg-zinc-700 transition-colors">✕</button>
+              <button onClick={() => setActiveProduct(null)} className="bg-zinc-800 text-zinc-400 h-16 w-16 rounded-full flex items-center justify-center text-3xl font-bold hover:text-white hover:bg-zinc-700 transition-colors">✕</button>
             </div>
             
             <div className="p-8 overflow-y-auto flex-1 space-y-10">
@@ -840,7 +801,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </button>
               )}
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-300 active:scale-[0.98] transition-transform">
-                {wizardStep === getProductSteps(activeProduct).length - 1 ? (editingCartItem ? 'Guardar Cambios ✅' : 'Terminar y Agregar ➔') : 'Siguiente Paso ➔'}
+                {wizardStep === getProductSteps(activeProduct).length - 1 ? 'Terminar y Agregar ➔' : 'Siguiente Paso ➔'}
               </button>
             </div>
           </div>
