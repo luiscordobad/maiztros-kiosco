@@ -19,8 +19,8 @@ export async function POST(request: Request) {
           paymentMethod: data.paymentMethod,
           items: data.cart || [],
           orderNotes: data.orderNotes || '',
-          totalAmount: data.totalAmount, 
-          pointsDiscount: data.pointsDiscount || 0,
+          totalAmount: data.totalAmount, // Monto final ya con el descuento
+          pointsDiscount: data.pointsDiscount || 0, // Descuento en pesos
           couponCode: data.couponCode || null,
           tipAmount: data.tipAmount || 0,
           status: initialStatus
@@ -28,10 +28,10 @@ export async function POST(request: Request) {
       });
 
       if (data.customerPhone && data.customerPhone.length === 10) {
-         // Suma puntos por lo que gastó real (Monto final)
+         // Gana puntos por lo que realmente pagó
          const earnedPoints = data.totalAmount; 
-         // AHORA: 100 puntos valen $1 peso
-         const pointsToDeduct = (data.pointsDiscount || 0) * 100; 
+         // Recibimos los puntos exactos a descontar desde el Kiosco (Ej. 500)
+         const pointsToDeduct = data.pointsDeducted || 0; 
 
          await tx.customer.upsert({
            where: { phone: data.customerPhone },
