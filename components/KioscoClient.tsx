@@ -13,10 +13,11 @@ const OPCIONES = {
   PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
 };
 
+// NUEVA BÓVEDA SINCRONIZADA CON LA APP VIP (Bonos de Efectivo condicionados)
 const REWARDS = [
-  { id: 'tier1', pts: 250, discount: 25, label: 'Premio Básico (-$25)' },
-  { id: 'tier2', pts: 500, discount: 60, label: 'Premio Doble (-$60)' },
-  { id: 'tier3', pts: 1000, discount: 150, label: 'Premio Leyenda (-$150)' }
+  { id: 'tier1', pts: 250, minSpend: 150, discount: 15, label: 'Bono de $15 MXN' },
+  { id: 'tier2', pts: 500, minSpend: 250, discount: 35, label: 'Bono de $35 MXN' },
+  { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN' }
 ];
 
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
@@ -46,7 +47,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [orderNotes, setOrderNotes] = useState('');
 
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
-  const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, discount: number, label: string} | null>(null);
+  // Reflejamos la estructura exacta de la bóveda
+  const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, minSpend: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
   const [couponCode, setCouponCode] = useState('');
@@ -106,17 +108,22 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const subtotal = getTotal();
 
+  // Validación de Reglas Dinámicas (Cupones y Bóveda)
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null);
       setCouponError(`El cupón requiere mínimo de compra de $${activeCoupon.minAmount}`);
     }
-  }, [subtotal, activeCoupon]);
+    // Si tenían un premio seleccionado pero quitaron algo del carrito y ya no llegan al gasto mínimo
+    if (selectedReward && subtotal < selectedReward.minSpend) {
+        setSelectedReward(null);
+    }
+  }, [subtotal, activeCoupon, selectedReward]);
 
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
-    const res = await fetch(`/api/customer?code=${couponCode}`);
+    const res = await fetch(`/api/customer?code=${couponCode.toUpperCase()}`);
     const data = await res.json();
     if (data.success) { 
       if (data.coupon.minAmount > 0 && subtotal < data.coupon.minAmount) {
@@ -124,7 +131,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setActiveCoupon(null);
       } else {
         setActiveCoupon(data.coupon); 
-        setSelectedReward(null); 
+        setSelectedReward(null); // No se pueden juntar cupones con puntos
       }
     } 
     else { setActiveCoupon(null); setCouponError(data.error); }
@@ -273,8 +280,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
-    if (selectedReward && totalAfterCoupon < selectedReward.discount) return alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla.");
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos o descuentos. Pica 'Pagar en Caja' para registrarla.");
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -386,8 +392,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           
           <div className="mt-8 pt-8 border-t border-zinc-800 flex flex-col items-end">
             <div className="flex justify-between w-full mb-4 text-zinc-400 font-bold text-xl"><p>Subtotal:</p><p>${subtotal.toFixed(2)}</p></div>
-            {activeCoupon && <div className="flex justify-between w-full mb-4 text-purple-400 font-bold text-xl"><p>Cupón ({activeCoupon.code}):</p><p>-${(subtotal - totalAfterCoupon).toFixed(2)}</p></div>}
-            {selectedReward && !activeCoupon && <div className="flex justify-between w-full mb-4 text-green-400 font-bold text-xl"><p>Premio de Lealtad:</p><p>-${actualDiscount.toFixed(2)}</p></div>}
+            {activeCoupon && <div className="flex justify-between w-full mb-4 text-purple-400 font-bold text-xl"><p>Cupón / Promo ({activeCoupon.code}):</p><p>-${(subtotal - totalAfterCoupon).toFixed(2)}</p></div>}
+            {selectedReward && !activeCoupon && <div className="flex justify-between w-full mb-4 text-green-400 font-bold text-xl"><p>Bono VIP Aplicado:</p><p>-${actualDiscount.toFixed(2)}</p></div>}
             <div className="text-right mt-4 border-t border-zinc-800 pt-4 w-full">
               <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
               <p className="text-7xl text-yellow-400 font-black tracking-tighter">${totalNeto.toFixed(2)}</p>
@@ -414,16 +420,19 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
             <div className="space-y-4 relative z-10">
               <div className="relative">
-                <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
+                <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
                 {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
               </div>
 
               <div className="mt-6 border-t border-yellow-500/30 pt-6">
-                <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Recompensas</p>
+                <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Bonos en Efectivo</p>
                 <div className="space-y-2">
                   {REWARDS.map(reward => {
-                    const isAffordable = loyaltyPoints >= reward.pts;
+                    const hasPoints = loyaltyPoints >= reward.pts;
+                    const minSpendMet = subtotal >= reward.minSpend;
+                    const isAffordable = hasPoints && minSpendMet && !activeCoupon; // No se puede combinar con cupones
                     const isSelected = selectedReward?.id === reward.id;
+                    
                     return (
                       <button 
                         key={reward.id} 
@@ -438,10 +447,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                         <div>
                           <p className="font-black">{reward.label}</p>
                           <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
-                            {isAffordable ? `Cuesta ${reward.pts} pts` : `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts`}
+                            {!hasPoints ? `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts` : !minSpendMet ? `Min. Compra $${reward.minSpend}` : `Cuesta ${reward.pts} pts`}
                           </p>
                         </div>
-                        <span className="text-xl">{isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '🎁'}</span>
+                        <span className="text-xl">{isSelected ? '✅' : (!isAffordable || customerPhone.length < 10) ? '🔒' : '💸'}</span>
                       </button>
                     );
                   })}
@@ -455,17 +464,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <input type="text" placeholder="Tu Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold"/>
               
               <div className="flex gap-2">
-                <input type="text" placeholder="Cupón (Opcional)" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm"/>
-                <button onClick={handleApplyCoupon} className="bg-purple-600 hover:bg-purple-500 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
+                <input type="text" placeholder="Cupón o Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
+                <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
               </div>
               {couponError && <p className="text-red-400 text-xs font-bold text-center">{couponError}</p>}
-              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center">✅ Cupón aplicado</p>}
+              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center">✅ Promo aplicada con éxito</p>}
+              {selectedReward && <p className="text-zinc-500 text-xs font-bold text-center">Desactiva tu bono para usar un cupón.</p>}
             </div>
 
             <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-3 justify-center">
-              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💳 Tarjeta</button>
-              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all">💵 Efectivo / Caja</button>
+              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💳 Tarjeta</button>
+              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💵 Efectivo en Caja</button>
             </div>
           </div>
         </div>
@@ -635,9 +645,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <div className="grid grid-cols-2 gap-4">
                   {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
                     .filter((opt: string) => {
-                       // LÓGICA DINÁMICA DE ESPECIALIDAD (Filtra papas o maruchans)
                        if (getProductSteps(activeProduct)[wizardStep].type === 'PAPAS_MARUCHAN') {
-                          const baseChoice = wizardData[0]?.[0]; // Sabe qué eligió en el Paso 1
+                          const baseChoice = wizardData[0]?.[0];
                           if (baseChoice === 'Construpapas') return OPCIONES.PAPAS.includes(opt) && isOptionAvailable(opt);
                           if (baseChoice === 'Obra Maestra') return OPCIONES.MARUCHAN.includes(opt) && isOptionAvailable(opt);
                        }
