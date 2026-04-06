@@ -40,7 +40,6 @@ const initialInventory = [
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   
-  // Ruta rápida de sincronización para el Kiosco
   if (searchParams.get('action') === 'kiosco_sync') {
     const inventoryItems = await prisma.inventoryItem.findMany();
     return NextResponse.json({ success: true, inventoryItems });
@@ -58,7 +57,7 @@ export async function GET(request: Request) {
       endDate.setHours(23, 59, 59, 999); 
     }
 
-    const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs] = await Promise.all([
+    const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
       prisma.product.findMany({ orderBy: { category: 'asc' } }),
       prisma.modifier.findMany({ orderBy: { type: 'asc' } }),
       prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } }),
@@ -66,10 +65,12 @@ export async function GET(request: Request) {
       prisma.order.findMany({ where: { createdAt: { gte: startDate, lte: endDate } }, orderBy: { createdAt: 'asc' } }),
       prisma.shift.findMany({ where: { openedAt: { gte: startDate, lte: endDate } }, include: { orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } }, movements: true }, orderBy: { openedAt: 'desc' } }),
       prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } }, orderBy: { date: 'desc' } }),
-      prisma.auditLog.findMany({ take: 50, orderBy: { createdAt: 'desc' } })
+      prisma.auditLog.findMany({ take: 50, orderBy: { createdAt: 'desc' } }),
+      // NUEVO: TRAER CLIENTES ORDENADOS POR PUNTOS
+      prisma.customer.findMany({ orderBy: { points: 'desc' }, take: 100 })
     ]);
 
-    return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs });
+    return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers });
   } catch (error) { return NextResponse.json({ success: false, error: 'Error' }, { status: 500 }); }
 }
 
@@ -77,12 +78,10 @@ export async function PATCH(request: Request) {
   try {
     const { id, type, isAvailable, isActive, newStock, addAmount, category, targetState, isModifier, author } = await request.json();
     
-    // FUNCIONES DE INVENTARIO Y STOCK (Conservadas)
     if (type === 'init_inventory') { await prisma.inventoryItem.createMany({ data: initialInventory, skipDuplicates: true }); return NextResponse.json({ success: true }); }
     if (type === 'update_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: parseFloat(newStock) } }); return NextResponse.json({ success: true }); }
     if (type === 'add_stock') { await prisma.inventoryItem.update({ where: { id }, data: { stock: { increment: parseFloat(addAmount) } } }); return NextResponse.json({ success: true }); }
 
-    // FUNCIONES DE PÁNICO Y BOTONES
     if (type === 'toggle_category') {
       if (isModifier) await prisma.modifier.updateMany({ where: { type: category }, data: { isAvailable: targetState } });
       else await prisma.product.updateMany({ where: { category: category }, data: { isAvailable: targetState } });
