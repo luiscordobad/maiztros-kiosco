@@ -7,17 +7,12 @@ export default function MonitorCaja() {
   const [shiftLoading, setShiftLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Apertura
   const [cashierName, setCashierName] = useState('');
   const [startingCash, setStartingCash] = useState('');
-
-  // Movimientos (Retiros)
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveAmount, setMoveAmount] = useState('');
   const [moveReason, setMoveReason] = useState('');
   const [moveAuthor, setMoveAuthor] = useState('LUIS (JEFE)');
-
-  // Cierre
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [reportedCash, setReportedCash] = useState('');
 
@@ -25,9 +20,6 @@ export default function MonitorCaja() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [receivedAmount, setReceivedAmount] = useState<string>('');
 
-  // ==========================================
-  // ESTADOS PARA LA TERMINAL FÍSICA
-  // ==========================================
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
@@ -124,11 +116,7 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
-  // ==========================================
-  // LÓGICA DE EDICIÓN EN CAJA
-  // ==========================================
   const handleCobrarClick = (order: any) => {
-    // Parseamos los items para editarlos en estado local
     const editableItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
     setSelectedOrder({ ...order, items: editableItems });
     setReceivedAmount('');
@@ -174,9 +162,6 @@ export default function MonitorCaja() {
     fetchCashOrders();
   };
 
-  // ==========================================
-  // LÓGICA PARA ACTIVAR Y ESCUCHAR LA TERMINAL
-  // ==========================================
   const checkTerminalStatus = async (intentId: string, order: any) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
@@ -245,7 +230,6 @@ export default function MonitorCaja() {
     }
   };
   
-  // UTILIDAD: CALCULADORA RÁPIDA DE EFECTIVO
   const getQuickBills = (total: number) => {
       const bills = [50, 100, 200, 500, 1000];
       return bills.filter(b => b > total);
@@ -351,8 +335,9 @@ export default function MonitorCaja() {
           </div>
 
           {/* ========================================== */}
-          {/* MODAL COBRO: EDITOR Y CALCULADORA          */}
+          {/* MODALES DE CAJA                            */}
           {/* ========================================== */}
+          
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-[3rem] overflow-hidden flex flex-col shadow-2xl max-h-[90vh]">
@@ -366,7 +351,6 @@ export default function MonitorCaja() {
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* LADO IZQUIERDO: EDITOR DE ITEMS */}
                       <div className="space-y-4">
                           <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-4">Productos en la orden</h3>
                           {selectedOrder.items.map((item: any, idx: number) => (
@@ -377,13 +361,11 @@ export default function MonitorCaja() {
                                   </div>
                                   
                                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                                      {/* Controles de Cantidad */}
                                       <div className="flex items-center bg-zinc-900 rounded-xl border border-zinc-700">
                                           <button onClick={() => updateItemQty(idx, -1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-red-500 transition-colors">-</button>
                                           <span className="px-4 font-black text-lg text-white">{item.quantity || 1}</span>
                                           <button onClick={() => updateItemQty(idx, 1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-green-500 transition-colors">+</button>
                                       </div>
-                                      {/* Editor de Notas */}
                                       <textarea 
                                           value={item.notes || ''} 
                                           onChange={(e) => updateItemNotes(idx, e.target.value)}
@@ -401,7 +383,6 @@ export default function MonitorCaja() {
                           )}
                       </div>
 
-                      {/* LADO DERECHO: PAGO Y CALCULADORA */}
                       <div className="bg-zinc-950 p-8 rounded-[2rem] border border-zinc-800 flex flex-col">
                           <div className="mb-8">
                               <p className="text-zinc-500 font-black uppercase text-xs tracking-widest mb-2">Total Final a Cobrar</p>
@@ -416,7 +397,6 @@ export default function MonitorCaja() {
 
                           {selectedOrder.paymentMethod === 'EFECTIVO_CAJA' ? (
                               <div className="space-y-6">
-                                  {/* CALCULADORA RÁPIDA */}
                                   <div>
                                       <p className="text-zinc-500 font-bold text-xs uppercase tracking-widest mb-2">Calculadora Rápida</p>
                                       <div className="flex flex-wrap gap-2 mb-3">
@@ -452,9 +432,16 @@ export default function MonitorCaja() {
                           <div className="mt-auto pt-8 flex gap-4 border-t border-zinc-800">
                               <button onClick={() => setSelectedOrder(null)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 py-6 rounded-2xl font-bold text-white transition-colors">Volver</button>
                               {selectedOrder.paymentMethod === 'TERMINAL' ? (
-                                  <button onClick={triggerTerminalPayment} disabled={selectedOrder.items.length === 0} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">💳 Cobrar Tarjeta</button>
+                                  <button onClick={triggerTerminalPayment} disabled={selectedOrder.items.length === 0} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">💳 Activar Terminal</button>
                               ) : (
-                                  <button onClick={finalizarCobroFisico} disabled={selectedOrder.items.length === 0} className="flex-[2] bg-green-500 hover:bg-green-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">✅ Confirmar Efectivo</button>
+                                  <button 
+                                    onClick={finalizarCobroFisico} 
+                                    // BLOQUEO DE SEGURIDAD: Solo permite cobrar si pusieron suficiente dinero
+                                    disabled={selectedOrder.items.length === 0 || (!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount))} 
+                                    className="flex-[2] bg-green-500 hover:bg-green-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500"
+                                  >
+                                    {(!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount)) ? 'Falta Dinero ⚠️' : 'Confirmar Pago ✅'}
+                                  </button>
                               )}
                           </div>
                       </div>
@@ -463,7 +450,6 @@ export default function MonitorCaja() {
             </div>
           )}
 
-          {/* OVERLAY DE ESPERA DE TERMINAL */}
           {waitingTerminal && (
             <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[70] text-center p-8 animate-in fade-in zoom-in-95 duration-200">
               <span className="text-[10rem] animate-pulse mb-8">💳</span>
@@ -477,7 +463,6 @@ export default function MonitorCaja() {
             </div>
           )}
 
-          {/* MODAL RETIRO / GASTO */}
           {showMoveModal && (
             <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-[60] backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
@@ -502,7 +487,6 @@ export default function MonitorCaja() {
             </div>
           )}
 
-          {/* MODAL FINALIZAR JORNADA */}
           {showCloseModal && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[3rem] p-10 text-center shadow-2xl">
