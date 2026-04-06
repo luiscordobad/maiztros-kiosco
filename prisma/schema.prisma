@@ -41,6 +41,7 @@ model Coupon {
   code          String   @unique
   discount      Float    
   discountType  String   
+  minAmount     Float    @default(0) // <-- NUEVO FILTRO
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 }
@@ -61,13 +62,12 @@ model CashMovement {
   id        String   @id @default(uuid())
   shiftId   String
   shift     Shift    @relation(fields: [shiftId], references: [id])
-  type      String   // IN o OUT
+  type      String   
   amount    Float
   reason    String
   createdAt DateTime @default(now())
 }
 
-// INVENTARIO FÍSICO HÍBRIDO (Manual y Automático)
 model InventoryItem {
   id        String   @id @default(uuid())
   name      String   @unique
@@ -92,10 +92,8 @@ model Order {
   couponCode     String?  
   tipAmount      Float    @default(0) 
   status         String   @default("PENDING") 
-  
   shiftId        String?  
   shift          Shift?   @relation(fields: [shiftId], references: [id])
-
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
