@@ -25,6 +25,13 @@ export default function MonitorCaja() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [receivedAmount, setReceivedAmount] = useState<string>('');
 
+  // ==========================================
+  // ESTADOS PARA LA TERMINAL FÍSICA
+  // ==========================================
+  const [waitingTerminal, setWaitingTerminal] = useState(false);
+  const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
+  const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     checkShift();
@@ -42,11 +49,9 @@ export default function MonitorCaja() {
   const fetchCashOrders = async () => {
     if (!activeShift) return;
     try {
-      // ATENCIÓN: Ahora traemos PENDING (Pedidos de la app) y AWAITING_PAYMENT (Pedidos del kiosco en efectivo)
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-         // Filtramos solo las órdenes que la caja debe atender
          const validOrders = data.orders.filter((o: any) => o.status === 'AWAITING_PAYMENT' || (o.status === 'PENDING' && o.orderType === 'TAKEOUT'));
          setPendingCash(validOrders);
       }
@@ -59,7 +64,6 @@ export default function MonitorCaja() {
     return () => clearInterval(interval);
   }, [activeShift]);
 
-  // ALERTAS DE HORARIO 
   const getShiftAlert = () => {
     const hours = currentTime.getHours();
     const mins = currentTime.getMinutes();
@@ -96,9 +100,6 @@ export default function MonitorCaja() {
     setShowCloseModal(false); setReportedCash(''); checkShift();
   };
 
-  // ==========================================
-  // NUEVAS FUNCIONES OPERATIVAS (ETA Y CAMBIO DE PAGO)
-  // ==========================================
   const changePaymentMethod = async (orderId: string, currentMethod: string) => {
     const newMethod = currentMethod === 'TERMINAL' ? 'EFECTIVO_CAJA' : 'TERMINAL';
     if (!confirm(`¿Cambiar método de pago a ${newMethod === 'TERMINAL' ? 'Tarjeta (Terminal)' : 'Efectivo (Caja)'}?`)) return;
@@ -123,8 +124,74 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
-  // COBROS
   const handleCobrarClick = (order: any) => { setSelectedOrder(order); setReceivedAmount(''); };
+
+  // ==========================================
+  // LÓGICA PARA ACTIVAR Y ESCUCHAR LA TERMINAL
+  // ==========================================
+  const checkTerminalStatus = async (intentId: string, order: any) => {
+    try {
+      const res = await fetch(`/api/terminal?intentId=${intentId}`);
+      const data = await res.json();
+      const currentState = (data.state || '').toUpperCase();
+      
+      if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que el cliente pase la tarjeta...');
+      if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago con el banco...');
+      if (currentState === 'FINISHED') { 
+        setTerminalStatusMsg('✅ ¡Pago aprobado!'); 
+        
+        // Marcamos la orden como pagada automáticamente
+        await fetch('/api/orders', { 
+            method: 'PATCH', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ orderId: order.id, newStatus: 'PAID' }) 
+        });
+        
+        setWaitingTerminal(false); 
+        setTerminalIntentId(null); 
+        setSelectedOrder(null);
+        checkShift(); 
+        fetchCashOrders();
+        return true; 
+      }
+      if (currentState === 'CANCELED' || currentState === 'ABANDONED') { 
+        window.alert('El cobro fue cancelado en la terminal física o se acabó el tiempo.'); 
+        setWaitingTerminal(false); 
+        setTerminalIntentId(null); 
+        return true; 
+      }
+      return false; 
+    } catch (e) { return false; }
+  };
+
+  const triggerTerminalPayment = async (order: any) => {
+    const finalTotal = order.totalAmount + order.tipAmount;
+    try {
+      setWaitingTerminal(true);
+      setTerminalStatusMsg('Iniciando conexión con Terminal...');
+      
+      const res = await fetch('/api/terminal', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ amount: finalTotal, description: `Orden #${order.turnNumber}` }) 
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setTerminalIntentId(data.intentId);
+        const interval = setInterval(async () => { 
+            const finished = await checkTerminalStatus(data.intentId, order); 
+            if (finished) clearInterval(interval); 
+        }, 3000);
+      } else { 
+        window.alert('Error al conectar con la terminal. Revisa la red.'); 
+        setWaitingTerminal(false); 
+      }
+    } catch (e) { 
+      window.alert("Error de conexión"); 
+      setWaitingTerminal(false); 
+    }
+  };
   
   if (shiftLoading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white"><div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div></div>;
 
@@ -197,7 +264,6 @@ export default function MonitorCaja() {
                       </div>
                       
                       <div className="mt-6 flex flex-col gap-2">
-                          {/* BOTONES DE ACCIÓN (ETA Y CAMBIO DE PAGO) */}
                           {isWebOrder ? (
                               <button onClick={() => acceptWebOrder(order.id)} className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
                                   ⏱️ Aceptar y dar Tiempo
@@ -227,10 +293,10 @@ export default function MonitorCaja() {
           </div>
 
           {/* ========================================== */}
-          {/* MODALES (MISMOS QUE TENÍAS, DISEÑO MEJORADO) */}
+          {/* MODALES                                    */}
           {/* ========================================== */}
           
-          {/* MODAL COBRO */}
+          {/* MODAL COBRO: EFECTIVO O TERMINAL */}
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-[3rem] p-10 flex flex-col shadow-2xl">
@@ -258,12 +324,30 @@ export default function MonitorCaja() {
 
                   <div className="flex gap-4">
                     <button onClick={() => setSelectedOrder(null)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 py-5 rounded-2xl font-bold text-white transition-colors">Cancelar</button>
-                    <button onClick={async () => {
-                        await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: selectedOrder.id, newStatus: 'PAID' }) });
-                        setSelectedOrder(null); setReceivedAmount(''); checkShift(); fetchCashOrders();
-                    }} className="flex-[2] bg-green-500 hover:bg-green-400 text-zinc-950 py-5 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all">Confirmar Pago</button>
+                    {selectedOrder.paymentMethod === 'TERMINAL' ? (
+                        <button onClick={() => triggerTerminalPayment(selectedOrder)} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all">💳 Activar Terminal</button>
+                    ) : (
+                        <button onClick={async () => {
+                            await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: selectedOrder.id, newStatus: 'PAID' }) });
+                            setSelectedOrder(null); setReceivedAmount(''); checkShift(); fetchCashOrders();
+                        }} className="flex-[2] bg-green-500 hover:bg-green-400 text-zinc-950 py-5 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all">Confirmar Pago</button>
+                    )}
                   </div>
                 </div>
+            </div>
+          )}
+
+          {/* OVERLAY DE ESPERA DE TERMINAL */}
+          {waitingTerminal && (
+            <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[70] text-center p-8 animate-in fade-in zoom-in-95 duration-200">
+              <span className="text-[10rem] animate-pulse mb-8">💳</span>
+              <h2 className="text-6xl font-black text-yellow-400 mb-6">Terminal Activada</h2>
+              <p className="text-3xl text-zinc-300 font-medium bg-zinc-900 px-8 py-4 rounded-full border border-zinc-700 shadow-xl">{terminalStatusMsg}</p>
+              <div className="mt-16 w-32 h-32 border-8 border-zinc-800 border-t-yellow-400 rounded-full animate-spin"></div>
+              
+              <button onClick={() => { setWaitingTerminal(false); setTerminalIntentId(null); }} className="mt-16 text-zinc-500 hover:text-white underline font-bold uppercase tracking-widest text-xs">
+                Cancelar operación en sistema
+              </button>
             </div>
           )}
 
