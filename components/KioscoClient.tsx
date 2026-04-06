@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { useCartStore } from '../store/cart';
 
-// OPCIONES ACTUALIZADAS AL INVENTARIO FÍSICO REAL
 const OPCIONES = {
   PAPAS: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes'],
   MARUCHAN: ['Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín'],
@@ -11,7 +10,6 @@ const OPCIONES = {
   BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural']
 };
 
-// LOS NIVELES DE RECOMPENSA OFICIALES DE MAIZTROS
 const REWARDS = [
   { id: 'tier1', pts: 250, discount: 25, label: 'Premio Básico (-$25)' },
   { id: 'tier2', pts: 500, discount: 60, label: 'Premio Doble (-$60)' },
@@ -20,13 +18,15 @@ const REWARDS = [
 
 export default function KioscoClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
-  const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro'));
+  
+  // FILTRO: Solo muestra en menú principal si isAvailable es true
+  const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable);
 
-  const polvos = modifiers.filter(m => m.type === 'POLVO');
-  const aderezos = modifiers.filter(m => m.type === 'ADEREZO');
-  const quesos = modifiers.filter(m => m.type === 'QUESO');
-  const restricciones = modifiers.filter(m => m.type === 'RESTRICCION');
-  const chiles = modifiers.filter(m => m.type === 'CHILE');
+  const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
+  const aderezos = modifiers.filter(m => m.type === 'ADEREZO' && m.isAvailable);
+  const quesos = modifiers.filter(m => m.type === 'QUESO' && m.isAvailable);
+  const restricciones = modifiers.filter(m => m.type === 'RESTRICCION' && m.isAvailable);
+  const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
 
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
   const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
@@ -43,12 +43,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [customerPhone, setCustomerPhone] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  // LEALTAD GAMIFICADA
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [selectedReward, setSelectedReward] = useState<{id: string, pts: number, discount: number, label: string} | null>(null);
   const [isCheckingPoints, setIsCheckingPoints] = useState(false);
   
-  // CUPONES
   const [couponCode, setCouponCode] = useState('');
   const [activeCoupon, setActiveCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
@@ -61,7 +59,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
-  // 1. Efecto: Buscar puntos por teléfono
+  // NUEVO ESTADO: INVENTARIO FÍSICO
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Jalamos la data del inventario al cargar la app para saber qué ocultar
+    fetch('/api/admin?action=kiosco_sync')
+      .then(res => res.json())
+      .then(data => {
+        if(data.success) setInventoryItems(data.inventoryItems);
+      });
+  }, [appState]);
+
   useEffect(() => {
     if (customerPhone.length === 10) {
       setIsCheckingPoints(true);
@@ -79,7 +88,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   }, [customerPhone]);
 
-  // 2. Efecto: Reset de inactividad
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
@@ -98,10 +106,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
   }, [appState, waitingTerminal, isSubmitting, showTipModal]);
 
-  // MATEMÁTICAS BÁSICAS
   const subtotal = getTotal();
 
-  // 3. Efecto: Quitar el cupón automáticamente si el usuario elimina cosas del carrito y ya no llega al mínimo
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null);
@@ -114,24 +120,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if (!couponCode) return;
     const res = await fetch(`/api/customer?code=${couponCode}`);
     const data = await res.json();
-    
     if (data.success) { 
-      // VERIFICACIÓN DEL MONTO MÍNIMO
       if (data.coupon.minAmount > 0 && subtotal < data.coupon.minAmount) {
         setCouponError(`Compra mínima de $${data.coupon.minAmount} requerida.`);
         setActiveCoupon(null);
       } else {
         setActiveCoupon(data.coupon); 
-        setSelectedReward(null); // Apagamos recompensas si se usa un cupón
+        setSelectedReward(null); 
       }
     } 
-    else { 
-      setActiveCoupon(null); 
-      setCouponError(data.error); 
-    }
+    else { setActiveCoupon(null); setCouponError(data.error); }
   };
 
-  // MATEMÁTICAS APLICADAS
   let totalAfterCoupon = subtotal;
   if (activeCoupon) {
     if (activeCoupon.discountType === 'FIXED') totalAfterCoupon = Math.max(0, subtotal - activeCoupon.discount);
@@ -267,8 +267,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
     if (!customerName) return alert("Por favor ingresa tu nombre para el ticket.");
-    if (selectedReward && totalAfterCoupon < selectedReward.discount) return alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla.");
+    if (selectedReward && totalAfterCoupon < selectedReward.discount) {
+      alert(`Tu compra es menor a $${selectedReward.discount}. Guarda tus puntos para una orden más grande.`);
+      return;
+    }
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') { alert("Tu orden es GRATIS con tus puntos. Pica 'Pagar en Caja' para registrarla."); return; }
     setSelectedTipMethod(paymentMethod); setShowTipModal(true);
   };
 
@@ -348,8 +351,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
-        
-        {/* RESUMEN DE ORDEN Y CÁLCULO NETO */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -383,9 +384,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: LEALTAD SÚPER LLAMATIVA Y PAGOS */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
-          
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
             
@@ -407,7 +406,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
               </div>
 
-              {/* LISTA DE PREMIOS GAMIFICADA */}
               <div className="mt-6 border-t border-yellow-500/30 pt-6">
                 <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Recompensas</p>
                 <div className="space-y-2">
@@ -462,7 +460,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* ... MODALES ... */}
         {waitingTerminal && (
           <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
             <span className="text-[10rem] animate-pulse mb-8">💳</span>
@@ -500,7 +497,21 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     );
   }
 
-  // RENDERIZADO DEL MENÚ PRINCIPAL
+  // ==========================================
+  // FILTRO DINÁMICO DE OPCIONES (PANEL DE PÁNICO)
+  // ==========================================
+  const isOptionAvailable = (optName: string) => {
+    // 1. Verificar si está en el inventario físico y apagado por Pánico o por Stock 0
+    const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
+    if (invItem) return invItem.isAvailable && invItem.stock > 0;
+    
+    // 2. Verificar si es un producto directo
+    const prodItem = products.find(p => p.name.toLowerCase() === optName.toLowerCase());
+    if (prodItem) return prodItem.isAvailable;
+    
+    return true; // Por defecto prendido
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
       <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
@@ -627,8 +638,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
-                  {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type].map((opt: string) => (
-                    <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98] shadow-lg' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{opt}</button>
+                  {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
+                    .filter((opt: string) => isOptionAvailable(opt)) // FILTRO MAGICO DE PÁNICO Y STOCK CERO
+                    .map((opt: string) => (
+                      <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98] shadow-lg' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{opt}</button>
                   ))}
                 </div>
               )}
