@@ -58,10 +58,9 @@ export async function GET(request: Request) {
     let endDate = new Date(); endDate.setHours(23, 59, 59, 999); 
     if (startDateParam && endDateParam) { startDate = new Date(startDateParam); endDate = new Date(endDateParam); endDate.setHours(23, 59, 59, 999); }
 
-    const orders = await prisma.order.findMany({ where: { createdAt: { gte: startDate, lte: endDate } }, orderBy: { createdAt: 'desc' } });
+    const orders = await prisma.order.findMany({ where: { createdAt: { gte: startDate, lte: endDate } }, orderBy: { createdAt: 'asc' } });
     const shifts = await prisma.shift.findMany({ where: { openedAt: { gte: startDate, lte: endDate } }, include: { orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } }, movements: true }, orderBy: { openedAt: 'desc' } });
     
-    // NUEVO: TRAER GASTOS
     const expenses = await prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } }, orderBy: { date: 'desc' } });
 
     return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts, expenses });
@@ -95,7 +94,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // GUARDAR NUEVO GASTO
     if (body.type === 'expense') {
       await prisma.expense.create({
         data: { amount: parseFloat(body.amount), category: body.category, description: body.description }
@@ -103,7 +101,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // CREAR CUPÓN
     await prisma.coupon.create({ data: { code: body.code.toUpperCase().trim(), discount: parseFloat(body.discount), discountType: body.discountType, minAmount: parseFloat(body.minAmount) || 0 } });
     return NextResponse.json({ success: true });
   } catch (error) { return NextResponse.json({ success: false, error: 'Error en la petición' }, { status: 500 }); }
