@@ -7,7 +7,43 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ... (Product, Modifier, Customer, Coupon siguen igual)
+model Product {
+  id          String   @id
+  name        String
+  category    String   
+  basePrice   Float
+  description String?
+  isCombo     Boolean  @default(false)
+  isAvailable Boolean  @default(true) 
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Modifier {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   
+  price       Float    @default(0)
+  isAvailable Boolean  @default(true) 
+  createdAt   DateTime @default(now())
+}
+
+model Customer {
+  phone     String   @id
+  name      String?
+  points    Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Coupon {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  discount      Float    
+  discountType  String   
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
 
 model Shift {
   id           String   @id @default(uuid())
@@ -15,10 +51,10 @@ model Shift {
   closedAt     DateTime?
   openedBy     String
   startingCash Float
-  reportedCash Float?   // Lo que el empleado dice que hay
+  reportedCash Float?
   status       String   @default("OPEN") 
   orders       Order[]
-  movements    CashMovement[] // <-- NUEVO
+  movements    CashMovement[]
 }
 
 model CashMovement {
@@ -46,8 +82,10 @@ model Order {
   couponCode     String?  
   tipAmount      Float    @default(0) 
   status         String   @default("PENDING") 
+  
   shiftId        String?  
   shift          Shift?   @relation(fields: [shiftId], references: [id])
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
