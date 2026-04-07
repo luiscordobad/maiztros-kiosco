@@ -34,14 +34,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
+  // ESTADOS DEL WIZARD Y FLUJO DE COMPRA
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
+  const [showAddSuccess, setShowAddSuccess] = useState(false);
+  const [lastAddedCategory, setLastAddedCategory] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   
   const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
@@ -124,11 +128,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
-      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies) {
+      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies && !showAddSuccess) {
         useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+        setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
+        setShowAddSuccess(false); setLastAddedCategory('');
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
         setAppState('WELCOME');
       }
@@ -138,7 +143,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     window.addEventListener('mousemove', resetTimer); window.addEventListener('scroll', resetTimer);
     resetTimer(); 
     return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
-  }, [appState, waitingTerminal, isSubmitting, showTipModal, showPrivacy, showCookies]);
+  }, [appState, waitingTerminal, isSubmitting, showTipModal, showPrivacy, showCookies, showAddSuccess]);
 
   const subtotal = getTotal();
 
@@ -232,8 +237,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   
   const handleProductClick = (product: any) => {
     const steps = getProductSteps(product);
-    if (steps.length === 0) { addToCart(product, 0, product.name); if (appState === 'UPSELL') setAppState('MENU'); return; }
-    setActiveProduct(product); setWizardStep(0); setWizardData({}); if (appState === 'UPSELL') setAppState('MENU');
+    if (steps.length === 0) { 
+        addToCart(product, 0, product.name); 
+        setLastAddedCategory(product.category);
+        if (appState === 'MENU') {
+            setShowAddSuccess(true);
+        }
+        return; 
+    }
+    setActiveProduct(product); setWizardStep(0); setWizardData({}); 
   };
 
   const handleToggleModifier = (mod: any) => {
@@ -277,9 +289,13 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     });
 
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
-    const wasDrinkOrAntojoOrCombo = activeProduct.category === 'BEBIDA' || activeProduct.category === 'ANTOJO' || activeProduct.category === 'COMBO';
+    setLastAddedCategory(activeProduct.category);
     setActiveProduct(null);
-    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) { setAppState('UPSELL'); }
+    
+    // Si estaba en el menú principal, le preguntamos qué quiere hacer.
+    if (appState === 'MENU') { 
+        setShowAddSuccess(true); 
+    }
   };
 
   const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
@@ -303,7 +319,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, pointsDeducted: selectedReward?.pts || 0, 
-          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail: regData.email, customerPhone, paymentMethod, orderType, orderNotes 
+          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail: regData.email || customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
         })
       });
       const data = await response.json();
@@ -313,7 +329,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
-        setWaitingTerminal(false); setShowTipModal(false);
+        setWaitingTerminal(false); setShowTipModal(false); setShowAddSuccess(false); setLastAddedCategory('');
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000);
       }
@@ -448,7 +464,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
               <p className="text-7xl text-yellow-400 font-black tracking-tighter">${totalNeto.toFixed(2)}</p>
             </div>
-            <button onClick={() => setAppState('MENU')} className="text-zinc-500 mt-6 font-bold hover:text-white self-start">← Agregar más</button>
+            <button onClick={() => setAppState('UPSELL')} className="text-zinc-500 mt-6 font-bold hover:text-white self-start">← Agregar más</button>
           </div>
         </div>
 
@@ -493,7 +509,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                               <div className="flex items-start gap-2 mt-2 bg-zinc-900 p-3 rounded-xl border border-zinc-800">
                                   <input type="checkbox" id="terms_kiosk" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-1 w-5 h-5 accent-yellow-400"/>
                                   <label htmlFor="terms_kiosk" className="text-[10px] text-zinc-400 font-bold leading-relaxed">
-                                      Acepto la Privacidad y Cookies.
+                                      Acepto la <button type="button" onClick={()=>setShowPrivacy(true)} className="text-yellow-400 underline">Privacidad</button> y <button type="button" onClick={()=>setShowCookies(true)} className="text-yellow-400 underline">Cookies</button>.
                                   </label>
                               </div>
 
@@ -599,6 +615,43 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             </div>
         )}
 
+        {/* NUEVO MODAL: ¡AGREGADO CON ÉXITO! */}
+        {showAddSuccess && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[60] p-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-zinc-900 border border-zinc-800 p-8 md:p-10 rounded-[3rem] w-full max-w-md shadow-2xl text-center flex flex-col items-center">
+              <span className="text-7xl mb-4 block drop-shadow-lg">🛒</span>
+              <h2 className="text-3xl font-black text-white mb-2">¡Agregado con éxito!</h2>
+              <p className="text-zinc-400 font-bold mb-8">¿Qué deseas hacer ahora?</p>
+              
+              <div className="flex flex-col gap-4 w-full">
+                <button 
+                  onClick={() => {
+                    setShowAddSuccess(false);
+                    // Se queda en MENU
+                  }} 
+                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-5 rounded-2xl transition-colors border border-zinc-700 text-lg"
+                >
+                  ➕ Agregar otro antojo
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowAddSuccess(false);
+                    const wasDrinkOrAntojoOrCombo = lastAddedCategory === 'BEBIDA' || lastAddedCategory === 'ANTOJO' || lastAddedCategory === 'COMBO';
+                    if (!wasDrinkOrAntojoOrCombo) {
+                       setAppState('UPSELL');
+                    } else {
+                       setAppState('CHECKOUT');
+                    }
+                  }} 
+                  className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all text-xl"
+                >
+                  Siguiente paso ➔
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {waitingTerminal && (
           <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[60] text-center p-8">
             <span className="text-[10rem] animate-pulse mb-8">💳</span>
@@ -695,8 +748,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <span className="text-zinc-400 font-black tracking-widest uppercase text-sm mb-1">Orden Actual ({cart.length})</span>
             <span className="text-5xl text-yellow-400 font-black tracking-tighter">${getTotal().toFixed(2)}</span>
           </div>
-          <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-10 md:px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-[0_10px_30px_rgba(250,204,21,0.3)] active:scale-95 transition-all flex items-center gap-4">
-            Pagar Orden <span className="text-3xl">➔</span>
+          <button onClick={() => setAppState('UPSELL')} className="bg-yellow-400 text-zinc-950 px-10 md:px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-[0_10px_30px_rgba(250,204,21,0.3)] active:scale-95 transition-all flex items-center gap-4">
+            Ver Orden <span className="text-3xl">➔</span>
           </button>
         </div>
       )}
@@ -738,7 +791,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <div className="p-8 overflow-y-auto flex-1 space-y-10">
               {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
                 <div className="space-y-8 animate-in fade-in duration-300">
-                  {/* NUEVA CAJA DE TRANSPARENCIA DE PRECIOS */}
                   <div className="bg-yellow-400/10 border border-yellow-400/30 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
                       <div>
                           <h4 className="text-yellow-400 font-black text-lg mb-1 flex items-center gap-2">🧀 Toppings Especiales</h4>
@@ -753,7 +805,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                       </div>
                   </div>
 
-                  {/* SECCIÓN 1: CON COSTO (Especialidades) */}
                   <div className="space-y-8 border-b border-zinc-800 pb-10">
                     {[ 
                       {t: '1. Aderezos Extras', m: aderezos}, 
@@ -771,7 +822,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     ))}
                   </div>
 
-                  {/* SECCIÓN 2: GRATIS (Chiles y Restricciones) */}
                   <div className="space-y-8 pt-4">
                     <div>
                       <h3 className="text-xl font-black text-green-400 uppercase tracking-widest mb-4 flex items-center gap-2">🌶️ Barra Libre (¡Gratis!)</h3>
@@ -836,6 +886,42 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     
                     return isLastStep ? `Terminar y Agregar${extraLabel} ➔` : `Siguiente Paso${extraLabel} ➔`;
                 })()}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* NUEVO MODAL: ¡AGREGADO CON ÉXITO! */}
+      {showAddSuccess && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[60] p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 p-8 md:p-10 rounded-[3rem] w-full max-w-md shadow-2xl text-center flex flex-col items-center">
+            <span className="text-7xl mb-4 block drop-shadow-lg">🛒</span>
+            <h2 className="text-3xl font-black text-white mb-2">¡Agregado con éxito!</h2>
+            <p className="text-zinc-400 font-bold mb-8">¿Qué deseas hacer ahora?</p>
+            
+            <div className="flex flex-col gap-4 w-full">
+              <button 
+                onClick={() => {
+                  setShowAddSuccess(false);
+                }} 
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-5 rounded-2xl transition-colors border border-zinc-700 text-lg"
+              >
+                ➕ Agregar otro antojo
+              </button>
+              <button 
+                onClick={() => {
+                  setShowAddSuccess(false);
+                  const wasDrinkOrAntojoOrCombo = lastAddedCategory === 'BEBIDA' || lastAddedCategory === 'ANTOJO' || lastAddedCategory === 'COMBO';
+                  if (!wasDrinkOrAntojoOrCombo) {
+                     setAppState('UPSELL');
+                  } else {
+                     setAppState('CHECKOUT');
+                  }
+                }} 
+                className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all text-xl"
+              >
+                Siguiente paso ➔
               </button>
             </div>
           </div>
