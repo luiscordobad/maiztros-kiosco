@@ -372,6 +372,23 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return true; 
   };
 
+  // ==========================================
+  // LÓGICA DE CÁLCULO DE PRECIO EN VIVO PARA TOPPINGS
+  // ==========================================
+  let currentExtraCost = 0;
+  if (activeProduct && getProductSteps(activeProduct)[wizardStep]?.type === 'TOPPINGS') {
+      const stepDef = getProductSteps(activeProduct)[wizardStep];
+      const currentSelections = wizardData[wizardStep] || [];
+      const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
+      let baseCount = paidCount;
+      if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
+      if (!stepDef.isFree) {
+          if (baseCount === 1) currentExtraCost = 15;
+          if (baseCount === 2) currentExtraCost = 25;
+          if (baseCount >= 3) currentExtraCost = 35;
+      }
+  }
+
   if (appState === 'WELCOME') {
     return (
       <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
@@ -425,7 +442,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   <p className="font-black text-2xl">{item.product.name}</p>
                   {item.notes && <p className="text-zinc-500 text-sm mt-3 font-medium leading-relaxed whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>}
                   
-                  {/* BARRA DE EDICIÓN EN CARRITO */}
                   <div className="flex flex-wrap gap-2 mt-5">
                     <button onClick={() => addToCart(item.product, item.totalPrice - item.product.basePrice, item.notes)} className="text-green-400 bg-green-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
                         <span>➕</span> Duplicar
@@ -458,7 +474,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: LEALTAD, REGISTRO Y PAGO */}
+        {/* COLUMNA DERECHA: LEALTAD Y PAGO */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
@@ -578,16 +594,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* MODALES DEL KIOSCO (Privacidad, Terminal, Propinas) */}
+        {/* MODALES DEL KIOSCO */}
         {showPrivacy && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[70] p-6 animate-in fade-in">
                 <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                     <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
                     <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Conforme a lo establecido en la <strong>Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP)</strong> de México, "Maiztros" (ubicado en Zibatá, Querétaro) informa:</p>
-                        <p><strong>1. Uso de Datos:</strong> Sus datos personales (Nombre, Apellidos, Teléfono Celular y Correo Electrónico) serán utilizados exclusivamente para: (A) El registro y administración de su cuenta en nuestro programa de lealtad "MaiztroVIP". (B) El envío de tickets de compra digitales. (C) Envío de promociones exclusivas (si no opta por darse de baja).</p>
-                        <p><strong>2. Protección:</strong> Sus datos se almacenan en bases de datos cifradas. En Maiztros <strong>NUNCA</strong> venderemos, alquilaremos ni compartiremos su información con terceros, agencias de publicidad o entidades externas.</p>
-                        <p><strong>3. Derechos ARCO:</strong> Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y Oposición solicitándolo en el mostrador físico de la sucursal.</p>
+                        <p>Conforme a lo establecido en la Ley, "Maiztros" informa:</p>
+                        <p><strong>1. Uso de Datos:</strong> Sus datos personales serán utilizados exclusivamente para el programa de lealtad y recibos digitales.</p>
+                        <p><strong>2. Protección:</strong> En Maiztros <strong>NUNCA</strong> venderemos ni compartiremos su información con terceros.</p>
                     </div>
                     <button onClick={() => setShowPrivacy(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
                 </div>
@@ -599,14 +614,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                     <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
                     <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Este Kiosco utiliza tecnologías de almacenamiento local estrictamente necesarias para procesar su orden temporalmente.</p>
-                        <p><strong>¿Para qué las usamos?</strong></p>
-                        <ul className="list-disc pl-5 space-y-2">
-                            <li>Almacenar temporalmente los productos en el "Carrito de Compras" antes de finalizar su pedido.</li>
-                            <li>Mantener la validación de sus puntos durante el proceso de pago.</li>
-                        </ul>
-                        <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario (como Facebook Pixel o Google Analytics).</p>
-                        <p>Toda la información se borra automáticamente 2 minutos después de inactividad o al completar su compra.</p>
+                        <p>Este Kiosco utiliza almacenamiento local estrictamente necesario para procesar su orden (como el carrito de compras).</p>
+                        <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario. Toda la información se borra automáticamente después de su compra.</p>
                     </div>
                     <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
                 </div>
@@ -751,31 +760,60 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             
             <div className="p-8 overflow-y-auto flex-1 space-y-10">
               {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
-                <>
-                  {[ 
-                    {t: '1. Aderezos Extras', m: aderezos}, 
-                    {t: '2. Ponle Queso', m: quesos}, 
-                    {t: '3. Polvito de Papas', m: polvos}, 
-                    {t: '4. Chile (Pica o no pica)', m: chiles} 
-                  ].map(sec => (
-                    <div key={sec.t}>
-                      <h3 className="text-lg font-black text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400"></span>{sec.t}</h3>
+                <div className="space-y-8 animate-in fade-in duration-300">
+                  {/* NUEVA CAJA DE TRANSPARENCIA DE PRECIOS */}
+                  <div className="bg-yellow-400/10 border border-yellow-400/30 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+                      <div>
+                          <h4 className="text-yellow-400 font-black text-lg mb-1 flex items-center gap-2">🧀 Toppings Especiales</h4>
+                          <p className="text-sm text-zinc-300 font-bold">
+                             {getProductSteps(activeProduct)[wizardStep].firstToppingFree ? '🎁 ¡Tu primer topping es GRATIS! Después:' : 'Agrega todo el sabor que quieras por un costo extra:'}
+                          </p>
+                      </div>
+                      <div className="flex gap-4 text-xs font-black text-yellow-500 bg-zinc-950 p-3 rounded-xl border border-yellow-500/20 whitespace-nowrap">
+                         <span>1 x $15</span>
+                         <span>2 x $25</span>
+                         <span>3 o más x $35 (Tope)</span>
+                      </div>
+                  </div>
+
+                  {/* SECCIÓN 1: CON COSTO (Especialidades) */}
+                  <div className="space-y-8 border-b border-zinc-800 pb-10">
+                    {[ 
+                      {t: '1. Aderezos Extras', m: aderezos}, 
+                      {t: '2. Ponle Queso', m: quesos}, 
+                      {t: '3. Polvito de Papas', m: polvos}
+                    ].map(sec => (
+                      <div key={sec.t}>
+                        <h3 className="text-lg font-black text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400"></span>{sec.t}</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          {sec.m.map((mod:any) => (
+                            <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{mod.name}</button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* SECCIÓN 2: GRATIS (Chiles y Restricciones) */}
+                  <div className="space-y-8 pt-4">
+                    <div>
+                      <h3 className="text-xl font-black text-green-400 uppercase tracking-widest mb-4 flex items-center gap-2">🌶️ Barra Libre (¡Gratis!)</h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {sec.m.map((mod:any) => (
-                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{mod.name}</button>
+                        {chiles.map((mod:any) => (
+                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-green-500 text-zinc-950 border-green-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-green-500/50 text-zinc-300'}`}>{mod.name}</button>
                         ))}
                       </div>
                     </div>
-                  ))}
-                  <div>
-                    <h3 className="text-lg font-black text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400"></span>Restricciones (Sin...)</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {restricciones.map((mod:any) => (
-                        <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-red-400/50 text-zinc-300'}`}>{mod.name}</button>
-                      ))}
+                    <div>
+                      <h3 className="text-lg font-black text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400"></span>Restricciones (Sin...)</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {restricciones.map((mod:any) => (
+                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-red-400/50 text-zinc-300'}`}>{mod.name}</button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </>
+                </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
@@ -801,7 +839,26 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 </button>
               )}
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-300 active:scale-[0.98] transition-transform">
-                {wizardStep === getProductSteps(activeProduct).length - 1 ? 'Terminar y Agregar ➔' : 'Siguiente Paso ➔'}
+                {(() => {
+                    const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
+                    const stepDef = getProductSteps(activeProduct)[wizardStep];
+                    let extraLabel = "";
+                    
+                    if (stepDef.type === 'TOPPINGS') {
+                        const currentSelections = wizardData[wizardStep] || [];
+                        const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
+                        let baseCount = paidCount;
+                        if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
+                        
+                        if (!stepDef.isFree) {
+                            if (baseCount === 1) extraLabel = " (+ $15.00)";
+                            if (baseCount === 2) extraLabel = " (+ $25.00)";
+                            if (baseCount >= 3) extraLabel = " (+ $35.00)";
+                        }
+                    }
+                    
+                    return isLastStep ? `Terminar y Agregar${extraLabel} ➔` : `Siguiente Paso${extraLabel} ➔`;
+                })()}
               </button>
             </div>
           </div>
