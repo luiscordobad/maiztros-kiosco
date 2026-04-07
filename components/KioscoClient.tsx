@@ -68,12 +68,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetch('/api/admin?action=kiosco_sync')
       .then(res => res.json())
       .then(data => { if(data.success) setInventoryItems(data.inventoryItems); });
   }, [appState]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (customerPhone.length === 10) {
       setIsCheckingPoints(true);
@@ -121,6 +123,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setIsRegistering(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
@@ -142,6 +145,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const subtotal = getTotal();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null);
@@ -413,6 +417,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
+        {/* COLUMNA IZQUIERDA: RESUMEN DE ORDEN */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -454,6 +459,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
+        {/* COLUMNA DERECHA: LEALTAD Y PAGO */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
@@ -593,7 +599,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                     <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
                     <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Este Kiosco utiliza almacenamiento local estrictamente necesario para procesar su orden (como el carrito de compras).</p>
+                        <p>Este Kiosco utiliza almacenamiento local estrictamente necesario para procesar su orden (como el &quot;Carrito de Compras&quot;).</p>
                         <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario. Toda la información se borra automáticamente después de su compra.</p>
                     </div>
                     <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
@@ -740,7 +746,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <div className="p-8 overflow-y-auto flex-1 space-y-10">
               {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
                 <div className="space-y-8 animate-in fade-in duration-300">
-                  {/* NUEVA CAJA DE TRANSPARENCIA DE PRECIOS */}
                   <div className="bg-yellow-400/10 border border-yellow-400/30 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
                       <div>
                           <h4 className="text-yellow-400 font-black text-lg mb-1 flex items-center gap-2">🧀 Toppings Especiales</h4>
@@ -755,7 +760,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                       </div>
                   </div>
 
-                  {/* SECCIÓN 1: CON COSTO (Especialidades) */}
                   <div className="space-y-8 border-b border-zinc-800 pb-10">
                     {[ 
                       {t: '1. Aderezos Extras', m: aderezos}, 
@@ -773,7 +777,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     ))}
                   </div>
 
-                  {/* SECCIÓN 2: GRATIS (Chiles y Restricciones) */}
                   <div className="space-y-8 pt-4">
                     <div>
                       <h3 className="text-xl font-black text-green-400 uppercase tracking-widest mb-4 flex items-center gap-2">🌶️ Barra Libre (¡Gratis!)</h3>
