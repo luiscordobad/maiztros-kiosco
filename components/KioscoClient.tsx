@@ -30,7 +30,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
 
   const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
-  const [upsellView, setUpsellView] = useState<'OPTIONS' | 'BEBIDAS' | 'GOMITAS'>('OPTIONS');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
   // ESTADOS DEL WIZARD (CREADOR DE ANTOJOS)
@@ -65,7 +64,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [selectedTipMethod, setSelectedTipMethod] = useState<'TERMINAL' | 'EFECTIVO_CAJA' | null>(null);
 
   const [waitingTerminal, setWaitingTerminal] = useState(false);
-  const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
@@ -283,7 +281,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
     const wasDrinkOrAntojoOrCombo = activeProduct.category === 'BEBIDA' || activeProduct.category === 'ANTOJO' || activeProduct.category === 'COMBO';
     setActiveProduct(null);
-    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) { setUpsellView('OPTIONS'); setAppState('UPSELL'); }
+    if (appState === 'MENU' && !wasDrinkOrAntojoOrCombo) { setAppState('UPSELL'); }
   };
 
   const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
@@ -294,7 +292,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
       if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago...');
       if (currentState === 'FINISHED') { setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...'); executeOrderSave('TERMINAL', tipAmount); return true; }
-      if (currentState === 'CANCELED' || currentState === 'ABANDONED') { alert('El cobro fue cancelado en la terminal física.'); setWaitingTerminal(false); setTerminalIntentId(null); setIsSubmitting(false); return true; }
+      if (currentState === 'CANCELED' || currentState === 'ABANDONED') { alert('El cobro fue cancelado en la terminal física.'); setWaitingTerminal(false); setIsSubmitting(false); return true; }
       return false; 
     } catch (e) { return false; }
   };
@@ -317,7 +315,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
-        setWaitingTerminal(false); setTerminalIntentId(null); setShowTipModal(false);
+        setWaitingTerminal(false); setShowTipModal(false);
         setAppState('SUCCESS');
         setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000);
       }
@@ -340,7 +338,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         const res = await fetch('/api/terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: finalTotal, description: 'Orden Maiztros' }) });
         const data = await res.json();
         if (data.success) {
-          setWaitingTerminal(true); setTerminalIntentId(data.intentId);
+          setWaitingTerminal(true);
           const interval = setInterval(async () => { const finished = await checkTerminalStatus(data.intentId, tipAmount); if (finished) clearInterval(interval); }, 3000);
         } else { alert('Error terminal'); setIsSubmitting(false); }
       } catch (e) { alert("Error de conexión"); setIsSubmitting(false); }
@@ -371,23 +369,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if (prodItem) return prodItem.isAvailable;
     return true; 
   };
-
-  // ==========================================
-  // LÓGICA DE CÁLCULO DE PRECIO EN VIVO PARA TOPPINGS
-  // ==========================================
-  let currentExtraCost = 0;
-  if (activeProduct && getProductSteps(activeProduct)[wizardStep]?.type === 'TOPPINGS') {
-      const stepDef = getProductSteps(activeProduct)[wizardStep];
-      const currentSelections = wizardData[wizardStep] || [];
-      const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
-      let baseCount = paidCount;
-      if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
-      if (!stepDef.isFree) {
-          if (baseCount === 1) currentExtraCost = 15;
-          if (baseCount === 2) currentExtraCost = 25;
-          if (baseCount >= 3) currentExtraCost = 35;
-      }
-  }
 
   if (appState === 'WELCOME') {
     return (
@@ -432,7 +413,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
-        {/* COLUMNA IZQUIERDA: RESUMEN DE ORDEN */}
         <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
           <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
@@ -474,7 +454,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: LEALTAD Y PAGO */}
         <div className="w-full lg:w-[450px] flex flex-col gap-6">
           <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
@@ -600,7 +579,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                     <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
                     <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Conforme a lo establecido en la Ley, "Maiztros" informa:</p>
+                        <p>Conforme a lo establecido en la Ley, &quot;Maiztros&quot; informa:</p>
                         <p><strong>1. Uso de Datos:</strong> Sus datos personales serán utilizados exclusivamente para el programa de lealtad y recibos digitales.</p>
                         <p><strong>2. Protección:</strong> En Maiztros <strong>NUNCA</strong> venderemos ni compartiremos su información con terceros.</p>
                     </div>
@@ -772,7 +751,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                       <div className="flex gap-4 text-xs font-black text-yellow-500 bg-zinc-950 p-3 rounded-xl border border-yellow-500/20 whitespace-nowrap">
                          <span>1 x $15</span>
                          <span>2 x $25</span>
-                         <span>3 o más x $35 (Tope)</span>
+                         <span>3+ x $35 (Tope)</span>
                       </div>
                   </div>
 
@@ -844,7 +823,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     const stepDef = getProductSteps(activeProduct)[wizardStep];
                     let extraLabel = "";
                     
-                    if (stepDef.type === 'TOPPINGS') {
+                    if (stepDef && stepDef.type === 'TOPPINGS') {
                         const currentSelections = wizardData[wizardStep] || [];
                         const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
                         let baseCount = paidCount;
