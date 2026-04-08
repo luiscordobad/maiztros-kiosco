@@ -75,7 +75,7 @@ export default function MonitorCaja() {
     return null;
   };
 
-  const alert = getShiftAlert();
+  const shiftAlertMessage = getShiftAlert(); // Cambié el nombre aquí por seguridad
 
   const handleOpenShift = async () => {
     if (!cashierName || !startingCash) return;
@@ -189,7 +189,7 @@ export default function MonitorCaja() {
         setSelectedOrder(null);
         fetchCashOrders();
     } catch (error) {
-        alert("Error al intentar cancelar la orden.");
+        window.alert("Error al intentar cancelar la orden."); // SOLUCIÓN APLICADA AQUÍ
     }
   };
 
@@ -300,7 +300,7 @@ export default function MonitorCaja() {
     <ProtectedRoute title="Caja Maiztros" requiredRole="CAJERO">
       {(_role: any) => (
         <div className="min-h-screen bg-zinc-950 text-white font-sans">
-          {alert && <div className={`${alert.color} p-4 text-center font-black text-white animate-pulse sticky top-0 z-50`}>{alert.msg}</div>}
+          {shiftAlertMessage && <div className={`${shiftAlertMessage.color} p-4 text-center font-black text-white animate-pulse sticky top-0 z-50`}>{shiftAlertMessage.msg}</div>}
 
           <div className="p-8">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-zinc-800 pb-6 mb-8 gap-4">
@@ -538,7 +538,7 @@ export default function MonitorCaja() {
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[3rem] p-10 text-center shadow-2xl">
                 <span className="text-6xl mb-4 block">💰</span>
-                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja</h2>
+                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja (Ciego)</h2>
                 <p className="text-zinc-500 text-sm mb-8 font-bold">Cuenta todo el efectivo físico en caja (incluyendo morralla y fondo) e ingresa el monto total exacto.</p>
                 <input type="number" value={reportedCash} onChange={e => setReportedCash(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-6 rounded-2xl text-4xl font-black text-white outline-none mb-8 text-center focus:border-yellow-400 transition-colors"/>
                 <div className="flex gap-4">
