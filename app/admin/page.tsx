@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 export default function AdminWrapper() {
     return (
@@ -12,9 +14,10 @@ export default function AdminWrapper() {
 }
 
 function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
-  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'VENTAS' | 'INVENTARIO' | 'PANICO' | 'MARKETING' | 'AUDITORIA' | 'CLIENTES'>(role === 'ADMIN' ? 'FINANZAS' : 'VENTAS');
-  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [] });
+  const [activeTab, setActiveTab] = useState<'FINANZAS' | 'VENTAS' | 'INVENTARIO' | 'PANICO' | 'MARKETING' | 'AUDITORIA' | 'CLIENTES' | 'BI'>(role === 'ADMIN' ? 'FINANZAS' : 'VENTAS');
+  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
+  const [emailSending, setEmailSending] = useState(false);
 
   const lastWeek = new Date();
   lastWeek.setDate(lastWeek.getDate() - 7);
@@ -38,20 +41,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       const res = await fetch(`/api/admin?startDate=${startDate}&endDate=${endDate}`);
       const json = await res.json();
       if (json.success) setData(json);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, [startDate, endDate]);
 
   const getAuthorName = () => role === 'ADMIN' ? 'Luis (Jefe)' : 'Cajero (Staff)';
-
-  const updatePanic = async (id: string, type: string, currentStatus: boolean) => {
-      await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, isAvailable: !currentStatus, author: getAuthorName() }) });
-      fetchData();
-  };
 
   const initInventory = async () => {
     if (!confirm("Esto cargará los datos iniciales. ¿Estás seguro?")) return;
@@ -138,11 +134,17 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  const sendTicketEmail = (orderUrl: string) => {
+      const email = window.prompt("Ingresa el correo electrónico del cliente:");
+      if (!email) return;
+      const subject = encodeURIComponent("🌽 Tu Ticket de Compra - Maiztros");
+      const body = encodeURIComponent(`¡Hola!\n\nGracias por tu compra en Maiztros.\n\nPuedes ver tu ticket digital y el estatus de tu orden aquí:\n${orderUrl}\n\n¡Esperamos verte pronto!`);
+      window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+  };
+
   // ==========================================
-  // CÁLCULOS FINANCIEROS Y DE BI (RESTAURADOS)
+  // CÁLCULOS FINANCIEROS BASE
   // ==========================================
-  
-  // SOLUCIÓN: Volvemos a contar todas las órdenes que no estén canceladas (REFUNDED)
   const validOrders = data.orders ? data.orders.filter((o:any) => o.status !== 'REFUNDED') : []; 
   const totalOrders = validOrders.length;
   
@@ -154,7 +156,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
-  // Restaurados cálculos de Efectivo y Tarjeta
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
@@ -168,6 +169,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
 
+  // ==========================================
+  // CÁLCULOS PARA BUSINESS INTELLIGENCE
+  // ==========================================
   const hourMap = validOrders.reduce((acc: any, order: any) => {
     const hour = new Date(order.createdAt).getHours();
     const label = `${hour}:00`;
@@ -176,18 +180,77 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   }, {});
   const hourChartData = Object.keys(hourMap).map(h => ({ Hora: h, Ventas: hourMap[h] })).sort((a:any, b:any) => parseInt(a.Hora) - parseInt(b.Hora));
 
+  const daysMapObj: Record<number, string> = { 0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' };
+  const dayMap = validOrders.reduce((acc: any, order: any) => {
+    const dayIndex = new Date(order.createdAt).getDay();
+    const label = daysMapObj[dayIndex];
+    acc[label] = (acc[label] || 0) + order.totalAmount;
+    return acc;
+  }, {});
+  const orderOfDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const dayChartData = orderOfDays.map(d => ({ Dia: d, Ventas: dayMap[d] || 0 }));
+
   const productVolume: any = {};
+  const toppingVolume: any = {};
+  
   validOrders.forEach((o: any) => {
       if(o.items) {
           const itemsArr = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
           itemsArr.forEach((item: any) => {
-              const name = item.product?.name || 'Prod. Desconocido';
-              productVolume[name] = (productVolume[name] || 0) + 1;
+              const name = item.product?.name || 'Desconocido';
+              productVolume[name] = (productVolume[name] || 0) + (item.quantity || 1);
+              if (item.notes) {
+                  const parts = item.notes.split(/[|,]/);
+                  parts.forEach((p: string) => {
+                      const cleanIng = p.split(':')[1]?.trim() || p.trim();
+                      if (cleanIng && !cleanIng.toLowerCase().includes('mediano') && !cleanIng.toLowerCase().includes('grande') && cleanIng !== 'Natural') {
+                          toppingVolume[cleanIng] = (toppingVolume[cleanIng] || 0) + (item.quantity || 1);
+                      }
+                  });
+              }
           });
       }
   });
-  const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 5);
 
+  const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
+  const topToppingsData = Object.keys(toppingVolume).map(name => ({ name, qty: toppingVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
+
+  const pilarColors: Record<string, string> = {
+      'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
+  };
+
+  // ==========================================
+  // FUNCIONES DE REPORTE Y PDF
+  // ==========================================
+  const generatePDF = () => {
+      const doc = new jsPDF();
+      doc.setFontSize(20);
+      doc.text("Reporte Maiztros BI", 14, 20);
+      doc.setFontSize(12);
+      doc.text(`Periodo: ${startDate} al ${endDate}`, 14, 30);
+      doc.text(`Ventas Netas: $${ventasNetas.toFixed(2)} | Utilidad Neta: $${utilidadNeta.toFixed(2)}`, 14, 40);
+      doc.setFontSize(16);
+      doc.text("Top 10 Productos", 14, 55);
+      const prodBody = topProductsData.map(p => [p.name, p.qty.toString()]);
+      (doc as any).autoTable({ startY: 60, head: [['Producto', 'Vendidos']], body: prodBody });
+      doc.save(`Maiztros_BI_${startDate}.pdf`);
+  };
+
+  const sendEmailReport = async () => {
+      setEmailSending(true);
+      try {
+          const payload = { startDate, endDate, ventasNetas, gastosTotales, utilidadNeta, topProducts: topProductsData.slice(0,5) };
+          const res = await fetch('/api/send-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          const json = await res.json();
+          if (json.success) alert("✅ Reporte enviado a maiztrosqro@gmail.com");
+          else alert("❌ Error al enviar: " + json.error);
+      } catch (e) { alert("Error de conexión"); }
+      setEmailSending(false);
+  };
+
+  // ==========================================
+  // RENDERIZADO DE COMPONENTES
+  // ==========================================
   const renderInventoryGroup = (category: string, title: string, isManual: boolean = false) => {
     const items = data.inventoryItems?.filter((i: any) => i.category === category) || [];
     if (items.length === 0) return null;
@@ -252,7 +315,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     );
   }
 
-  const TABS_ADMIN = ['FINANZAS', 'VENTAS', 'INVENTARIO', 'PANICO', 'MARKETING', 'AUDITORIA', 'CLIENTES'];
+  const TABS_ADMIN = ['FINANZAS', 'VENTAS', 'INVENTARIO', 'PANICO', 'MARKETING', 'AUDITORIA', 'CLIENTES', 'BI'];
   const TABS_CAJERO = ['VENTAS', 'INVENTARIO'];
   const allowedTabs = role === 'ADMIN' ? TABS_ADMIN : TABS_CAJERO;
 
@@ -269,11 +332,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
           <div className="flex flex-wrap bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 w-full xl:w-auto gap-1">
             {allowedTabs.map((tab: any) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>{tab === 'CLIENTES' ? '👥 Clientes VIP' : tab}</button>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>
+                  {tab === 'CLIENTES' ? '👥 Clientes VIP' : tab === 'BI' ? '📊 BI & ESTRATEGIA' : tab}
+              </button>
             ))}
           </div>
         </header>
 
+        {/* CONTROLES GLOBALES (FECHAS Y SYNC) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
@@ -286,7 +352,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
                 </div>
             ) : <div></div>}
-            <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Sync Data</button>
+            <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Aplicar / Sync</button>
         </div>
 
         {loading ? (
@@ -297,6 +363,110 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         ) : (
           <div className="animate-in fade-in duration-500">
             
+            {/* ======================================================== */}
+            {/* 🌟 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
+            {/* ======================================================== */}
+            {activeTab === 'BI' && role === 'ADMIN' && (
+                <div className="space-y-8">
+                    
+                    {/* ACCIONES BI */}
+                    <div className="flex flex-col md:flex-row gap-4 mb-6">
+                        <button onClick={generatePDF} className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Reporte</button>
+                        <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center">
+                            {emailSending ? 'Enviando...' : '📧 Enviar a maiztrosqro@gmail.com'}
+                        </button>
+                    </div>
+
+                    {/* KPIs OPERATIVOS (ESTILO PYTHON) */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-3xl font-black text-white">{totalOrders}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
+                        
+                        {data.biExtraStats && (
+                            <>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ventas c/ Extras</p><p className="text-3xl font-black text-green-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(1) : 0}%</p></div>
+                            </>
+                        )}
+                    </div>
+
+                    {data.biExtraStats && data.biExtraStats.ticketModa > 0 && (
+                        <div className="bg-green-500/10 border border-green-500/30 p-6 rounded-2xl">
+                            <p className="text-green-400 font-bold text-sm">💡 <b>CONSEJO ESTRATÉGICO:</b> Tu ticket más común (Moda) es de <b>${data.biExtraStats.ticketModa.toFixed(2)}</b>. Crea un nuevo combo de <b>$${(data.biExtraStats.ticketModa + 20).toFixed(2)}</b> para empujar a los clientes a gastar un poco más.</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* GRÁFICA DE DÍAS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">📅 Ventas por Día</h3>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={dayChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                                        <XAxis dataKey="Dia" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                                        <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} />
+                                        <Bar dataKey="Ventas" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* GRÁFICA DE PILARES (ESTILO PYTHON) */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
+                            {data.biExtraStats && data.biExtraStats.pilaresChart.length > 0 ? (
+                                <div className="space-y-4">
+                                    {data.biExtraStats.pilaresChart.map((pilar: any) => (
+                                        <div key={pilar.name}>
+                                            <div className="flex justify-between text-sm font-bold mb-1">
+                                                <span>{pilar.name}</span>
+                                                <span style={{ color: pilarColors[pilar.name] || '#ffffff' }}>${pilar.revenue.toFixed(2)}</span>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="h-full" style={{ width: `${(pilar.revenue / data.biExtraStats.pilaresChart[0].revenue) * 100}%`, backgroundColor: pilarColors[pilar.name] || '#a1a1aa' }}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* RANKING TOPPINGS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-orange-400">🧀 Top 10 Toppings (Frecuencia)</h3>
+                            <div className="space-y-3">
+                                {topToppingsData.length > 0 ? topToppingsData.map((t, i) => (
+                                    <div key={t.name} className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                        <span className="font-bold text-sm"><span className="text-zinc-600 mr-2 text-xs">{i+1}.</span>{t.name}</span>
+                                        <span className="font-black text-orange-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></span>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+
+                        {/* RANKING PRODUCTOS (ESTRICTO 10 COMO EN PYTHON) */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos</h3>
+                            <div className="space-y-3">
+                                {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                                    <div key={p.name} className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                        <span className="font-bold text-sm"><span className="text-zinc-600 mr-2 text-xs">{i+1}.</span>{p.name}</span>
+                                        <span className="font-black text-green-400">{p.qty} <span className="text-[10px] text-zinc-500 uppercase">unds</span></span>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* PESTAÑA: FINANZAS                                        */}
+            {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
                 
@@ -346,7 +516,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
 
                     <div className="flex flex-col gap-8">
-                        {/* ADOPCIÓN DE CANALES */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                           <h3 className="text-xl font-black mb-4">📱 Adopción de Canales</h3>
                           <div className="flex items-center gap-4">
@@ -372,7 +541,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                           </div>
                         </div>
 
-                        {/* MÉTODOS DE PAGO (RESTAURADO) */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                           <h3 className="text-xl font-black mb-4">💳 Métodos de Pago</h3>
                           <div className="space-y-3">
@@ -390,11 +558,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* LOS + VENDIDOS (RESTAURADO) */}
                     <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 flex-1">
                         <h3 className="text-xl font-black mb-6">🏆 Los + Vendidos</h3>
                         <div className="space-y-4">
-                            {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                            {topProductsData.slice(0,5).map((p, i) => (
                                 <div key={p.name} className="flex items-center gap-4">
                                     <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
                                     <div className="flex-1">
@@ -407,11 +574,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                         </div>
                                     </div>
                                 </div>
-                            )) : <p className="text-zinc-600 text-sm">Sin datos.</p>}
+                            ))}
                         </div>
                     </div>
 
-                    {/* AUDITORÍA DE CORTES DE CAJA */}
                     <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col">
                       <div className="flex justify-between items-center mb-6">
                           <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
@@ -435,11 +601,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                       const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
                                       const totalEntradas = shift.startingCash + cashSales;
                                       const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
-                                      
                                       const expectedCash = totalEntradas - withdrawals;
                                       const reportedCash = shift.reportedCash || 0;
                                       const difference = reportedCash - expectedCash;
-                                      
                                       const isShortage = difference < 0;
                                       const isExact = difference === 0;
 
@@ -465,9 +629,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   })}
                               </tbody>
                           </table>
-                          {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
-                              <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
-                          )}
                       </div>
                     </div>
                 </div>
@@ -500,8 +661,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                   <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
                     <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
                     <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                      {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
-                        data.expenses?.map((e: any) => (
+                      {data.expenses?.map((e: any) => (
                           <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
                             <div>
                               <div className="flex items-center gap-2 mb-1">
@@ -515,8 +675,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                               <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors">🗑️</button>
                             </div>
                           </div>
-                        ))
-                      }
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -524,6 +683,70 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               </div>
             )}
 
+            {/* ======================================================== */}
+            {/* PESTAÑA: VENTAS                                          */}
+            {/* ======================================================== */}
+            {activeTab === 'VENTAS' && (
+                <div className="space-y-8">
+                  {role === 'ADMIN' && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Pts Canjeados</p><p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Exitosas</p><p className="text-4xl font-black text-white">{totalOrders}</p></div>
+                      </div>
+                  )}
+
+                  <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                          <h3 className="text-2xl font-black">📜 Historial de Tickets</h3>
+                          <button onClick={exportToCSV} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-blue-600/20">⬇️ Exportar CSV</button>
+                      </div>
+                      
+                      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                          {data.orders.slice().reverse().map((o: any) => (
+                              <div key={o.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row justify-between md:items-center gap-4 transition-colors ${o.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                  <div className="flex gap-4 items-center">
+                                      <div className="bg-zinc-900 p-3 rounded-xl">
+                                        <p className="text-2xl font-black italic text-yellow-500 w-16">#{o.turnNumber}</p>
+                                      </div>
+                                      <div>
+                                          <div className="flex items-center gap-2">
+                                              <p className="font-bold text-lg">{o.customerName}</p>
+                                              {o.orderType === 'TAKEOUT' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-2 py-0.5 rounded uppercase font-black tracking-widest">App VIP</span>}
+                                          </div>
+                                          <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">{new Date(o.createdAt).toLocaleString()}</p>
+                                          <div className="mt-1">
+                                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${o.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{o.paymentMethod === 'TERMINAL' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+                                          </div>
+                                      </div>
+                                  </div>
+                                  <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                                      <div className="text-right">
+                                        <p className={`font-black text-xl ${o.status === 'REFUNDED' ? 'line-through text-red-500' : 'text-white'}`}>${(o.totalAmount + o.tipAmount).toFixed(2)}</p>
+                                        {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
+                                      </div>
+                                      <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
+                                          {/* 🌟 AÑADIDO: ENVIAR TICKET POR EMAIL */}
+                                          <button onClick={() => sendTicketEmail(getTicketUrl(o.turnNumber))} className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors">📧 Email</button>
+                                          
+                                          {o.customerPhone && (
+                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors">📱</button>
+                                          )}
+                                          <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
+                                          {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* PESTAÑAS RESTANTES: (Mismo código original)                */}
+            {/* ======================================================== */}
+            
             {activeTab === 'CLIENTES' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-2 border-yellow-500/30 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_0_30px_rgba(250,204,21,0.1)]">
@@ -634,60 +857,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         );
                       })}
                     </div>
-                  </div>
-                </div>
-            )}
-
-            {activeTab === 'VENTAS' && (
-                <div className="space-y-8">
-                  {role === 'ADMIN' && (
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Ticket Promedio</p><p className="text-4xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Pts Canjeados</p><p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-2">Órdenes Exitosas</p><p className="text-4xl font-black text-white">{totalOrders}</p></div>
-                      </div>
-                  )}
-
-                  <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                          <h3 className="text-2xl font-black">📜 Historial de Tickets</h3>
-                          <button onClick={exportToCSV} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-blue-600/20">⬇️ Exportar CSV</button>
-                      </div>
-                      
-                      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                          {data.orders.slice().reverse().map((o: any) => (
-                              <div key={o.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row justify-between md:items-center gap-4 transition-colors ${o.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                  <div className="flex gap-4 items-center">
-                                      <div className="bg-zinc-900 p-3 rounded-xl">
-                                        <p className="text-2xl font-black italic text-yellow-500 w-16">#{o.turnNumber}</p>
-                                      </div>
-                                      <div>
-                                          <div className="flex items-center gap-2">
-                                              <p className="font-bold text-lg">{o.customerName}</p>
-                                              {o.orderType === 'TAKEOUT' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-2 py-0.5 rounded uppercase font-black tracking-widest">App VIP</span>}
-                                          </div>
-                                          <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">{new Date(o.createdAt).toLocaleString()}</p>
-                                          <div className="mt-1">
-                                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${o.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{o.paymentMethod === 'TERMINAL' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
-                                          </div>
-                                      </div>
-                                  </div>
-                                  <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                                      <div className="text-right">
-                                        <p className={`font-black text-xl ${o.status === 'REFUNDED' ? 'line-through text-red-500' : 'text-white'}`}>${(o.totalAmount + o.tipAmount).toFixed(2)}</p>
-                                        {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
-                                      </div>
-                                      <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
-                                          {o.customerPhone && (
-                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors">📱</button>
-                                          )}
-                                          <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
-                                          {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
-                                      </div>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
                   </div>
                 </div>
             )}
