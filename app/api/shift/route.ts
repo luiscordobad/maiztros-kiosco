@@ -24,14 +24,28 @@ export async function POST(request: Request) {
     
     // Si la petición trae un 'type', es un movimiento de efectivo (Retiro)
     if (body.type) {
+      const parsedAmount = parseFloat(body.amount);
+
       const movement = await prisma.cashMovement.create({
         data: { 
           shiftId: body.shiftId, 
           type: body.type, 
-          amount: parseFloat(body.amount), 
+          amount: parsedAmount, 
           reason: body.reason 
         }
       });
+
+      // 🌟 MAGIA AÑADIDA: Sincronizar automáticamente con la tabla de Gastos Global (Admin)
+      if (body.type === 'OUT') {
+        await prisma.expense.create({
+          data: {
+            description: body.reason, // Ej. "[LUIS (JEFE)] Pago de hielo"
+            amount: parsedAmount,
+            category: 'CAJA_CHICA' // Para que en el admin sepas que este dinero salió de la caja física
+          }
+        });
+      }
+
       return NextResponse.json({ success: true, movement });
     }
 
