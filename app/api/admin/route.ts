@@ -69,17 +69,17 @@ export async function GET(request: Request) {
   const endDateParam = searchParams.get('endDate');
 
   try {
-    // FILTRO DE FECHAS ESTRICTO Y PRECISO
-    let startDate = new Date(); startDate.setHours(0, 0, 0, 0); 
-    let endDate = new Date(); endDate.setHours(23, 59, 59, 999); 
+    let startDate = new Date(); 
+    let endDate = new Date(); 
     
     if (startDateParam && endDateParam) { 
-      startDate = new Date(`${startDateParam}T00:00:00Z`); 
-      // Si el entorno local está en otra zona horaria, esto ayuda a centrar el día
-      startDate = new Date(startDate.getTime() + startDate.getTimezoneOffset() * 60000); 
-      
-      endDate = new Date(`${endDateParam}T23:59:59Z`); 
-      endDate = new Date(endDate.getTime() + endDate.getTimezoneOffset() * 60000);
+      // SOLUCIÓN AL BUG DE FECHAS: Forzamos la zona horaria a CST (México: -06:00)
+      startDate = new Date(`${startDateParam}T00:00:00-06:00`); 
+      endDate = new Date(`${endDateParam}T23:59:59-06:00`); 
+    } else {
+      // Fallback a horas locales si no hay parámetros
+      startDate.setHours(0, 0, 0, 0); 
+      endDate.setHours(23, 59, 59, 999); 
     }
 
     const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
