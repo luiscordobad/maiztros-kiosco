@@ -31,10 +31,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION' && m.isAvailable);
   const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
 
-  const [appState, setAppState] = useState<'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('WELCOME');
+  // NUEVO ESTADO: SCREENSAVER (La pantalla atrapa-clientes)
+  const [appState, setAppState] = useState<'SCREENSAVER' | 'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('SCREENSAVER');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
-  // ESTADOS DEL WIZARD Y FLUJO DE COMPRA
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
@@ -71,6 +71,9 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
 
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+
+  // Referencia para el temporizador de la pantalla SUCCESS, para poder limpiarlo si el cliente le pica "Finalizar"
+  const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetch('/api/admin?action=kiosco_sync')
@@ -128,14 +131,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
-      if (appState !== 'WELCOME' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies && !showAddSuccess) {
+      // Si está en Screensaver o Success, no hacemos reset por inactividad aquí (Success tiene su propio timer de 30s)
+      if (appState !== 'SCREENSAVER' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies && !showAddSuccess) {
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
         setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setShowAddSuccess(false); setLastAddedCategory('');
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
-        setAppState('WELCOME');
+        
+        // El reset por inactividad nos manda de regreso al Screensaver principal
+        setAppState('SCREENSAVER');
       }
     };
     const resetTimer = () => { clearTimeout(timeoutId); timeoutId = setTimeout(resetApp, 120000); };
@@ -292,7 +298,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     setLastAddedCategory(activeProduct.category);
     setActiveProduct(null);
     
-    // Si estaba en el menú principal, le preguntamos qué quiere hacer.
     if (appState === 'MENU') { 
         setShowAddSuccess(true); 
     }
@@ -311,6 +316,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     } catch (e) { return false; }
   };
 
+  // Función para forzar el cierre de la pantalla de éxito e ir al Screensaver manualmente
+  const finishOrderScreenManually = () => {
+      // Limpiamos el carrito y datos
+      useCartStore.setState({ cart: [] });
+      setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+      setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
+      setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
+      setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
+      // Volvemos al inicio
+      setAppState('SCREENSAVER');
+  };
+
   const executeOrderSave = async (paymentMethod: string, tipAmount: number) => {
     try {
       setLastPaymentMethod(paymentMethod as 'TERMINAL' | 'EFECTIVO_CAJA');
@@ -325,16 +342,18 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
-        useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
-        setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
-        setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
         setWaitingTerminal(false); setShowTipModal(false); setShowAddSuccess(false); setLastAddedCategory('');
         setAppState('SUCCESS');
-        setTimeout(() => { setAppState('WELCOME'); setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null); }, paymentMethod === 'EFECTIVO_CAJA' ? 15000 : 10000);
+        
+        // Aumentado a 30 Segundos para que tengan tiempo de escanear el QR
+        const successTimeout = setTimeout(() => { 
+            finishOrderScreenManually();
+        }, 30000); 
+        
+        // Guardamos la referencia por si quieren cerrarlo antes
+        successTimeoutRef[1](successTimeout);
       }
-    } catch (error) { alert("Error guardando orden."); }
-    setIsSubmitting(false);
+    } catch (error) { alert("Error guardando orden."); setIsSubmitting(false); }
   };
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
@@ -384,9 +403,36 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return true; 
   };
 
+
+  // ==========================================
+  // VISTAS PRINCIPALES DEL KIOSCO
+  // ==========================================
+
+  // NUEVA PANTALLA: SCREENSAVER (Atrapa-clientes)
+  if (appState === 'SCREENSAVER') {
+      return (
+          <div 
+            onClick={() => setAppState('WELCOME')}
+            className="h-screen w-full bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] cursor-pointer relative overflow-hidden group"
+          >
+             {/* Destellos de fondo */}
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-yellow-500/20 blur-[150px] rounded-full z-0 pointer-events-none"></div>
+
+             <div className="z-10 flex flex-col items-center animate-in fade-in zoom-in duration-1000">
+                <span className="text-[12rem] mb-4 drop-shadow-[0_0_50px_rgba(250,204,21,0.4)]">🌽</span>
+                <h1 className="text-[8rem] md:text-[12rem] font-black text-yellow-400 tracking-tighter leading-none mb-12 drop-shadow-2xl text-center">MAIZTROS</h1>
+                
+                <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-700 px-12 py-6 rounded-full shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-pulse">
+                    <p className="text-4xl md:text-5xl font-black text-white uppercase tracking-widest text-center">Toca para ordenar ➔</p>
+                </div>
+             </div>
+          </div>
+      );
+  }
+
   if (appState === 'WELCOME') {
     return (
-      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] animate-in slide-in-from-bottom duration-500">
         <h1 className="text-8xl md:text-[9rem] font-black text-yellow-400 tracking-tighter mb-4 shadow-black drop-shadow-2xl">MAIZTROS</h1>
         <p className="text-3xl font-bold text-zinc-300 mb-16 italic">¿Dónde disfrutarás tu antojo?</p>
         <div className="flex flex-col md:flex-row gap-8 w-full max-w-5xl">
@@ -397,6 +443,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <span className="text-8xl">🎒</span><span className="text-4xl font-black uppercase">Para Llevar</span>
           </button>
         </div>
+        <button onClick={() => setAppState('SCREENSAVER')} className="mt-16 text-zinc-500 hover:text-white font-bold uppercase tracking-widest">← Volver al inicio</button>
       </div>
     );
   }
@@ -406,7 +453,19 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
 
     return (
-      <div className={`h-screen ${lastPaymentMethod === 'EFECTIVO_CAJA' ? 'bg-orange-600' : 'bg-green-500'} text-white flex flex-col items-center justify-center p-6 text-center`}>
+      <div className={`h-screen ${lastPaymentMethod === 'EFECTIVO_CAJA' ? 'bg-orange-600' : 'bg-green-500'} text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative`}>
+        
+        {/* Botón para finalizar manualmente antes de que pasen los 30 segs */}
+        <button 
+            onClick={() => {
+                if (successTimeoutRef[0]) clearTimeout(successTimeoutRef[0]);
+                finishOrderScreenManually();
+            }} 
+            className="absolute top-10 right-10 bg-black/20 hover:bg-black/40 text-white px-8 py-4 rounded-full font-black text-xl transition-colors backdrop-blur-md border border-white/20 shadow-lg"
+        >
+            Finalizar ➔
+        </button>
+
         <h1 className="text-7xl md:text-8xl font-black mb-4">{lastPaymentMethod === 'EFECTIVO_CAJA' ? '¡FALTA UN PASO!' : '¡ORDEN CONFIRMADA!'}</h1>
         <p className="text-3xl font-bold mb-8 opacity-90">{lastPaymentMethod === 'EFECTIVO_CAJA' ? 'Pasa a la caja para pagar en efectivo 💵' : (orderType === 'TAKEOUT' ? 'Empacando para llevar 🎒' : 'Preparando para comer aquí 🍽️')}</p>
         <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
@@ -464,7 +523,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
               <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
               <p className="text-7xl text-yellow-400 font-black tracking-tighter">${totalNeto.toFixed(2)}</p>
             </div>
-            <button onClick={() => setAppState('UPSELL')} className="text-zinc-500 mt-6 font-bold hover:text-white self-start">← Agregar más</button>
+            <button onClick={() => setAppState('MENU')} className="text-zinc-500 mt-6 font-bold hover:text-white self-start">← Agregar más</button>
           </div>
         </div>
 
@@ -593,7 +652,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                 <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
                     <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
                     <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Conforme a lo establecido en la Ley, Maiztros informa:</p>
+                        <p>Conforme a lo establecido en la Ley, &quot;Maiztros&quot; informa:</p>
                         <p><strong>1. Uso de Datos:</strong> Sus datos personales serán utilizados exclusivamente para el programa de lealtad y recibos digitales.</p>
                         <p><strong>2. Protección:</strong> En Maiztros <strong>NUNCA</strong> venderemos ni compartiremos su información con terceros.</p>
                     </div>
@@ -613,43 +672,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
                 </div>
             </div>
-        )}
-
-        {/* NUEVO MODAL: ¡AGREGADO CON ÉXITO! */}
-        {showAddSuccess && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[60] p-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-zinc-900 border border-zinc-800 p-8 md:p-10 rounded-[3rem] w-full max-w-md shadow-2xl text-center flex flex-col items-center">
-              <span className="text-7xl mb-4 block drop-shadow-lg">🛒</span>
-              <h2 className="text-3xl font-black text-white mb-2">¡Agregado con éxito!</h2>
-              <p className="text-zinc-400 font-bold mb-8">¿Qué deseas hacer ahora?</p>
-              
-              <div className="flex flex-col gap-4 w-full">
-                <button 
-                  onClick={() => {
-                    setShowAddSuccess(false);
-                    // Se queda en MENU
-                  }} 
-                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-5 rounded-2xl transition-colors border border-zinc-700 text-lg"
-                >
-                  ➕ Agregar otro antojo
-                </button>
-                <button 
-                  onClick={() => {
-                    setShowAddSuccess(false);
-                    const wasDrinkOrAntojoOrCombo = lastAddedCategory === 'BEBIDA' || lastAddedCategory === 'ANTOJO' || lastAddedCategory === 'COMBO';
-                    if (!wasDrinkOrAntojoOrCombo) {
-                       setAppState('UPSELL');
-                    } else {
-                       setAppState('CHECKOUT');
-                    }
-                  }} 
-                  className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all text-xl"
-                >
-                  Siguiente paso ➔
-                </button>
-              </div>
-            </div>
-          </div>
         )}
 
         {waitingTerminal && (
