@@ -7,12 +7,17 @@ export default function MonitorCaja() {
   const [shiftLoading, setShiftLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  // Apertura
   const [cashierName, setCashierName] = useState('');
   const [startingCash, setStartingCash] = useState('');
+
+  // Movimientos (Retiros)
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveAmount, setMoveAmount] = useState('');
   const [moveReason, setMoveReason] = useState('');
   const [moveAuthor, setMoveAuthor] = useState('LUIS (JEFE)');
+
+  // Cierre
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [reportedCash, setReportedCash] = useState('');
 
@@ -20,6 +25,9 @@ export default function MonitorCaja() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [receivedAmount, setReceivedAmount] = useState<string>('');
 
+  // ==========================================
+  // ESTADOS PARA LA TERMINAL FÍSICA
+  // ==========================================
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
@@ -94,7 +102,7 @@ export default function MonitorCaja() {
 
   const changePaymentMethod = async (orderId: string, currentMethod: string) => {
     const newMethod = currentMethod === 'TERMINAL' ? 'EFECTIVO_CAJA' : 'TERMINAL';
-    if (!confirm(`¿Cambiar método de pago a ${newMethod === 'TERMINAL' ? 'Tarjeta (Terminal)' : 'Efectivo (Caja)'}?`)) return;
+    if (!window.confirm(`¿Cambiar método de pago a ${newMethod === 'TERMINAL' ? 'Tarjeta (Terminal)' : 'Efectivo (Caja)'}?`)) return;
 
     await fetch('/api/orders', {
       method: 'PATCH',
@@ -116,6 +124,9 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
+  // ==========================================
+  // LÓGICA DE EDICIÓN EN CAJA
+  // ==========================================
   const handleCobrarClick = (order: any) => {
     const editableItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
     setSelectedOrder({ ...order, items: editableItems });
@@ -130,7 +141,7 @@ export default function MonitorCaja() {
       const newQty = (item.quantity || 1) + delta;
 
       if (newQty <= 0) {
-          if (confirm('¿Eliminar este producto de la orden?')) {
+          if (window.confirm('¿Eliminar este producto de la orden?')) {
               newItems.splice(index, 1);
           } else return;
       } else {
@@ -162,6 +173,29 @@ export default function MonitorCaja() {
     fetchCashOrders();
   };
 
+  // NUEVA FUNCIÓN: CANCELAR ORDEN POR COMPLETO
+  const cancelarOrdenTotal = async () => {
+    if (!window.confirm('¿Estás seguro de que deseas CANCELAR esta orden por completo? Desaparecerá de la lista.')) return;
+    
+    try {
+        await fetch('/api/orders', { 
+            method: 'PATCH', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+                orderId: selectedOrder.id, 
+                newStatus: 'REFUNDED' // Esto lo saca de la fila de pendientes
+            }) 
+        });
+        setSelectedOrder(null);
+        fetchCashOrders();
+    } catch (error) {
+        alert("Error al intentar cancelar la orden.");
+    }
+  };
+
+  // ==========================================
+  // LÓGICA PARA ACTIVAR Y ESCUCHAR LA TERMINAL
+  // ==========================================
   const checkTerminalStatus = async (intentId: string, order: any) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
@@ -264,7 +298,7 @@ export default function MonitorCaja() {
 
   return (
     <ProtectedRoute title="Caja Maiztros" requiredRole="CAJERO">
-      {(role: any) => (
+      {(_role: any) => (
         <div className="min-h-screen bg-zinc-950 text-white font-sans">
           {alert && <div className={`${alert.color} p-4 text-center font-black text-white animate-pulse sticky top-0 z-50`}>{alert.msg}</div>}
 
@@ -335,9 +369,8 @@ export default function MonitorCaja() {
           </div>
 
           {/* ========================================== */}
-          {/* MODALES DE CAJA                            */}
+          {/* MODAL COBRO: EDITOR Y CALCULADORA          */}
           {/* ========================================== */}
-          
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-[3rem] overflow-hidden flex flex-col shadow-2xl max-h-[90vh]">
@@ -345,12 +378,13 @@ export default function MonitorCaja() {
                   <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
                       <div>
                           <h2 className="text-3xl font-black text-white">Cobro e Inspección #{selectedOrder.turnNumber}</h2>
-                          <p className="text-zinc-500 font-bold text-sm mt-1">Puedes modificar la cantidad o los toppings antes de cobrar.</p>
+                          <p className="text-zinc-500 font-bold text-sm mt-1">Modifica, cobra o cancela esta orden por completo.</p>
                       </div>
                       <button onClick={() => setSelectedOrder(null)} className="text-zinc-500 hover:text-white text-4xl font-light transition-colors">✕</button>
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* LADO IZQUIERDO: EDITOR DE ITEMS */}
                       <div className="space-y-4">
                           <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-4">Productos en la orden</h3>
                           {selectedOrder.items.map((item: any, idx: number) => (
@@ -361,11 +395,13 @@ export default function MonitorCaja() {
                                   </div>
                                   
                                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                      {/* Controles de Cantidad */}
                                       <div className="flex items-center bg-zinc-900 rounded-xl border border-zinc-700">
                                           <button onClick={() => updateItemQty(idx, -1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-red-500 transition-colors">-</button>
                                           <span className="px-4 font-black text-lg text-white">{item.quantity || 1}</span>
                                           <button onClick={() => updateItemQty(idx, 1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-green-500 transition-colors">+</button>
                                       </div>
+                                      {/* Editor de Notas */}
                                       <textarea 
                                           value={item.notes || ''} 
                                           onChange={(e) => updateItemNotes(idx, e.target.value)}
@@ -376,13 +412,15 @@ export default function MonitorCaja() {
                               </div>
                           ))}
                           {selectedOrder.items.length === 0 && (
-                              <div className="text-center py-10 bg-zinc-950 rounded-2xl border border-zinc-800 border-dashed">
+                              <div className="text-center py-10 bg-zinc-950 rounded-2xl border border-red-500/50 border-dashed">
+                                  <span className="text-4xl mb-2 block">🗑️</span>
                                   <p className="text-red-400 font-bold text-lg">¡La orden quedó vacía!</p>
-                                  <p className="text-zinc-500 text-sm">Cancela o agrega algo para poder cobrar.</p>
+                                  <p className="text-zinc-500 text-sm mt-1">Usa el botón rojo de abajo para cancelar esta orden definitivamente.</p>
                               </div>
                           )}
                       </div>
 
+                      {/* LADO DERECHO: PAGO Y CALCULADORA */}
                       <div className="bg-zinc-950 p-8 rounded-[2rem] border border-zinc-800 flex flex-col">
                           <div className="mb-8">
                               <p className="text-zinc-500 font-black uppercase text-xs tracking-widest mb-2">Total Final a Cobrar</p>
@@ -397,6 +435,7 @@ export default function MonitorCaja() {
 
                           {selectedOrder.paymentMethod === 'EFECTIVO_CAJA' ? (
                               <div className="space-y-6">
+                                  {/* CALCULADORA RÁPIDA */}
                                   <div>
                                       <p className="text-zinc-500 font-bold text-xs uppercase tracking-widest mb-2">Calculadora Rápida</p>
                                       <div className="flex flex-wrap gap-2 mb-3">
@@ -429,18 +468,23 @@ export default function MonitorCaja() {
                               </div>
                           )}
 
-                          <div className="mt-auto pt-8 flex gap-4 border-t border-zinc-800">
-                              <button onClick={() => setSelectedOrder(null)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 py-6 rounded-2xl font-bold text-white transition-colors">Volver</button>
+                          <div className="mt-auto pt-8 flex gap-3 border-t border-zinc-800">
+                              <button onClick={() => setSelectedOrder(null)} className="bg-zinc-800 hover:bg-zinc-700 px-6 py-6 rounded-2xl font-bold text-white transition-colors">Volver</button>
+                              
+                              {/* NUEVO BOTÓN: CANCELAR ORDEN */}
+                              <button onClick={cancelarOrdenTotal} className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-6 py-6 rounded-2xl font-black transition-colors border border-red-900/50 hover:border-red-500" title="Eliminar orden por completo">
+                                  🗑️ Cancelar
+                              </button>
+
                               {selectedOrder.paymentMethod === 'TERMINAL' ? (
-                                  <button onClick={triggerTerminalPayment} disabled={selectedOrder.items.length === 0} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">💳 Activar Terminal</button>
+                                  <button onClick={triggerTerminalPayment} disabled={selectedOrder.items.length === 0} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">💳 Cobrar</button>
                               ) : (
                                   <button 
                                     onClick={finalizarCobroFisico} 
-                                    // BLOQUEO DE SEGURIDAD: Solo permite cobrar si pusieron suficiente dinero
                                     disabled={selectedOrder.items.length === 0 || (!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount))} 
-                                    className="flex-[2] bg-green-500 hover:bg-green-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500"
+                                    className="flex-1 bg-green-500 hover:bg-green-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500"
                                   >
-                                    {(!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount)) ? 'Falta Dinero ⚠️' : 'Confirmar Pago ✅'}
+                                    {(!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount)) && selectedOrder.items.length > 0 ? 'Falta Dinero ⚠️' : 'Confirmar ✅'}
                                   </button>
                               )}
                           </div>
@@ -450,6 +494,7 @@ export default function MonitorCaja() {
             </div>
           )}
 
+          {/* OVERLAY DE ESPERA DE TERMINAL */}
           {waitingTerminal && (
             <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[70] text-center p-8 animate-in fade-in zoom-in-95 duration-200">
               <span className="text-[10rem] animate-pulse mb-8">💳</span>
@@ -463,6 +508,7 @@ export default function MonitorCaja() {
             </div>
           )}
 
+          {/* MODAL RETIRO / GASTO */}
           {showMoveModal && (
             <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-[60] backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
@@ -487,11 +533,12 @@ export default function MonitorCaja() {
             </div>
           )}
 
+          {/* MODAL FINALIZAR JORNADA */}
           {showCloseModal && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[3rem] p-10 text-center shadow-2xl">
                 <span className="text-6xl mb-4 block">💰</span>
-                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja (Ciego)</h2>
+                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja</h2>
                 <p className="text-zinc-500 text-sm mb-8 font-bold">Cuenta todo el efectivo físico en caja (incluyendo morralla y fondo) e ingresa el monto total exacto.</p>
                 <input type="number" value={reportedCash} onChange={e => setReportedCash(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-6 rounded-2xl text-4xl font-black text-white outline-none mb-8 text-center focus:border-yellow-400 transition-colors"/>
                 <div className="flex gap-4">
