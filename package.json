@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
+    "nodemailer": "^6.9.13",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
     "mercadopago": "^2.0.8",
     "next": "^14.1.0",
     "react": "^18.2.0",
@@ -22,6 +25,7 @@
   "devDependencies": {
     "prisma": "^5.10.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^6.4.14",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
