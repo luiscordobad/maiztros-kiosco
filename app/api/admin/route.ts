@@ -49,12 +49,13 @@ export async function GET(request: Request) {
   const endDateParam = searchParams.get('endDate');
 
   try {
+    // 1. FILTRO DE FECHAS ESTRICTO
     let startDate = new Date(); startDate.setHours(0, 0, 0, 0); 
     let endDate = new Date(); endDate.setHours(23, 59, 59, 999); 
+    
     if (startDateParam && endDateParam) { 
-      startDate = new Date(startDateParam); 
-      endDate = new Date(endDateParam); 
-      endDate.setHours(23, 59, 59, 999); 
+      startDate = new Date(`${startDateParam}T00:00:00Z`); 
+      endDate = new Date(`${endDateParam}T23:59:59Z`); 
     }
 
     const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
@@ -66,12 +67,70 @@ export async function GET(request: Request) {
       prisma.shift.findMany({ where: { openedAt: { gte: startDate, lte: endDate } }, include: { orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } }, movements: true }, orderBy: { openedAt: 'desc' } }),
       prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } }, orderBy: { date: 'desc' } }),
       prisma.auditLog.findMany({ take: 50, orderBy: { createdAt: 'desc' } }),
-      // NUEVO: TRAER CLIENTES ORDENADOS POR PUNTOS
       prisma.customer.findMany({ orderBy: { points: 'desc' }, take: 100 })
     ]);
 
-    return NextResponse.json({ success: true, products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers });
-  } catch (error) { return NextResponse.json({ success: false, error: 'Error' }, { status: 500 }); }
+    // =========================================================
+    // 2. LÓGICA DE BI (TOPPINGS Y DÍAS DE LA SEMANA) AÑADIDA
+    // =========================================================
+    const toppingStats: any = {};
+    const dayStats: any = { 
+      '1 Lunes': 0, '2 Martes': 0, '3 Miércoles': 0, '4 Jueves': 0, 
+      '5 Viernes': 0, '6 Sábado': 0, '7 Domingo': 0 
+    };
+    
+    const daysMap = ['7 Domingo', '1 Lunes', '2 Martes', '3 Miércoles', '4 Jueves', '5 Viernes', '6 Sábado'];
+
+    orders.forEach((order: any) => {
+      if (order.status === 'REFUNDED') return;
+
+      // A) Ventas por Día de la Semana
+      const dayName = daysMap[new Date(order.createdAt).getDay()];
+      dayStats[dayName] = (dayStats[dayName] || 0) + order.totalAmount;
+
+      // B) Contabilidad de Toppings Extraídos de las notas
+      if (order.items) {
+        const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        items.forEach((item: any) => {
+          if (item.notes) {
+            // Separador flexible por si vienen divididos por barra o coma
+            const ingredients = item.notes.split(/[|,]/);
+            ingredients.forEach((ing: string) => {
+              const cleanIng = ing.split(':')[1]?.trim() || ing.trim();
+              if (cleanIng && cleanIng !== 'Natural') {
+                toppingStats[cleanIng] = (toppingStats[cleanIng] || 0) + (item.quantity || 1);
+              }
+            });
+          }
+        });
+      }
+    });
+
+    // Formateamos para las gráficas
+    const topToppings = Object.keys(toppingStats)
+      .map(name => ({ name, qty: toppingStats[name] }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 10);
+
+    const chartDayData = Object.keys(dayStats).map(day => ({ day, Ventas: dayStats[day] }));
+
+    return NextResponse.json({ 
+        success: true, 
+        products, 
+        modifiers, 
+        coupons, 
+        inventoryItems, 
+        orders, 
+        shifts, 
+        expenses, 
+        auditLogs, 
+        customers,
+        topToppings,     // <-- Añadido
+        chartDayData     // <-- Añadido
+    });
+  } catch (error) { 
+      return NextResponse.json({ success: false, error: 'Error' }, { status: 500 }); 
+  }
 }
 
 export async function PATCH(request: Request) {
