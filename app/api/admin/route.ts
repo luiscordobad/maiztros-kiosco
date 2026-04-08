@@ -37,7 +37,6 @@ const initialInventory = [
   { name: 'Kilo de Elote', category: 'INSUMO', stock: 5, unit: 'kg' },
 ];
 
-// Función Helper: Categorizador de Pilares (Traducción del Python)
 function categorizarPilar(nombre: string): string {
     const n = nombre.toLowerCase();
     if (n.includes('don maiztro') || n.includes('sabritas + maruchan')) return 'Don Maiztro';
@@ -73,15 +72,14 @@ export async function GET(request: Request) {
     let endDate = new Date(); 
     
     if (startDateParam && endDateParam) { 
-      // SOLUCIÓN AL BUG DE FECHAS: Forzamos la zona horaria a CST (México: -06:00)
       startDate = new Date(`${startDateParam}T00:00:00-06:00`); 
       endDate = new Date(`${endDateParam}T23:59:59-06:00`); 
     } else {
-      // Fallback a horas locales si no hay parámetros
       startDate.setHours(0, 0, 0, 0); 
       endDate.setHours(23, 59, 59, 999); 
     }
 
+    // Le quitamos el limitador (take:100) a clientes para que cruce correctamente la retención histórica
     const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
       prisma.product.findMany({ orderBy: { category: 'asc' } }),
       prisma.modifier.findMany({ orderBy: { type: 'asc' } }),
@@ -91,27 +89,74 @@ export async function GET(request: Request) {
       prisma.shift.findMany({ where: { openedAt: { gte: startDate, lte: endDate } }, include: { orders: { where: { paymentMethod: 'EFECTIVO_CAJA', status: 'PAID' } }, movements: true }, orderBy: { openedAt: 'desc' } }),
       prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } }, orderBy: { date: 'desc' } }),
       prisma.auditLog.findMany({ take: 50, orderBy: { createdAt: 'desc' } }),
-      prisma.customer.findMany({ orderBy: { points: 'desc' }, take: 100 })
+      prisma.customer.findMany({ orderBy: { points: 'desc' } })
     ]);
 
     // ==========================================
-    // PROCESAMIENTO DE BUSINESS INTELLIGENCE (Python -> JS)
+    // PROCESAMIENTO DE BUSINESS INTELLIGENCE AVANZADO
     // ==========================================
     const biStats = {
         pilares: {} as Record<string, { qty: number, revenue: number }>,
         tamanosEsquites: {} as Record<string, number>,
         ticketAmounts: [] as number[],
-        extrasTicketsCount: 0
+        extrasTicketsCount: 0,
+        prepTimeSum: 0,
+        prepTimeCount: 0,
+        pairs: {} as Record<string, number>,
+        ordersNewVip: 0,
+        ordersReturningVip: 0,
+        ordersGeneral: 0
     };
+
+    // Mapa de creación de clientes para saber si son nuevos hoy o ya existían
+    const customerDateMap: Record<string, Date> = {};
+    customers.forEach((c: any) => {
+        customerDateMap[c.phone] = new Date(c.createdAt);
+    });
 
     orders.forEach((order: any) => {
         if (order.status === 'REFUNDED') return;
         
         biStats.ticketAmounts.push(order.totalAmount);
+        
+        // 1. LEAD TIME (Eficiencia Operativa)
+        if (order.status === 'COMPLETED' && order.updatedAt && order.createdAt) {
+            const diffMins = (new Date(order.updatedAt).getTime() - new Date(order.createdAt).getTime()) / 60000;
+            // Filtramos errores de dedo (menos de 1 minuto o más de 120 minutos que se les olvidó picarle)
+            if (diffMins > 0 && diffMins < 120) {
+                biStats.prepTimeSum += diffMins;
+                biStats.prepTimeCount++;
+            }
+        }
+
+        // 2. RETENCIÓN VIP (Tasa de clientes recurrentes)
+        if (order.customerPhone) {
+            const cDate = customerDateMap[order.customerPhone];
+            if (cDate && cDate < startDate) {
+                biStats.ordersReturningVip++; // El cliente ya existía antes de este filtro
+            } else {
+                biStats.ordersNewVip++; // El cliente se registró dentro de este filtro
+            }
+        } else {
+            biStats.ordersGeneral++; // Cliente anónimo
+        }
+
         let hasExtra = false;
 
         if (order.items) {
             const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+            
+            // 3. MATRIZ DE AFINIDAD (¿Qué se compra junto?)
+            const prodNames = items.map((i:any) => i.product?.name).filter(Boolean);
+            const uniquePNames = Array.from(new Set(pNames)) as string[]; // Solo contamos 1 vez por orden
+            
+            for(let i=0; i < uniquePNames.length; i++) {
+                for(let j = i+1; j < uniquePNames.length; j++) {
+                    const pair = [uniquePNames[i], uniquePNames[j]].sort().join(' + ');
+                    biStats.pairs[pair] = (biStats.pairs[pair] || 0) + 1;
+                }
+            }
+
             items.forEach((item: any) => {
                 const prodName = item.product?.name || 'Desconocido';
                 const pilar = categorizarPilar(prodName);
@@ -119,17 +164,13 @@ export async function GET(request: Request) {
                 const qty = item.quantity || 1;
                 const rev = item.totalPrice || 0;
 
-                // Sumarizar por Pilares
                 if (!biStats.pilares[pilar]) biStats.pilares[pilar] = { qty: 0, revenue: 0 };
                 biStats.pilares[pilar].qty += qty;
                 biStats.pilares[pilar].revenue += rev;
 
-                // Sumarizar Tamaños (solo esquites)
                 if (pilar === 'Esquites' && tamano !== 'N/A') {
                     biStats.tamanosEsquites[tamano] = (biStats.tamanosEsquites[tamano] || 0) + qty;
                 }
-
-                // Detectar si hubo cobro de extras en las notas (+$15, +$25)
                 if (pilar === 'Extras/Upgrades' || rev > (item.product?.basePrice * qty)) {
                     hasExtra = true;
                 }
@@ -138,7 +179,6 @@ export async function GET(request: Request) {
         if (hasExtra) biStats.extrasTicketsCount++;
     });
 
-    // Calcular la Moda (Ticket más común)
     let ticketModa = 0;
     if (biStats.ticketAmounts.length > 0) {
         const counts: Record<number, number> = {};
@@ -149,9 +189,10 @@ export async function GET(request: Request) {
         });
     }
 
-    // Formatear para gráficas
     const pilaresChart = Object.keys(biStats.pilares).map(k => ({ name: k, qty: biStats.pilares[k].qty, revenue: biStats.pilares[k].revenue })).sort((a,b)=>b.qty - a.qty);
     const tamanosChart = Object.keys(biStats.tamanosEsquites).map(k => ({ name: k, value: biStats.tamanosEsquites[k] }));
+    const avgPrepTime = biStats.prepTimeCount > 0 ? (biStats.prepTimeSum / biStats.prepTimeCount) : 0;
+    const topPairs = Object.keys(biStats.pairs).map(k => ({ name: k, qty: biStats.pairs[k] })).sort((a,b)=>b.qty - a.qty).slice(0, 5);
 
     return NextResponse.json({ 
         success: true, 
@@ -160,7 +201,10 @@ export async function GET(request: Request) {
             pilaresChart,
             tamanosChart,
             ticketModa,
-            extrasTicketsCount: biStats.extrasTicketsCount
+            extrasTicketsCount: biStats.extrasTicketsCount,
+            avgPrepTime,
+            topPairs,
+            retention: { new: biStats.ordersNewVip, returning: biStats.ordersReturningVip, general: biStats.ordersGeneral }
         }
     });
   } catch (error) { 
