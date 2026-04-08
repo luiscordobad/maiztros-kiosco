@@ -37,6 +37,26 @@ const initialInventory = [
   { name: 'Kilo de Elote', category: 'INSUMO', stock: 5, unit: 'kg' },
 ];
 
+// Función Helper: Categorizador de Pilares (Traducción del Python)
+function categorizarPilar(nombre: string): string {
+    const n = nombre.toLowerCase();
+    if (n.includes('don maiztro') || n.includes('sabritas + maruchan')) return 'Don Maiztro';
+    if (n.includes('obra maestra') || n.includes('maruchan + esquite')) return 'Obra Maestra';
+    if (n.includes('construpapa') || n.includes('sabritas + esquite') || n.includes('papas + esquite')) return 'Construpapas';
+    if (n.includes('esquite')) return 'Esquites';
+    if (['agua', 'pepsi', 'coca', 'boing', '7up', 'manzanita', 'búho', 'refresco', 'jugo', 'fanta', 'sprite', 'mundet'].some(v => n.includes(v))) return 'Bebidas';
+    if (['upgrade', 'extra', 'topping', 'ingrediente', 'aderezo'].some(v => n.includes(v))) return 'Extras/Upgrades';
+    return 'Otros';
+}
+
+function determinarTamano(nombre: string): string {
+    const n = nombre.toLowerCase();
+    if (n.includes('chico') || n.includes('8 oz')) return 'Chico (8oz)';
+    if (n.includes('mediano') || n.includes('12 oz')) return 'Mediano (12oz)';
+    if (n.includes('grande') || n.includes('16 oz')) return 'Grande (16oz)';
+    return 'N/A';
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   
@@ -49,13 +69,17 @@ export async function GET(request: Request) {
   const endDateParam = searchParams.get('endDate');
 
   try {
-    // 1. FILTRO DE FECHAS ESTRICTO
+    // FILTRO DE FECHAS ESTRICTO Y PRECISO
     let startDate = new Date(); startDate.setHours(0, 0, 0, 0); 
     let endDate = new Date(); endDate.setHours(23, 59, 59, 999); 
     
     if (startDateParam && endDateParam) { 
       startDate = new Date(`${startDateParam}T00:00:00Z`); 
+      // Si el entorno local está en otra zona horaria, esto ayuda a centrar el día
+      startDate = new Date(startDate.getTime() + startDate.getTimezoneOffset() * 60000); 
+      
       endDate = new Date(`${endDateParam}T23:59:59Z`); 
+      endDate = new Date(endDate.getTime() + endDate.getTimezoneOffset() * 60000);
     }
 
     const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
@@ -70,63 +94,74 @@ export async function GET(request: Request) {
       prisma.customer.findMany({ orderBy: { points: 'desc' }, take: 100 })
     ]);
 
-    // =========================================================
-    // 2. LÓGICA DE BI (TOPPINGS Y DÍAS DE LA SEMANA) AÑADIDA
-    // =========================================================
-    const toppingStats: any = {};
-    const dayStats: any = { 
-      '1 Lunes': 0, '2 Martes': 0, '3 Miércoles': 0, '4 Jueves': 0, 
-      '5 Viernes': 0, '6 Sábado': 0, '7 Domingo': 0 
+    // ==========================================
+    // PROCESAMIENTO DE BUSINESS INTELLIGENCE (Python -> JS)
+    // ==========================================
+    const biStats = {
+        pilares: {} as Record<string, { qty: number, revenue: number }>,
+        tamanosEsquites: {} as Record<string, number>,
+        ticketAmounts: [] as number[],
+        extrasTicketsCount: 0
     };
-    
-    const daysMap = ['7 Domingo', '1 Lunes', '2 Martes', '3 Miércoles', '4 Jueves', '5 Viernes', '6 Sábado'];
 
     orders.forEach((order: any) => {
-      if (order.status === 'REFUNDED') return;
+        if (order.status === 'REFUNDED') return;
+        
+        biStats.ticketAmounts.push(order.totalAmount);
+        let hasExtra = false;
 
-      // A) Ventas por Día de la Semana
-      const dayName = daysMap[new Date(order.createdAt).getDay()];
-      dayStats[dayName] = (dayStats[dayName] || 0) + order.totalAmount;
+        if (order.items) {
+            const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+            items.forEach((item: any) => {
+                const prodName = item.product?.name || 'Desconocido';
+                const pilar = categorizarPilar(prodName);
+                const tamano = determinarTamano(prodName);
+                const qty = item.quantity || 1;
+                const rev = item.totalPrice || 0;
 
-      // B) Contabilidad de Toppings Extraídos de las notas
-      if (order.items) {
-        const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-        items.forEach((item: any) => {
-          if (item.notes) {
-            // Separador flexible por si vienen divididos por barra o coma
-            const ingredients = item.notes.split(/[|,]/);
-            ingredients.forEach((ing: string) => {
-              const cleanIng = ing.split(':')[1]?.trim() || ing.trim();
-              if (cleanIng && cleanIng !== 'Natural') {
-                toppingStats[cleanIng] = (toppingStats[cleanIng] || 0) + (item.quantity || 1);
-              }
+                // Sumarizar por Pilares
+                if (!biStats.pilares[pilar]) biStats.pilares[pilar] = { qty: 0, revenue: 0 };
+                biStats.pilares[pilar].qty += qty;
+                biStats.pilares[pilar].revenue += rev;
+
+                // Sumarizar Tamaños (solo esquites)
+                if (pilar === 'Esquites' && tamano !== 'N/A') {
+                    biStats.tamanosEsquites[tamano] = (biStats.tamanosEsquites[tamano] || 0) + qty;
+                }
+
+                // Detectar si hubo cobro de extras en las notas (+$15, +$25)
+                if (pilar === 'Extras/Upgrades' || rev > (item.product?.basePrice * qty)) {
+                    hasExtra = true;
+                }
             });
-          }
-        });
-      }
+        }
+        if (hasExtra) biStats.extrasTicketsCount++;
     });
 
-    // Formateamos para las gráficas
-    const topToppings = Object.keys(toppingStats)
-      .map(name => ({ name, qty: toppingStats[name] }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 10);
+    // Calcular la Moda (Ticket más común)
+    let ticketModa = 0;
+    if (biStats.ticketAmounts.length > 0) {
+        const counts: Record<number, number> = {};
+        let maxCount = 0;
+        biStats.ticketAmounts.forEach(num => {
+            counts[num] = (counts[num] || 0) + 1;
+            if (counts[num] > maxCount) { maxCount = counts[num]; ticketModa = num; }
+        });
+    }
 
-    const chartDayData = Object.keys(dayStats).map(day => ({ day, Ventas: dayStats[day] }));
+    // Formatear para gráficas
+    const pilaresChart = Object.keys(biStats.pilares).map(k => ({ name: k, qty: biStats.pilares[k].qty, revenue: biStats.pilares[k].revenue })).sort((a,b)=>b.qty - a.qty);
+    const tamanosChart = Object.keys(biStats.tamanosEsquites).map(k => ({ name: k, value: biStats.tamanosEsquites[k] }));
 
     return NextResponse.json({ 
         success: true, 
-        products, 
-        modifiers, 
-        coupons, 
-        inventoryItems, 
-        orders, 
-        shifts, 
-        expenses, 
-        auditLogs, 
-        customers,
-        topToppings,     // <-- Añadido
-        chartDayData     // <-- Añadido
+        products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers,
+        biExtraStats: {
+            pilaresChart,
+            tamanosChart,
+            ticketModa,
+            extrasTicketsCount: biStats.extrasTicketsCount
+        }
     });
   } catch (error) { 
       return NextResponse.json({ success: false, error: 'Error' }, { status: 500 }); 
@@ -157,12 +192,10 @@ export async function PATCH(request: Request) {
         await prisma.product.update({ where: { id }, data: { isAvailable } });
         await prisma.auditLog.create({ data: { action: 'CAMBIO_PANICO_PRODUCTO', details: `ID: ${id} set ${isAvailable}`, author: author || 'Luis' } });
     }
-    
     else if (type === 'modifier') {
         await prisma.modifier.update({ where: { id }, data: { isAvailable } });
         await prisma.auditLog.create({ data: { action: 'CAMBIO_PANICO_TOPPING', details: `ID: ${id} set ${isAvailable}`, author: author || 'Luis' } });
     }
-    
     else if (type === 'coupon') await prisma.coupon.update({ where: { id }, data: { isActive } });
     
     return NextResponse.json({ success: true });
