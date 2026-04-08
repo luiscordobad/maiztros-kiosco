@@ -159,10 +159,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
-  // NUEVO BI: Lealtad VIP vs General
+  // BI: Lealtad VIP vs General
   const ventasVIP = validOrders.filter((o:any) => o.customerPhone || o.pointsDiscount > 0 || o.couponCode).reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasGeneral = ventasNetas - ventasVIP;
-  const pctVIP = ventasNetas > 0 ? (ventasVIP / ventasNetas) * 100 : 0;
 
   const ventasApp = validOrders.filter((o:any) => o.orderType === 'TAKEOUT').length;
   const ventasKiosco = validOrders.filter((o:any) => o.orderType === 'DINE_IN' || !o.orderType).length;
@@ -179,6 +178,15 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const vipData = [
     { name: 'Clientes VIP', value: ventasVIP, color: '#facc15' },
     { name: 'Público General', value: ventasGeneral, color: '#71717a' }
+  ];
+
+  // RETENCIÓN VIP (Nuevos vs Recurrentes extraídos de la API)
+  const retencionStats = data.biExtraStats?.retention || { new: 0, returning: 0, general: 0 };
+  const totalVipOrders = retencionStats.new + retencionStats.returning;
+  const returningPct = totalVipOrders > 0 ? (retencionStats.returning / totalVipOrders) * 100 : 0;
+  const retentionData = [
+      { name: 'VIP Recurrentes', value: retencionStats.returning, color: '#4ade80' }, // Verde
+      { name: 'VIP Nuevos', value: retencionStats.new, color: '#facc15' } // Amarillo
   ];
 
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
@@ -206,10 +214,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const productVolume: any = {};
   const toppingVolumePaid: any = {};
   const toppingVolumeFree: any = {};
-  let extrasTicketsCount = 0;
   
   validOrders.forEach((o: any) => {
-      let hasExtra = false;
       if(o.items) {
           const itemsArr = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
           itemsArr.forEach((item: any) => {
@@ -228,14 +234,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                               toppingVolumeFree[cleanIng] = (toppingVolumeFree[cleanIng] || 0) + (item.quantity || 1);
                           } else {
                               toppingVolumePaid[cleanIng] = (toppingVolumePaid[cleanIng] || 0) + (item.quantity || 1);
-                              hasExtra = true;
                           }
                       }
                   });
               }
           });
       }
-      if (hasExtra) extrasTicketsCount++;
   });
 
   const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
@@ -245,6 +249,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
+  const maxPairQty = data.biExtraStats?.topPairs ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
 
   const pilarColors: Record<string, string> = {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
@@ -379,6 +384,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
+        {/* CONTROLES GLOBALES (FECHAS Y SYNC) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
@@ -387,7 +393,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             </div>
             {role === 'ADMIN' ? (
                 <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
-                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
+                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD NETA</span>
                     <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
                 </div>
             ) : <div></div>}
@@ -408,6 +414,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             {activeTab === 'BI' && role === 'ADMIN' && (
                 <div className="space-y-8">
                     
+                    {/* ACCIONES BI */}
                     <div className="flex flex-col md:flex-row gap-4 mb-6">
                         <button onClick={generatePDF} className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Reporte</button>
                         <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center">
@@ -415,18 +422,19 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </button>
                     </div>
 
-                    {/* KPIs OPERATIVOS (ESTILO PYTHON) */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-3xl font-black text-white">{totalOrders}</p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
+                    {/* KPIs OPERATIVOS (NIVEL DIOS) */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-2xl lg:text-3xl font-black text-white">{totalOrders}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-2xl lg:text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
                         
                         {data.biExtraStats && (
                             <>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ventas c/ Extras</p><p className="text-3xl font-black text-green-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(1) : 0}%</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-2xl lg:text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Clientes que regresan vs Nuevos">Retención VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{returningPct.toFixed(0)}%</p></div>
                             </>
                         )}
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Adopción VIP</p><p className="text-3xl font-black text-pink-400">{pctVIP.toFixed(1)}%</p></div>
                     </div>
 
                     {data.biExtraStats && data.biExtraStats.ticketModa > 0 && (
@@ -469,10 +477,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
-                    {/* NUEVA FILA: DONAS DE BI */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* FILA: GRÁFICAS DE DONA */}
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         {/* PILARES */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                        <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
                             {data.biExtraStats && data.biExtraStats.pilaresChart.length > 0 ? (
                                 <div className="space-y-4">
@@ -505,35 +513,35 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                 </ResponsiveContainer>
                             </div>
                             <div className="w-full flex justify-between text-sm font-bold">
-                                <span className="text-green-400">💵 ${(ventasEfectivo/ventasNetas*100 || 0).toFixed(0)}% Efectivo</span>
-                                <span className="text-blue-400">💳 ${(ventasTarjeta/ventasNetas*100 || 0).toFixed(0)}% Tarjeta</span>
+                                <span className="text-green-400">💵 ${(ventasEfectivo/ventasNetas*100 || 0).toFixed(0)}% Efct.</span>
+                                <span className="text-blue-400">💳 ${(ventasTarjeta/ventasNetas*100 || 0).toFixed(0)}% Tarj.</span>
                             </div>
                         </div>
 
-                        {/* VIP VS GENERAL DONA */}
+                        {/* RETENCIÓN VIP DONA */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
-                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">⭐ Impacto VIP</h3>
+                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">🔄 Retención VIP</h3>
                             <div className="w-48 h-48 my-4">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
-                                        <Pie data={vipData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
-                                            {vipData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                        <Pie data={retentionData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                            {retentionData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                         </Pie>
-                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `$${value.toFixed(2)}`} />
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `${value} tickets`} />
                                     </PieChart>
                                 </ResponsiveContainer>
                             </div>
                             <div className="w-full flex justify-between text-sm font-bold">
-                                <span className="text-yellow-400">👑 ${ventasVIP.toFixed(2)} VIP</span>
-                                <span className="text-zinc-500">🚶‍♂️ ${ventasGeneral.toFixed(2)} Gral</span>
+                                <span className="text-green-400">Regresan: {retencionStats.returning}</span>
+                                <span className="text-yellow-400">Nuevos: {retencionStats.new}</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* RANKING PRODUCTOS CON BARRAS VISUALES */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* RANKING PRODUCTOS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos</h3>
+                            <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos Base</h3>
                             <div className="space-y-4">
                                 {topProductsData.length > 0 ? topProductsData.map((p, i) => (
                                     <div key={p.name} className="flex items-center gap-4">
@@ -552,6 +560,32 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
 
+                        {/* NUEVO: MATRIZ DE AFINIDAD */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <div className="mb-6">
+                                <h3 className="text-xl font-black text-pink-400">🛒 Se compran juntos (Afinidad)</h3>
+                                <p className="text-xs text-zinc-500 font-bold mt-1">Combinaciones más frecuentes en un mismo ticket.</p>
+                            </div>
+                            <div className="space-y-4">
+                                {data.biExtraStats && data.biExtraStats.topPairs.length > 0 ? data.biExtraStats.topPairs.map((p: any, i: number) => (
+                                    <div key={p.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[200px]">{p.name}</p>
+                                                <p className="text-xs font-black text-pink-400">{p.qty} <span className="text-[10px] text-zinc-500 uppercase">tickets</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-pink-400 h-full rounded-full" style={{width: `${(p.qty / maxPairQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         {/* RANKING TOPPINGS PAGADOS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6 flex justify-between items-end">
@@ -759,11 +793,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                         {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                       </div>
                                       <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
-                                          {/* 🌟 AÑADIDO: ENVIAR TICKET POR EMAIL */}
-                                          <button onClick={() => sendTicketEmail(getTicketUrl(o.turnNumber))} className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors">📧 Email</button>
+                                          <button onClick={() => sendTicketEmail(getTicketUrl(o.turnNumber))} className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors" title="Enviar por Email">📧</button>
                                           
                                           {o.customerPhone && (
-                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors">📱</button>
+                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar por WA">📱</button>
                                           )}
                                           <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
                                           {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
@@ -777,9 +810,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑAS RESTANTES: (Mismo código original)                */}
+            {/* PESTAÑAS RESTANTES: CLIENTES, MARKETING, AUDITORIA, ETC. */}
             {/* ======================================================== */}
-            
             {activeTab === 'CLIENTES' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-2 border-yellow-500/30 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_0_30px_rgba(250,204,21,0.1)]">
