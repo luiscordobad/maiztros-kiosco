@@ -15,7 +15,7 @@ export default function AdminWrapper() {
 
 function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [activeTab, setActiveTab] = useState<'FINANZAS' | 'VENTAS' | 'INVENTARIO' | 'PANICO' | 'MARKETING' | 'AUDITORIA' | 'CLIENTES' | 'BI'>(role === 'ADMIN' ? 'FINANZAS' : 'VENTAS');
-  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [] });
+  const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
   const [emailSending, setEmailSending] = useState(false);
 
@@ -159,19 +159,32 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
+  // NUEVO BI: Lealtad VIP vs General
+  const ventasVIP = validOrders.filter((o:any) => o.customerPhone || o.pointsDiscount > 0 || o.couponCode).reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+  const ventasGeneral = ventasNetas - ventasVIP;
+  const pctVIP = ventasNetas > 0 ? (ventasVIP / ventasNetas) * 100 : 0;
+
   const ventasApp = validOrders.filter((o:any) => o.orderType === 'TAKEOUT').length;
   const ventasKiosco = validOrders.filter((o:any) => o.orderType === 'DINE_IN' || !o.orderType).length;
+  
+  // Gráficas de Dona
   const canalData = [
     { name: 'App VIP', value: ventasApp, color: '#a855f7' },
     { name: 'Kiosco', value: ventasKiosco, color: '#eab308' }
+  ];
+  const paymentData = [
+    { name: 'Efectivo', value: ventasEfectivo, color: '#4ade80' },
+    { name: 'Tarjeta', value: ventasTarjeta, color: '#60a5fa' }
+  ];
+  const vipData = [
+    { name: 'Clientes VIP', value: ventasVIP, color: '#facc15' },
+    { name: 'Público General', value: ventasGeneral, color: '#71717a' }
   ];
 
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
 
-  // ==========================================
-  // EXTRACCIÓN PARA BUSINESS INTELLIGENCE
-  // ==========================================
+  // EXTRACCIÓN DE DATOS DE LA API PARA BI
   const hourMap = validOrders.reduce((acc: any, order: any) => {
     const hour = new Date(order.createdAt).getHours();
     const label = `${hour}:00`;
@@ -229,10 +242,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const topToppingsPaidData = Object.keys(toppingVolumePaid).map(name => ({ name, qty: toppingVolumePaid[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
   const topToppingsFreeData = Object.keys(toppingVolumeFree).map(name => ({ name, qty: toppingVolumeFree[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
 
-  // Valores Máximos para dibujar las barras
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
+
+  const pilarColors: Record<string, string> = {
+      'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
+  };
 
   // ==========================================
   // FUNCIONES DE EXPORTACIÓN Y REPORTE
@@ -311,7 +327,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {items.map((item: any) => (
-            <button key={item.id} onClick={() => toggleStatus(item.id, isModifier ? 'product' : 'product', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
+            <button key={item.id} onClick={() => toggleStatus(item.id, isModifier ? 'modifier' : 'product', item.isAvailable)} className={`p-4 rounded-xl flex justify-between items-center border transition-all text-left ${item.isAvailable ? 'bg-zinc-900 border-zinc-700' : 'bg-red-950/20 border-red-900/50 text-red-400 opacity-70'}`}>
               <span className="font-bold text-sm truncate">{item.name}</span>
               <span className="text-lg">{item.isAvailable ? '✅' : '❌'}</span>
             </button>
@@ -363,7 +379,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
-        {/* CONTROLES GLOBALES (FECHAS Y SYNC) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-white font-bold outline-none flex-1 w-full"/>
@@ -372,7 +387,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             </div>
             {role === 'ADMIN' ? (
                 <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
-                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD NETA</span>
+                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
                     <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
                 </div>
             ) : <div></div>}
@@ -387,6 +402,211 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         ) : (
           <div className="animate-in fade-in duration-500">
             
+            {/* ======================================================== */}
+            {/* 🌟 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
+            {/* ======================================================== */}
+            {activeTab === 'BI' && role === 'ADMIN' && (
+                <div className="space-y-8">
+                    
+                    <div className="flex flex-col md:flex-row gap-4 mb-6">
+                        <button onClick={generatePDF} className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Reporte</button>
+                        <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center">
+                            {emailSending ? 'Enviando...' : '📧 Enviar a maiztrosqro@gmail.com'}
+                        </button>
+                    </div>
+
+                    {/* KPIs OPERATIVOS (ESTILO PYTHON) */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-3xl font-black text-white">{totalOrders}</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
+                        
+                        {data.biExtraStats && (
+                            <>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ventas c/ Extras</p><p className="text-3xl font-black text-green-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(1) : 0}%</p></div>
+                            </>
+                        )}
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Adopción VIP</p><p className="text-3xl font-black text-pink-400">{pctVIP.toFixed(1)}%</p></div>
+                    </div>
+
+                    {data.biExtraStats && data.biExtraStats.ticketModa > 0 && (
+                        <div className="bg-green-500/10 border border-green-500/30 p-6 rounded-2xl">
+                            <p className="text-green-400 font-bold text-sm">💡 <b>CONSEJO ESTRATÉGICO:</b> Tu ticket más común (Moda) es de <b>${data.biExtraStats.ticketModa.toFixed(2)}</b>. Crea un nuevo combo de <b>$${(data.biExtraStats.ticketModa + 20).toFixed(2)}</b> para empujar a los clientes a gastar un poco más.</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* GRÁFICA DE DÍAS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">📅 Ventas por Día</h3>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={dayChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                                        <XAxis dataKey="Dia" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                                        <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} />
+                                        <Bar dataKey="Ventas" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* GRÁFICA DE HORAS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-yellow-400 flex items-center gap-2">⏰ Tráfico por Horas</h3>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={hourChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                                        <XAxis dataKey="Hora" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                                        <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a', color: '#fff'}} itemStyle={{ color: '#eab308', fontWeight: 'bold' }} />
+                                        <Area type="monotone" dataKey="Ventas" stroke="#facc15" fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* NUEVA FILA: DONAS DE BI */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* PILARES */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
+                            {data.biExtraStats && data.biExtraStats.pilaresChart.length > 0 ? (
+                                <div className="space-y-4">
+                                    {data.biExtraStats.pilaresChart.map((pilar: any) => (
+                                        <div key={pilar.name}>
+                                            <div className="flex justify-between text-sm font-bold mb-1">
+                                                <span>{pilar.name}</span>
+                                                <span style={{ color: pilarColors[pilar.name] || '#ffffff' }}>${pilar.revenue.toFixed(2)}</span>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="h-full" style={{ width: `${(pilar.revenue / data.biExtraStats.pilaresChart[0].revenue) * 100}%`, backgroundColor: pilarColors[pilar.name] || '#a1a1aa' }}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                        </div>
+
+                        {/* MÉTODOS DE PAGO DONA */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
+                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">💳 Pagos</h3>
+                            <div className="w-48 h-48 my-4">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={paymentData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                            {paymentData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                        </Pie>
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `$${value.toFixed(2)}`} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="w-full flex justify-between text-sm font-bold">
+                                <span className="text-green-400">💵 ${(ventasEfectivo/ventasNetas*100 || 0).toFixed(0)}% Efectivo</span>
+                                <span className="text-blue-400">💳 ${(ventasTarjeta/ventasNetas*100 || 0).toFixed(0)}% Tarjeta</span>
+                            </div>
+                        </div>
+
+                        {/* VIP VS GENERAL DONA */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
+                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">⭐ Impacto VIP</h3>
+                            <div className="w-48 h-48 my-4">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={vipData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                            {vipData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                        </Pie>
+                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `$${value.toFixed(2)}`} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="w-full flex justify-between text-sm font-bold">
+                                <span className="text-yellow-400">👑 ${ventasVIP.toFixed(2)} VIP</span>
+                                <span className="text-zinc-500">🚶‍♂️ ${ventasGeneral.toFixed(2)} Gral</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* RANKING PRODUCTOS CON BARRAS VISUALES */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos</h3>
+                            <div className="space-y-4">
+                                {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                                    <div key={p.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{p.name}</p>
+                                                <p className="text-xs font-black text-green-400">{p.qty} <span className="text-[10px] text-zinc-500 uppercase">unds</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-green-400 h-full rounded-full" style={{width: `${(p.qty / maxProductQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+
+                        {/* RANKING TOPPINGS PAGADOS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
+                                    <div key={t.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
+                                                <p className="text-xs font-black text-orange-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-orange-400 h-full rounded-full" style={{width: `${(t.qty / maxPaidQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+
+                        {/* RANKING TOPPINGS GRATIS */}
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
+                                    <div key={t.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
+                                                <p className="text-xs font-black text-blue-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-blue-400 h-full rounded-full" style={{width: `${(t.qty / maxFreeQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ======================================================== */}
             {/* PESTAÑA: FINANZAS (100% DINERO Y LIQUIDEZ)                 */}
             {/* ======================================================== */}
@@ -412,7 +632,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                   </div>
                 </div>
 
-                {/* NUEVO: LIQUIDEZ Y COSTO DE LEALTAD */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                         <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🌊 Flujo de Efectivo (Liquidez)</h3>
@@ -499,161 +718,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* 🌟 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
-            {/* ======================================================== */}
-            {activeTab === 'BI' && role === 'ADMIN' && (
-                <div className="space-y-8">
-                    
-                    {/* ACCIONES BI */}
-                    <div className="flex flex-col md:flex-row gap-4 mb-6">
-                        <button onClick={generatePDF} className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Reporte</button>
-                        <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center">
-                            {emailSending ? 'Enviando...' : '📧 Enviar a maiztrosqro@gmail.com'}
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* GRÁFICA DE DÍAS */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-purple-400 flex items-center gap-2">📅 Ventas por Día de la Semana</h3>
-                            <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={dayChartData}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-                                        <XAxis dataKey="Dia" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                                        <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
-                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} />
-                                        <Bar dataKey="Ventas" fill="#a855f7" radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* GRÁFICA DE HORAS */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-yellow-400 flex items-center gap-2">⏰ Tráfico por Horas</h3>
-                            <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={hourChartData}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-                                        <XAxis dataKey="Hora" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                                        <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
-                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a', color: '#fff'}} itemStyle={{ color: '#eab308', fontWeight: 'bold' }} />
-                                        <Area type="monotone" dataKey="Ventas" stroke="#facc15" fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                          <h3 className="text-xl font-black mb-4">📱 Adopción de Canales</h3>
-                          <div className="flex items-center gap-4">
-                              <div className="w-32 h-32">
-                                  <ResponsiveContainer width="100%" height="100%">
-                                      <PieChart>
-                                          <Pie data={canalData} innerRadius={35} outerRadius={60} paddingAngle={5} dataKey="value" stroke="none">
-                                              {canalData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                          </Pie>
-                                      </PieChart>
-                                  </ResponsiveContainer>
-                              </div>
-                              <div className="flex-1 space-y-2">
-                                  <div className="flex justify-between items-center bg-zinc-950 p-2 rounded-lg border border-zinc-800">
-                                      <span className="text-xs font-bold text-purple-400">App VIP</span>
-                                      <span className="text-sm font-black">{ventasApp}</span>
-                                  </div>
-                                  <div className="flex justify-between items-center bg-zinc-950 p-2 rounded-lg border border-zinc-800">
-                                      <span className="text-xs font-bold text-yellow-400">Kiosco</span>
-                                      <span className="text-sm font-black">{ventasKiosco}</span>
-                                  </div>
-                              </div>
-                          </div>
-                        </div>
-
-                        {/* RANKING PRODUCTOS CON BARRAS VISUALES */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos Base</h3>
-                            <div className="space-y-4">
-                                {topProductsData.length > 0 ? topProductsData.map((p, i) => (
-                                    <div key={p.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[150px]">{p.name}</p>
-                                                <p className="text-xs font-black text-green-400">{p.qty} <span className="text-[10px] text-zinc-500 uppercase">unds</span></p>
-                                            </div>
-                                            {/* BARRA HORIZONTAL ILUMINADA */}
-                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                                <div className="bg-green-400 h-full rounded-full" style={{width: `${(p.qty / maxProductQty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* RANKING TOPPINGS PAGADOS */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
-                                </div>
-                                <span className="bg-orange-500/10 text-orange-400 text-[10px] font-black px-2 py-1 rounded border border-orange-500/30">Venta Adicional</span>
-                            </div>
-                            <div className="space-y-4">
-                                {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
-                                    <div key={t.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
-                                                <p className="text-xs font-black text-orange-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
-                                            </div>
-                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                                <div className="bg-orange-400 h-full rounded-full" style={{width: `${(t.qty / maxPaidQty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
-                            </div>
-                        </div>
-
-                        {/* RANKING TOPPINGS GRATIS */}
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
-                                </div>
-                                <span className="bg-blue-500/10 text-blue-400 text-[10px] font-black px-2 py-1 rounded border border-blue-500/30">Gasto Incluido</span>
-                            </div>
-                            <div className="space-y-4">
-                                {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
-                                    <div key={t.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
-                                                <p className="text-xs font-black text-blue-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
-                                            </div>
-                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                                <div className="bg-blue-400 h-full rounded-full" style={{width: `${(t.qty / maxFreeQty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ======================================================== */}
             {/* PESTAÑA: VENTAS                                          */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
@@ -695,11 +759,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                         {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                       </div>
                                       <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
-                                          {/* 🌟 BOTON PARA ENVIAR TICKET POR EMAIL */}
-                                          <button onClick={() => sendTicketEmail(getTicketUrl(o.turnNumber))} className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar por Email">📧</button>
+                                          {/* 🌟 AÑADIDO: ENVIAR TICKET POR EMAIL */}
+                                          <button onClick={() => sendTicketEmail(getTicketUrl(o.turnNumber))} className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors">📧 Email</button>
                                           
                                           {o.customerPhone && (
-                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar por WA">📱</button>
+                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors">📱</button>
                                           )}
                                           <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
                                           {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
