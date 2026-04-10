@@ -79,7 +79,6 @@ export async function GET(request: Request) {
       endDate.setHours(23, 59, 59, 999); 
     }
 
-    // Le quitamos el limitador (take:100) a clientes para que cruce correctamente la retención histórica
     const [products, modifiers, coupons, inventoryItems, orders, shifts, expenses, auditLogs, customers] = await Promise.all([
       prisma.product.findMany({ orderBy: { category: 'asc' } }),
       prisma.modifier.findMany({ orderBy: { type: 'asc' } }),
@@ -93,7 +92,7 @@ export async function GET(request: Request) {
     ]);
 
     // ==========================================
-    // PROCESAMIENTO DE BUSINESS INTELLIGENCE AVANZADO
+    // PROCESAMIENTO DE BUSINESS INTELLIGENCE
     // ==========================================
     const biStats = {
         pilares: {} as Record<string, { qty: number, revenue: number }>,
@@ -108,7 +107,6 @@ export async function GET(request: Request) {
         ordersGeneral: 0
     };
 
-    // Mapa de creación de clientes para saber si son nuevos hoy o ya existían
     const customerDateMap: Record<string, Date> = {};
     customers.forEach((c: any) => {
         customerDateMap[c.phone] = new Date(c.createdAt);
@@ -119,26 +117,23 @@ export async function GET(request: Request) {
         
         biStats.ticketAmounts.push(order.totalAmount);
         
-        // 1. LEAD TIME (Eficiencia Operativa)
         if (order.status === 'COMPLETED' && order.updatedAt && order.createdAt) {
             const diffMins = (new Date(order.updatedAt).getTime() - new Date(order.createdAt).getTime()) / 60000;
-            // Filtramos errores de dedo (menos de 1 minuto o más de 120 minutos que se les olvidó picarle)
             if (diffMins > 0 && diffMins < 120) {
                 biStats.prepTimeSum += diffMins;
                 biStats.prepTimeCount++;
             }
         }
 
-        // 2. RETENCIÓN VIP (Tasa de clientes recurrentes)
         if (order.customerPhone) {
             const cDate = customerDateMap[order.customerPhone];
             if (cDate && cDate < startDate) {
-                biStats.ordersReturningVip++; // El cliente ya existía antes de este filtro
+                biStats.ordersReturningVip++;
             } else {
-                biStats.ordersNewVip++; // El cliente se registró dentro de este filtro
+                biStats.ordersNewVip++;
             }
         } else {
-            biStats.ordersGeneral++; // Cliente anónimo
+            biStats.ordersGeneral++;
         }
 
         let hasExtra = false;
@@ -146,9 +141,9 @@ export async function GET(request: Request) {
         if (order.items) {
             const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
             
-            // 3. MATRIZ DE AFINIDAD (¿Qué se compra junto?)
+            // ✅ CORRECCIÓN APLICADA AQUÍ: prodNames en vez de pNames
             const prodNames = items.map((i:any) => i.product?.name).filter(Boolean);
-            const uniquePNames = Array.from(new Set(pNames)) as string[]; // Solo contamos 1 vez por orden
+            const uniquePNames = Array.from(new Set(prodNames)) as string[]; 
             
             for(let i=0; i < uniquePNames.length; i++) {
                 for(let j = i+1; j < uniquePNames.length; j++) {
