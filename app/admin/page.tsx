@@ -264,6 +264,45 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
+  // ==========================================
+  // 🌟 AUDITORÍA DE CAJA AGRUPADA POR DÍA (SOLUCIÓN DEFINITIVA)
+  // ==========================================
+  const auditByDate: Record<string, any> = {};
+
+  const getMexicoDateString = (isoString: string) => {
+      const date = new Date(isoString);
+      return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+  };
+
+  // 1. Sumamos TODAS las ventas y propinas en efectivo del día
+  data.orders?.forEach((o: any) => {
+      if (o.status === 'PAID' && o.paymentMethod === 'EFECTIVO_CAJA') {
+          const dateStr = getMexicoDateString(o.createdAt);
+          if (!auditByDate[dateStr]) auditByDate[dateStr] = { dateStr, rawDate: o.createdAt, cajero: new Set(), fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0 };
+          auditByDate[dateStr].ventas += o.totalAmount;
+          auditByDate[dateStr].propinas += (o.tipAmount || 0);
+      }
+  });
+
+  // 2. Sumamos TODOS los turnos (Fondos, Reportados y Retiros) del día
+  data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
+      const dateStr = getMexicoDateString(shift.openedAt);
+      if (!auditByDate[dateStr]) auditByDate[dateStr] = { dateStr, rawDate: shift.openedAt, cajero: new Set(), fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0 };
+      
+      auditByDate[dateStr].cajero.add(shift.openedBy);
+      auditByDate[dateStr].fondo += (shift.startingCash || 0);
+      auditByDate[dateStr].reportado += (shift.reportedCash || 0);
+      
+      const withdrawals = shift.movements?.filter((m: any) => m.type === 'OUT').reduce((sum: number, m: any) => sum + m.amount, 0) || 0;
+      auditByDate[dateStr].retiros += withdrawals;
+  });
+
+  // Ordenamos del día más reciente al más antiguo
+  const dailyAuditArray = Object.values(auditByDate).sort((a: any, b: any) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
+
+  // ==========================================
+  // FUNCIONES DE EXPORTACIÓN Y REPORTE
+  // ==========================================
   const generatePDF = () => {
       const doc = new jsPDF();
       doc.setFontSize(20);
@@ -716,7 +755,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <table className="w-full text-left min-w-[800px]">
                           <thead>
                               <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
-                                  <th className="pb-4 pl-4">Turno</th>
+                                  <th className="pb-4 pl-4">Día</th>
                                   <th className="pb-4">Cajero</th>
                                   <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
                                   <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
@@ -728,41 +767,24 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                               </tr>
                           </thead>
                           <tbody className="text-sm font-bold">
-                              {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
-                                  const sStart = new Date(shift.openedAt).getTime();
-                                  const sEnd = new Date(shift.closedAt).getTime();
-                                  
-                                  // Vinculamos las órdenes por el tiempo exacto del turno
-                                  const cashOrders = data.orders?.filter((o:any) => {
-                                      const oTime = new Date(o.updatedAt || o.createdAt).getTime();
-                                      return o.paymentMethod === 'EFECTIVO_CAJA' && 
-                                             o.status === 'PAID' && 
-                                             oTime >= sStart && 
-                                             oTime <= sEnd;
-                                  }) || [];
-                                  
-                                  const cashSales = cashOrders.reduce((sum:number, o:any) => sum + o.totalAmount, 0);
-                                  const cashTips = cashOrders.reduce((sum:number, o:any) => sum + (o.tipAmount || 0), 0);
-                                  const startingCash = shift.startingCash || 0;
-                                  const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
-                                  
-                                  const expectedCash = startingCash + cashSales + cashTips - withdrawals;
-                                  const reportedCash = shift.reportedCash || 0;
-                                  const difference = reportedCash - expectedCash;
+                              {dailyAuditArray.map((dayData: any, idx: number) => {
+                                  const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
+                                  const difference = dayData.reportado - expectedCash;
                                   
                                   const isShortage = difference < -0.5; // Tolerancia de 50 centavos
                                   const isExact = Math.abs(difference) <= 0.5;
+                                  const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
 
                                   return (
-                                      <tr key={shift.id} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
-                                          <td className="py-4 pl-4 text-zinc-400">{new Date(shift.openedAt).toLocaleDateString()}</td>
-                                          <td className="py-4 text-white truncate max-w-[100px]">{shift.openedBy}</td>
-                                          <td className="py-4 text-blue-400">${startingCash.toFixed(2)}</td>
-                                          <td className="py-4 text-green-400">+${cashSales.toFixed(2)}</td>
-                                          <td className="py-4 text-pink-400">+${cashTips.toFixed(2)}</td>
-                                          <td className="py-4 text-red-400">-${withdrawals.toFixed(2)}</td>
+                                      <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
+                                          <td className="py-4 pl-4 text-zinc-400">{dayData.dateStr}</td>
+                                          <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
+                                          <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
+                                          <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
+                                          <td className="py-4 text-pink-400">+${dayData.propinas.toFixed(2)}</td>
+                                          <td className="py-4 text-red-400">-${dayData.retiros.toFixed(2)}</td>
                                           <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
-                                          <td className="py-4 text-white font-black">${reportedCash.toFixed(2)}</td>
+                                          <td className="py-4 text-white font-black">${dayData.reportado.toFixed(2)}</td>
                                           <td className="py-4 pr-4 text-right">
                                               {isExact ? (
                                                   <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
@@ -777,8 +799,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                               })}
                           </tbody>
                       </table>
-                      {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
-                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
+                      {dailyAuditArray.length === 0 && (
+                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
                       )}
                   </div>
                 </div>
