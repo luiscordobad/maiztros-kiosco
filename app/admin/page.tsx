@@ -20,9 +20,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
   const [emailSending, setEmailSending] = useState(false);
-  const [ticketEmailing, setTicketEmailing] = useState<string | null>(null); // Estado para el botón de email ticket
+  const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
-  // Ajuste de fecha local para el tope (máximo hoy)
   const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
   const lastWeek = new Date();
@@ -140,7 +139,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     window.open(`https://api.whatsapp.com/send?phone=52${phone}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  // 🌟 NUEVA FUNCIÓN AUTOMÁTICA DE CORREO AL CLIENTE
   const sendTicketEmail = async (orderId: string, orderUrl: string, turnNumber: string) => {
       const email = window.prompt(`Ingresa el correo del cliente (Ticket #${turnNumber}):`);
       if (!email) return;
@@ -178,18 +176,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
-  // BI: Lealtad VIP vs General
   const ventasVIP = validOrders.filter((o:any) => o.customerPhone || o.pointsDiscount > 0 || o.couponCode).reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasGeneral = ventasNetas - ventasVIP;
 
   const ventasApp = validOrders.filter((o:any) => o.orderType === 'TAKEOUT').length;
   const ventasKiosco = validOrders.filter((o:any) => o.orderType === 'DINE_IN' || !o.orderType).length;
   
-  // Gráficas de Dona
-  const canalData = [
-    { name: 'App VIP', value: ventasApp, color: '#a855f7' },
-    { name: 'Kiosco', value: ventasKiosco, color: '#eab308' }
-  ];
   const paymentData = [
     { name: 'Efectivo', value: ventasEfectivo, color: '#4ade80' },
     { name: 'Tarjeta', value: ventasTarjeta, color: '#60a5fa' }
@@ -199,7 +191,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     { name: 'Público General', value: ventasGeneral, color: '#71717a' }
   ];
 
-  // RETENCIÓN VIP (Nuevos vs Recurrentes extraídos de la API)
   const retencionStats = data.biExtraStats?.retention || { new: 0, returning: 0, general: 0 };
   const totalVipOrders = retencionStats.new + retencionStats.returning;
   const returningPct = totalVipOrders > 0 ? (retencionStats.returning / totalVipOrders) * 100 : 0;
@@ -211,7 +202,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
 
-  // EXTRACCIÓN DE DATOS DE LA API PARA BI
   const hourMap = validOrders.reduce((acc: any, order: any) => {
     const hour = new Date(order.createdAt).getHours();
     const label = `${hour}:00`;
@@ -274,9 +264,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
-  // ==========================================
-  // FUNCIONES DE EXPORTACIÓN Y REPORTE
-  // ==========================================
   const generatePDF = () => {
       const doc = new jsPDF();
       doc.setFontSize(20);
@@ -403,7 +390,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
-        {/* 🌟 CONTROLES GLOBALES (FECHAS Y SYNC CON LÍMITES) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input 
@@ -412,7 +398,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     value={startDate} 
                     onChange={e => {
                         setStartDate(e.target.value);
-                        if (e.target.value > endDate) setEndDate(e.target.value); // Ajusta la salida si inicio es mayor
+                        if (e.target.value > endDate) setEndDate(e.target.value);
                     }} 
                     className="bg-transparent text-white font-bold outline-none flex-1 w-full cursor-pointer"
                 />
@@ -423,7 +409,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     value={endDate} 
                     onChange={e => {
                         setEndDate(e.target.value);
-                        if (e.target.value < startDate) setStartDate(e.target.value); // Ajusta el inicio si salida es menor
+                        if (e.target.value < startDate) setStartDate(e.target.value);
                     }} 
                     className="bg-transparent text-white font-bold outline-none flex-1 w-full cursor-pointer"
                 />
@@ -458,7 +444,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </button>
                     </div>
 
-                    {/* KPIs OPERATIVOS (NIVEL DIOS) */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-2xl lg:text-3xl font-black text-white">{totalOrders}</p></div>
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-2xl lg:text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
@@ -474,7 +459,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* GRÁFICA DE DÍAS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">📅 Ventas por Día</h3>
                             <div className="h-[300px]">
@@ -490,7 +474,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
 
-                        {/* GRÁFICA DE HORAS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-yellow-400 flex items-center gap-2">⏰ Tráfico por Horas</h3>
                             <div className="h-[300px]">
@@ -507,9 +490,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
-                    {/* FILA: GRÁFICAS DE DONA */}
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                        {/* PILARES */}
                         <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
                             {data.biExtraStats && data.biExtraStats.pilaresChart.length > 0 ? (
@@ -529,7 +510,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             ) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
                         </div>
 
-                        {/* MÉTODOS DE PAGO DONA */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
                             <h3 className="text-xl font-black mb-2 text-white w-full text-left">💳 Pagos</h3>
                             <div className="w-48 h-48 my-4">
@@ -548,7 +528,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
 
-                        {/* RETENCIÓN VIP DONA */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
                             <h3 className="text-xl font-black mb-2 text-white w-full text-left">🔄 Retención VIP</h3>
                             <div className="w-48 h-48 my-4">
@@ -569,7 +548,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* RANKING PRODUCTOS CON BARRAS VISUALES */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos Base</h3>
                             <div className="space-y-4">
@@ -590,7 +568,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
 
-                        {/* MATRIZ DE AFINIDAD */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6">
                                 <h3 className="text-xl font-black text-pink-400">🛒 Se compran juntos (Afinidad)</h3>
@@ -616,7 +593,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* RANKING TOPPINGS PAGADOS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6 flex justify-between items-end">
                                 <div>
@@ -642,7 +618,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
 
-                        {/* RANKING TOPPINGS GRATIS */}
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6 flex justify-between items-end">
                                 <div>
@@ -727,6 +702,68 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* ========================================== */}
+                {/* AUDITORÍA DE CORTES DE CAJA (RESTAURADO) */}
+                {/* ========================================== */}
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
+                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left min-w-[600px]">
+                          <thead>
+                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
+                                  <th className="pb-4 pl-4">Turno</th>
+                                  <th className="pb-4">Responsable</th>
+                                  <th className="pb-4 text-green-400">Total Entradas</th>
+                                  <th className="pb-4 text-red-400">Total Retiros</th>
+                                  <th className="pb-4 text-yellow-400 font-black">Esperado</th>
+                                  <th className="pb-4 text-white font-black">Reportado</th>
+                                  <th className="pb-4 text-right pr-4">Diferencia</th>
+                              </tr>
+                          </thead>
+                          <tbody className="text-sm font-bold">
+                              {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
+                                  const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
+                                  const totalEntradas = shift.startingCash + cashSales;
+                                  const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
+                                  
+                                  const expectedCash = totalEntradas - withdrawals;
+                                  const reportedCash = shift.reportedCash || 0;
+                                  const difference = reportedCash - expectedCash;
+                                  
+                                  const isShortage = difference < 0;
+                                  const isExact = difference === 0;
+
+                                  return (
+                                      <tr key={shift.id} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
+                                          <td className="py-4 pl-4 text-zinc-400">{new Date(shift.openedAt).toLocaleDateString()}</td>
+                                          <td className="py-4 text-white truncate max-w-[100px]">{shift.openedBy}</td>
+                                          <td className="py-4 text-green-400">${totalEntradas.toFixed(2)}</td>
+                                          <td className="py-4 text-red-400">-${withdrawals.toFixed(2)}</td>
+                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
+                                          <td className="py-4 text-white font-black">${reportedCash.toFixed(2)}</td>
+                                          <td className="py-4 pr-4 text-right">
+                                              {isExact ? (
+                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
+                                              ) : isShortage ? (
+                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black">Falta ${Math.abs(difference).toFixed(2)}</span>
+                                              ) : (
+                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black">Sobra ${difference.toFixed(2)}</span>
+                                              )}
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
+                      {(!data.shifts || data.shifts.filter((s:any) => s.closedAt).length === 0) && (
+                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos cerrados para auditar.</div>
+                      )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
@@ -823,7 +860,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                         {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                       </div>
                                       <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
-                                          {/* 🌟 BOTÓN CONECTADO A LA API PARA ENVIAR TICKET AUTOMÁTICO */}
                                           <button 
                                               onClick={() => sendTicketEmail(o.id, getTicketUrl(o.turnNumber), o.turnNumber)} 
                                               disabled={ticketEmailing === o.id}
