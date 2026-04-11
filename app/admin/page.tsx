@@ -20,8 +20,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
   const [emailSending, setEmailSending] = useState(false);
-  
-  // 🌟 BUG 1 CORREGIDO: Restaurada la variable del correo de tickets
   const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
   const [nominaAdjustments, setNominaAdjustments] = useState<Record<string, number>>({});
@@ -44,8 +42,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
 
-  // 🌟 TASA EXACTA MERCADOPAGO (3.5% + IVA = 4.06%)
-  const MP_RATE = 0.0406;
+  const MP_RATE = 0.0406; // 4.06% Mercado Pago
 
   const fetchData = async () => {
     setLoading(true);
@@ -198,7 +195,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
-  // 🌟 CÁLCULO DE COMISIONES MP GLOBALES
   let comisionesTerminal = 0;
   let propinasTarjetaBrutas = 0;
   
@@ -212,9 +208,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   });
 
   const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
-  const gastosTotales = gastosFisicos + comisionesTerminal; // Sumamos la comisión a los egresos
   
-  const utilidadNeta = ventasNetas - gastosTotales;
+  // 🌟 NETA PURA: Solo restamos gastosFisicos y la comisionTerminal de MP
+  const utilidadNeta = ventasNetas - gastosFisicos - comisionesTerminal;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
@@ -292,19 +288,18 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
-  const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
-  const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
-  
-  // 🌟 BUG 2 CORREGIDO: Restaurada la variable maxFreeQty y maxPairQty
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
   const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
+  
+  const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
+  const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
 
   const pilarColors: Record<string, string> = {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA Y NÓMINA (CON DESCUENTO MP)
+  // AUDITORÍA DE CAJA Y NÓMINA
   // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
@@ -396,7 +391,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 PDF EJECUTIVO (BLANCO Y LIMPIO)
+  // 🌟 PDF EJECUTIVO
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -457,7 +452,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Ingresos Brutos', 'Gastos Op.', 'Comisiones MP', 'Utilidad Neta P&L']],
+        head: [['Ingresos Brutos', 'Gastos Físicos', 'Comisiones MP', 'Utilidad Neta P&L']],
         body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosFisicos.toFixed(2)}`, `-$${comisionesTerminal.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
         theme: 'grid',
         headStyles: { fillColor: [244, 244, 245], textColor: textDark, fontStyle: 'bold', halign: 'center' },
@@ -597,7 +592,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     if (data.expenses && data.expenses.length > 0) {
         doc.setFontSize(12);
-        doc.text("Desglose de Gastos y Egresos", 14, y);
+        doc.text("Desglose de Gastos Físicos", 14, y);
         y += 5;
 
         const expensesBody = data.expenses.map((e:any) => [
@@ -650,7 +645,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             if (cellData.section === 'body' && cellData.column.index === 8) {
                 if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
                 else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
-                else cellData.cell.styles.textColor = [217, 119, 6]; 
+                else cellData.cell.styles.textColor = [234, 179, 8]; 
             }
         }
     });
@@ -683,6 +678,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
+  // ==========================================
+  // 🌟 ENVÍO DEL REPORTE AL CORREO (CORREGIDO)
+  // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
@@ -692,15 +690,16 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
+          // AHORA MANDAMOS LA INFORMACIÓN CORRECTA PARA NO DUPLICAR
           const payload = {
               startDate, endDate,
               story: storyForEmail,
               ticketModa: data.biExtraStats ? data.biExtraStats.ticketModa : 0,
-              ventasNetas, gastosTotales, utilidadNeta, comisionesTerminal,
+              ventasNetas, gastosFisicos, comisionesTerminal, utilidadNeta,
               ventasEfectivo, ventasTarjeta, totalDescuentos,
               topProducts: topProductsData.slice(0, 10),
               topToppingsPaid: topToppingsPaidData.slice(0, 10),
-              audit: dailyAuditArray, 
+              audit: dailyAuditArray, // Ya va como Array, cero N/A
               nomina: nominaArray,
               dayChartData,
               hourChartData,
@@ -1032,7 +1031,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-orange-400">🧀 Top Toppings (Con Costo)</h3>
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
+                                </div>
+                            </div>
                             <div className="space-y-4">
                                 {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
                                     <div key={t.name} className="flex items-center gap-4">
@@ -1184,8 +1188,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   
                                   const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
-                                  
-                                  // 🌟 BUG 3 CORREGIDO: Evitamos que el array de cajeros imprima N/A
                                   const cajerosStr = dayData.cajero.join(', ') || 'N/A';
 
                                   const [year, month, day] = dayData.date.split('-');
@@ -1364,7 +1366,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       
                       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                           {data.orders.slice().reverse().map((o: any) => {
-                              // 🌟 CÁLCULO EN TIEMPO REAL POR TICKET
                               const isTerminal = o.paymentMethod === 'TERMINAL';
                               const cobroBruto = o.totalAmount + (o.tipAmount || 0);
                               const comisionMP = isTerminal ? (cobroBruto * MP_RATE) : 0;
@@ -1394,7 +1395,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </p>
                                             {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                             
-                                            {/* 🌟 DESGLOSE MP EN EL TICKET */}
+                                            {/* DESGLOSE MP EN EL TICKET */}
                                             {isTerminal && o.status !== 'REFUNDED' && (
                                                 <div className="mt-1 border-t border-zinc-800 pt-1">
                                                     <p className="text-[9px] text-orange-400 font-bold">- Comisión MP: $${comisionMP.toFixed(2)}</p>
