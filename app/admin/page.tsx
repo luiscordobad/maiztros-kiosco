@@ -264,9 +264,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
-  // ==========================================
-  // FUNCIONES DE EXPORTACIÓN Y REPORTE
-  // ==========================================
   const generatePDF = () => {
       const doc = new jsPDF();
       doc.setFontSize(20);
@@ -393,7 +390,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
-        {/* CONTROLES GLOBALES (FECHAS Y SYNC) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input 
@@ -709,7 +705,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
 
                 {/* ========================================== */}
-                {/* AUDITORÍA DE CORTES DE CAJA (CORREGIDA) */}
+                {/* AUDITORÍA DE CORTES DE CAJA                */}
                 {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
@@ -733,14 +729,23 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                           </thead>
                           <tbody className="text-sm font-bold">
                               {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
-                                  const cashOrders = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID') || [];
+                                  const sStart = new Date(shift.openedAt).getTime();
+                                  const sEnd = new Date(shift.closedAt).getTime();
+                                  
+                                  // Vinculamos las órdenes por el tiempo exacto del turno
+                                  const cashOrders = data.orders?.filter((o:any) => {
+                                      const oTime = new Date(o.updatedAt || o.createdAt).getTime();
+                                      return o.paymentMethod === 'EFECTIVO_CAJA' && 
+                                             o.status === 'PAID' && 
+                                             oTime >= sStart && 
+                                             oTime <= sEnd;
+                                  }) || [];
                                   
                                   const cashSales = cashOrders.reduce((sum:number, o:any) => sum + o.totalAmount, 0);
                                   const cashTips = cashOrders.reduce((sum:number, o:any) => sum + (o.tipAmount || 0), 0);
                                   const startingCash = shift.startingCash || 0;
                                   const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
                                   
-                                  // El cálculo perfecto
                                   const expectedCash = startingCash + cashSales + cashTips - withdrawals;
                                   const reportedCash = shift.reportedCash || 0;
                                   const difference = reportedCash - expectedCash;
