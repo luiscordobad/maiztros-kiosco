@@ -399,94 +399,225 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 EL NUEVO PDF STORYTELLING
+  // 🌟 EL NUEVO PDF EJECUTIVO (STORYTELLING)
   // ==========================================
   const generatePDF = () => {
-      const doc = new jsPDF();
-      
-      // Fondo Oscuro Total
-      doc.setFillColor(24, 24, 27); // #18181b
-      doc.rect(0, 0, 210, 297, 'F');
+    const doc = new jsPDF();
+    let y = 20;
 
-      // Título
-      doc.setTextColor(250, 204, 21); // yellow-400
-      doc.setFontSize(24);
-      doc.setFont("helvetica", "bold");
-      doc.text("MAIZTROS BI - REPORTE EJECUTIVO", 14, 25);
+    // Paleta de Colores Corporativa (Modo Claro)
+    const primary = [37, 99, 235]; // blue-600
+    const textDark = [24, 24, 27]; // zinc-950
+    const textGray = [113, 113, 122]; // zinc-500
+    const green = [34, 197, 94];
+    const red = [239, 68, 68];
 
-      // Subtítulo
-      doc.setTextColor(161, 161, 170); // zinc-400
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Periodo Analizado: ${startDate} al ${endDate}`, 14, 33);
+    // 1. PORTADA / ENCABEZADO
+    doc.setFontSize(24);
+    doc.setTextColor(...primary);
+    doc.setFont("helvetica", "bold");
+    doc.text("MAIZTROS BI - REPORTE EJECUTIVO", 14, y);
+    y += 8;
 
-      // --- TARJETA 1: VENTAS ---
-      doc.setFillColor(39, 39, 42); // #27272a
-      doc.roundedRect(14, 45, 85, 28, 3, 3, 'F');
-      doc.setTextColor(161, 161, 170);
-      doc.setFontSize(10);
-      doc.text("INGRESOS BRUTOS", 20, 55);
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
-      doc.setFont("helvetica", "bold");
-      doc.text(`$${ventasNetas.toFixed(2)}`, 20, 65);
+    doc.setFontSize(11);
+    doc.setTextColor(...textGray);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Periodo Analizado: ${startDate} al ${endDate}`, 14, y);
+    y += 15;
 
-      // --- TARJETA 2: UTILIDAD ---
-      doc.setFillColor(39, 39, 42);
-      doc.roundedRect(110, 45, 85, 28, 3, 3, 'F');
-      doc.setTextColor(161, 161, 170);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text("UTILIDAD NETA P&L", 116, 55);
-      doc.setTextColor(74, 222, 128); // green-400
-      doc.setFontSize(20);
-      doc.setFont("helvetica", "bold");
-      doc.text(`$${utilidadNeta.toFixed(2)}`, 116, 65);
+    // 2. STORYTELLING DINÁMICO
+    doc.setFontSize(14);
+    doc.setTextColor(...textDark);
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumen de Operacion", 14, y);
+    y += 6;
 
-      // --- STORYTELLING ---
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(14);
-      doc.text("Resumen de Operación", 14, 90);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(212, 212, 216); // zinc-300
-      
-      const story = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen libre de ganancia de la operación se situó en un ${margenGanancia.toFixed(1)}%. Además, se registró la visita de ${retencionStats.returning} clientes VIP recurrentes, lo que demuestra una sólida fidelidad hacia nuestra marca y sazón.`;
-      const splitStory = doc.splitTextToSize(story, 180);
-      doc.text(splitStory, 14, 98);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(63, 63, 70); // zinc-700
+    
+    const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
+    const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
+    
+    // Texto sin acentos para evitar cualquier error de encoding en jsPDF
+    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta de la operacion se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
+    
+    const splitStory = doc.splitTextToSize(story, 180);
+    doc.text(splitStory, 14, y);
+    y += (splitStory.length * 5) + 8;
 
-      // --- TABLA DE TOP PRODUCTOS ---
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(255, 255, 255);
-      doc.text("Top 5 Productos Base", 14, 130);
+    // 3. ESTRATEGIA (Caja de color azul claro)
+    if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
+        doc.setFillColor(239, 246, 255); // bg-blue-50
+        doc.setDrawColor(191, 219, 254); // border-blue-200
+        doc.roundedRect(14, y, 182, 22, 3, 3, 'FD');
+        doc.setTextColor(...primary);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text(`ESTRATEGIA RECOMENDADA:`, 19, y + 8);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(30, 58, 138); // text-blue-900
+        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 19, y + 14);
+        doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar margenes.`, 19, y + 19);
+        y += 30;
+    }
 
-      const prodBody = topProductsData.slice(0, 5).map((p, i) => [`#${i+1}`, p.name, `${p.qty} unds`]);
-      (doc as any).autoTable({
-          startY: 135,
-          head: [['Rank', 'Producto', 'Volumen']],
-          body: prodBody,
-          theme: 'grid',
-          headStyles: { fillColor: [250, 204, 21], textColor: [24, 24, 27], fontStyle: 'bold' },
-          bodyStyles: { fillColor: [39, 39, 42], textColor: [255, 255, 255] },
-          alternateRowStyles: { fillColor: [24, 24, 27] }
-      });
+    // 4. FINANZAS (Tabla KPI)
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Ingresos Brutos', 'Gastos Operativos', 'Utilidad Neta P&L']],
+        body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosTotales.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
+        theme: 'grid',
+        headStyles: { fillColor: [244, 244, 245], textColor: textDark, fontStyle: 'bold', halign: 'center' },
+        bodyStyles: { halign: 'center', fontSize: 14, fontStyle: 'bold' },
+        didParseCell: function(cellData: any) {
+            if (cellData.row.index === 0 && cellData.section === 'body') {
+                if (cellData.column.index === 1) cellData.cell.styles.textColor = red;
+                if (cellData.column.index === 2) cellData.cell.styles.textColor = utilidadNeta >= 0 ? green : red;
+            }
+        }
+    });
+    y = (doc as any).lastAutoTable.finalY + 10;
 
-      // --- CONSEJO ESTRATÉGICO ---
-      if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
-          let finalY = (doc as any).lastAutoTable.finalY + 15;
-          doc.setFillColor(20, 83, 45); // green-900 bg
-          doc.roundedRect(14, finalY, 180, 22, 3, 3, 'F');
-          doc.setTextColor(74, 222, 128); // green-400
-          doc.setFontSize(10);
-          doc.setFont("helvetica", "bold");
-          doc.text(`💡 ESTRATEGIA RECOMENDADA:`, 20, finalY + 8);
-          doc.setFont("helvetica", "normal");
-          doc.text(`Tu ticket más repetido (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 20, finalY + 14);
-          doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar márgenes.`, 20, finalY + 19);
-      }
+    // 5. LIQUIDEZ Y PAGOS
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Efectivo (Caja Física)', 'Tarjeta (Terminal)', 'Descuentos (Costo VIP)']],
+        body: [[`$${ventasEfectivo.toFixed(2)}`, `$${ventasTarjeta.toFixed(2)}`, `-$${totalDescuentos.toFixed(2)}`]],
+        theme: 'plain',
+        headStyles: { textColor: textGray, fontStyle: 'bold', halign: 'center' },
+        bodyStyles: { halign: 'center', fontSize: 12, textColor: textDark }
+    });
 
-      doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
+    // --- NUEVA PAGINA PARA BUSINESS INTELLIGENCE ---
+    doc.addPage();
+    y = 20;
+
+    doc.setFontSize(16);
+    doc.setTextColor(...textDark);
+    doc.setFont("helvetica", "bold");
+    doc.text("Business Intelligence: Rendimiento de Productos", 14, y);
+    y += 10;
+
+    // 6. TOP PRODUCTOS (CON BARRAS GRÁFICAS)
+    doc.setFontSize(12);
+    doc.text("Top 10 Productos Base", 14, y);
+    y += 5;
+
+    // Pasamos un string vacío en la 4ta columna para que dibuje la barra encima
+    const prodBody = topProductsData.map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} unds`, '']); 
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Rank', 'Producto', 'Volumen', 'Grafica']],
+        body: prodBody,
+        theme: 'striped',
+        headStyles: { fillColor: primary, textColor: 255 },
+        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 70 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 70 } },
+        didDrawCell: function(cellData: any) {
+            if (cellData.column.index === 3 && cellData.section === 'body') {
+                const qty = topProductsData[cellData.row.index].qty;
+                const percent = qty / maxProductQty;
+                const barWidth = 60 * percent;
+                doc.setFillColor(59, 130, 246); // blue-500
+                doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
+            }
+        }
+    });
+    y = (doc as any).lastAutoTable.finalY + 15;
+
+    // 7. TOP TOPPINGS (CON BARRAS GRÁFICAS)
+    doc.setFontSize(12);
+    doc.setTextColor(...textDark);
+    doc.text("Top 10 Extras y Toppings (Con Costo)", 14, y);
+    y += 5;
+
+    const topBody = topToppingsPaidData.map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} usos`, '']); 
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Rank', 'Topping', 'Frecuencia', 'Grafica']],
+        body: topBody,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22], textColor: 255 }, // orange-500
+        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 70 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 70 } },
+        didDrawCell: function(cellData: any) {
+            if (cellData.column.index === 3 && cellData.section === 'body') {
+                const qty = topToppingsPaidData[cellData.row.index].qty;
+                const percent = qty / maxPaidQty;
+                const barWidth = 60 * percent;
+                doc.setFillColor(251, 146, 60); // orange-400
+                doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
+            }
+        }
+    });
+
+    // --- NUEVA PAGINA PARA AUDITORIA Y NOMINA ---
+    doc.addPage();
+    y = 20;
+
+    doc.setFontSize(16);
+    doc.setTextColor(...textDark);
+    doc.setFont("helvetica", "bold");
+    doc.text("Auditoria Operativa y Nomina", 14, y);
+    y += 10;
+
+    // 8. TABLA DE AUDITORIA DE CAJA
+    doc.setFontSize(12);
+    doc.text("Cortes de Caja (Diario)", 14, y);
+    y += 5;
+
+    const auditBody = dailyAuditArray.map((d:any) => {
+        const expected = d.fondo + d.ventas + d.propinas - d.retiros;
+        const diff = d.reportado - expected;
+        const diffStr = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
+        const cajerosStr = Array.from(d.cajero).join(', ') || 'N/A';
+        const [year, month, day] = d.date.split('-');
+        return [`${day}/${month}`, cajerosStr, `$${d.fondo}`, `+$${d.ventas}`, `+$${d.propinas}`, `-$${d.retiros}`, `$${expected}`, `$${d.reportado}`, diffStr];
+    });
+
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Fecha', 'Cajero', 'Fondo', 'Ventas', 'Propinas', 'Retiros', 'Esperado', 'Reportado', 'Diferencia']],
+        body: auditBody,
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [63, 63, 70] }, // zinc-700
+        didParseCell: function(cellData: any) {
+            if (cellData.section === 'body' && cellData.column.index === 8) {
+                if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
+                else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
+                else cellData.cell.styles.textColor = [234, 179, 8]; // yellow-500
+            }
+        }
+    });
+    y = (doc as any).lastAutoTable.finalY + 15;
+
+    // 9. NÓMINA
+    doc.setFontSize(12);
+    doc.setTextColor(...textDark);
+    doc.text("Calculo de Nomina y Rendimiento", 14, y);
+    y += 5;
+
+    const nomBody = nominaArray.map((n:any) => [
+        n.cajero, 
+        `${n.diasTrabajados} dias`, 
+        `${n.horasTotales.toFixed(1)} hrs`, 
+        `$${n.sueldoBase.toFixed(2)}`, 
+        `+$${n.propinasTotales.toFixed(2)}`, 
+        `${n.ajuste < 0 ? '-' : '+'}$${Math.abs(n.ajuste).toFixed(2)}`, 
+        `$${n.totalPagar.toFixed(2)}`
+    ]);
+
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Cajero', 'Dias Trab.', 'Horas Caja', 'Sueldo Base', 'Propinas', 'Ajuste Manual', 'Total a Pagar']],
+        body: nomBody,
+        theme: 'striped',
+        headStyles: { fillColor: [63, 63, 70] },
+        columnStyles: { 6: { fontStyle: 'bold', textColor: primary } }
+    });
+
+    doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
   const sendEmailReport = async () => {
@@ -658,8 +789,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 <div className="space-y-8">
                     
                     <div className="flex flex-col md:flex-row gap-4 mb-6">
-                        <button onClick={generatePDF} className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Reporte</button>
-                        <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center">
+                        <button onClick={generatePDF} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-center">📄 Descargar PDF Ejecutivo</button>
+                        <button onClick={sendEmailReport} disabled={emailSending} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-4 rounded-xl font-black shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-center border border-zinc-700">
                             {emailSending ? 'Enviando...' : '📧 Enviar a maiztrosqro@gmail.com'}
                         </button>
                     </div>
@@ -924,6 +1055,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                 </div>
 
+                {/* ========================================== */}
+                {/* AUDITORÍA DE CORTES DE CAJA                */}
+                {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
@@ -986,6 +1120,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                   </div>
                 </div>
 
+                {/* ========================================== */}
+                {/* 🌟 NÓMINA POR CAJERO */}
+                {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
                       <div>
@@ -1023,6 +1160,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                           <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en tickets">Propinas</p>
                                           <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasTotales.toFixed(2)}</p>
                                       </div>
+                                      {/* INPUT DE AJUSTE MANUAL LUIS */}
                                       <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
                                           <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
                                           <input 
