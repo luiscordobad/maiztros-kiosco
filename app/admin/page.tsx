@@ -42,7 +42,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
 
-  const MP_RATE = 0.0406; // 4.06% Mercado Pago
+  const MP_RATE = 0.0406; 
 
   const fetchData = async () => {
     setLoading(true);
@@ -184,7 +184,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // CÁLCULOS FINANCIEROS Y DE BI (CON MERCADOPAGO)
+  // CÁLCULOS FINANCIEROS Y DE BI 
   // ==========================================
   const validOrders = data.orders ? data.orders.filter((o:any) => o.status !== 'REFUNDED') : []; 
   const totalOrders = validOrders.length;
@@ -209,7 +209,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
   
-  // 🌟 NETA PURA: Solo restamos gastosFisicos y la comisionTerminal de MP
   const utilidadNeta = ventasNetas - gastosFisicos - comisionesTerminal;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
@@ -251,7 +250,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const orderOfDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const dayChartData = orderOfDays.map(d => ({ Dia: d, Ventas: dayMap[d] || 0 }));
 
-  const productVolume: any = {};
+  // 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG Y RENDIMIENTO)
+  const productStats: Record<string, { qty: number, revenue: number }> = {};
   const toppingVolumePaid: any = {};
   const toppingVolumeFree: any = {};
   
@@ -260,7 +260,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           const itemsArr = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
           itemsArr.forEach((item: any) => {
               const name = item.product?.name || 'Desconocido';
-              productVolume[name] = (productVolume[name] || 0) + (item.quantity || 1);
+              if (!productStats[name]) productStats[name] = { qty: 0, revenue: 0 };
+              productStats[name].qty += (item.quantity || 1);
+              productStats[name].revenue += item.totalPrice;
               
               if (item.notes) {
                   const parts = item.notes.split(/[|,]/);
@@ -282,24 +284,38 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       }
   });
 
-  const topProductsData = Object.keys(productVolume).map(name => ({ name, qty: productVolume[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
+  const topProductsData = Object.keys(productStats).map(name => ({ name, qty: productStats[name].qty, revenue: productStats[name].revenue })).sort((a:any, b:any) => b.qty - a.qty);
   const topToppingsPaidData = Object.keys(toppingVolumePaid).map(name => ({ name, qty: toppingVolumePaid[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
   const topToppingsFreeData = Object.keys(toppingVolumeFree).map(name => ({ name, qty: toppingVolumeFree[name] })).sort((a:any, b:any) => b.qty - a.qty).slice(0, 10);
 
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
-  const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
   
   const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
   const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
+
+  // Matriz BCG Lógica
+  const prodKeys = Object.keys(productStats);
+  const totalItems = prodKeys.length || 1;
+  const avgQty = prodKeys.reduce((acc, k) => acc + productStats[k].qty, 0) / totalItems;
+  const avgRev = prodKeys.reduce((acc, k) => acc + productStats[k].revenue, 0) / totalItems;
+
+  const bcgMatrix = prodKeys.map(k => {
+      const p = productStats[k];
+      let category = 'Perro 🐕';
+      if (p.qty > avgQty && p.revenue > avgRev) category = 'Estrella ⭐';
+      else if (p.qty > avgQty && p.revenue <= avgRev) category = 'Caballo de Batalla 🐎';
+      else if (p.qty <= avgQty && p.revenue > avgRev) category = 'Rompecabezas 🧩';
+      return { name: k, qty: p.qty, revenue: p.revenue, category };
+  }).sort((a, b) => b.revenue - a.revenue);
 
   const pilarColors: Record<string, string> = {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA Y NÓMINA
+  // AUDITORÍA DE CAJA, NÓMINA Y COSTO LABORAL
   // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
@@ -344,7 +360,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
       const cajero = shift.openedBy || 'Desconocido';
       if (!nominaMap[cajero]) {
-          nominaMap[cajero] = { cajero, diasSet: new Set(), sueldoBase: 0, horasTotales: 0, propinasNetas: 0, ajuste: nominaAdjustments[cajero] || 0, totalPagar: 0, turnos: [] };
+          nominaMap[cajero] = { 
+              cajero, diasSet: new Set(), sueldoBase: 0, horasTotales: 0, 
+              propinasNetas: 0, ajuste: nominaAdjustments[cajero] || 0, 
+              totalPagar: 0, turnos: [], ventasCobradas: 0, ordenesCobradas: 0 
+          };
       }
       const sStart = new Date(shift.openedAt);
       const sEnd = new Date(shift.closedAt);
@@ -369,29 +389,39 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               } else {
                   propinasTurnoEfectivo += tip;
               }
+              // Para medir el Upselling
+              nominaMap[cajero].ventasCobradas += o.totalAmount;
+              nominaMap[cajero].ordenesCobradas += 1;
           }
       });
+      
       const propinasTotalTurnoNeta = propinasTurnoEfectivo + propinasTurnoTarjetaNetas;
       nominaMap[cajero].propinasNetas += propinasTotalTurnoNeta;
       nominaMap[cajero].turnos.push({ fecha: dateStr, entrada: timeIn, salida: timeOut, horas: diffHrs, propinas: propinasTotalTurnoNeta });
   });
 
-  const nominaArray = Object.values(nominaMap).map(n => {
+  const nominaArray = Object.values(nominaMap).map((n:any) => {
       const diasTrabajados = n.diasSet.size;
       n.diasTrabajados = diasTrabajados;
       n.sueldoBase = diasTrabajados * 200; 
       n.ajuste = nominaAdjustments[n.cajero] || 0;
       n.totalPagar = n.sueldoBase + n.propinasNetas + n.ajuste;
+      n.ticketPromedioCajero = n.ordenesCobradas > 0 ? (n.ventasCobradas / n.ordenesCobradas) : 0;
       return n;
-  }).sort((a, b) => b.totalPagar - a.totalPagar);
+  }).sort((a:any, b:any) => b.totalPagar - a.totalPagar);
 
   const handleAjusteNomina = (cajero: string, value: string) => {
       const valNum = parseFloat(value) || 0;
       setNominaAdjustments(prev => ({...prev, [cajero]: valNum}));
   };
 
+  // 🌟 CÁLCULO DE COSTO LABORAL
+  const totalNominaEmpresa = nominaArray.reduce((acc:number, n:any) => acc + n.sueldoBase + n.ajuste, 0); // No se suman propinas porque las paga el cliente
+  const laborCostPct = ventasNetas > 0 ? (totalNominaEmpresa / ventasNetas) * 100 : 0;
+
+
   // ==========================================
-  // 🌟 PDF EJECUTIVO
+  // 🌟 PDF EJECUTIVO (NUEVOS MÓDULOS)
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -428,28 +458,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
-    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
+    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden. El costo laboral se mantiene en ${laborCostPct.toFixed(1)}%.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
     doc.text(splitStory, 14, y);
     y += (splitStory.length * 5) + 8;
 
-    if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
-        doc.setFillColor(239, 246, 255); 
-        doc.setDrawColor(191, 219, 254); 
-        doc.roundedRect(14, y, 182, 22, 3, 3, 'FD');
-        doc.setTextColor(...primary);
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(`ESTRATEGIA RECOMENDADA:`, 19, y + 8);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(30, 58, 138); 
-        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo especial`, 19, y + 14);
-        doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar margenes.`, 19, y + 19);
-        y += 30;
-    }
-
+    // TABLA P&L EN EL PDF
     (doc as any).autoTable({
         startY: y,
         head: [['Ingresos Brutos', 'Gastos Físicos', 'Comisiones MP', 'Utilidad Neta P&L']],
@@ -469,7 +484,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Efectivo (Caja Física)', 'Tarjeta (Terminal)', 'Descuentos (Costo VIP)']],
+        head: [['Efectivo (Caja)', 'Tarjeta (Banco)', 'Descuentos (Costo VIP)']],
         body: [[`$${ventasEfectivo.toFixed(2)}`, `$${ventasTarjeta.toFixed(2)}`, `-$${totalDescuentos.toFixed(2)}`]],
         theme: 'plain',
         headStyles: { textColor: textGray, fontStyle: 'bold', halign: 'center' },
@@ -482,59 +497,36 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.setFontSize(18);
     doc.setTextColor(...textDark);
     doc.setFont("helvetica", "bold");
-    doc.text("Analisis de Tendencias", 14, y);
+    doc.text("Analisis de Tendencias y Menu", 14, y);
     y += 10;
 
+    // MATRIZ BCG Y PILARES
     doc.setFontSize(12);
-    doc.text("Ventas por Dia de la Semana", 14, y);
+    doc.text("Ventas por Pilar (Categoria)", 14, y);
     y += 5;
-
-    const daysBody = dayChartData.map(d => [d.Dia, `$${d.Ventas.toFixed(2)}`, '']);
+    
+    const pilaresBody = data.biExtraStats ? data.biExtraStats.pilaresChart.map((p:any) => [p.name, `$${p.revenue.toFixed(2)}`]) : [];
     (doc as any).autoTable({
         startY: y,
-        head: [['Dia', 'Ventas', 'Proporcion']],
-        body: daysBody,
+        head: [['Pilar', 'Ingresos Generados']],
+        body: pilaresBody,
         theme: 'striped',
         headStyles: { fillColor: primary, textColor: 255 },
-        columnStyles: { 0: { cellWidth: 30, fontStyle: 'bold' }, 1: { cellWidth: 40 }, 2: { cellWidth: 100 } },
-        didDrawCell: function(cellData: any) {
-            if (cellData.column.index === 2 && cellData.section === 'body') {
-                const ventas = dayChartData[cellData.row.index].Ventas;
-                if (ventas > 0) {
-                    const percent = ventas / maxDayVentas;
-                    const barWidth = 90 * percent;
-                    doc.setFillColor(168, 85, 247); 
-                    doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
-                }
-            }
-        }
     });
     y = (doc as any).lastAutoTable.finalY + 15;
 
     doc.setFontSize(12);
     doc.setTextColor(...textDark);
-    doc.text("Trafico de Ventas por Hora", 14, y);
+    doc.text("Ingenieria de Menu (Matriz BCG)", 14, y);
     y += 5;
 
-    const hoursBody = hourChartData.map(h => [h.Hora, `$${h.Ventas.toFixed(2)}`, '']);
+    const bcgBody = bcgMatrix.slice(0,10).map((b:any) => [b.name, b.category]);
     (doc as any).autoTable({
         startY: y,
-        head: [['Hora', 'Ventas', 'Proporcion']],
-        body: hoursBody,
-        theme: 'striped',
-        headStyles: { fillColor: [234, 179, 8], textColor: textDark }, 
-        columnStyles: { 0: { cellWidth: 30, fontStyle: 'bold' }, 1: { cellWidth: 40 }, 2: { cellWidth: 100 } },
-        didDrawCell: function(cellData: any) {
-            if (cellData.column.index === 2 && cellData.section === 'body') {
-                const ventas = hourChartData[cellData.row.index].Ventas;
-                if (ventas > 0) {
-                    const percent = ventas / maxHourVentas;
-                    const barWidth = 90 * percent;
-                    doc.setFillColor(250, 204, 21); 
-                    doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
-                }
-            }
-        }
+        head: [['Producto', 'Clasificacion']],
+        body: bcgBody,
+        theme: 'grid',
+        headStyles: { fillColor: [63, 63, 70], textColor: 255 }, 
     });
 
     doc.addPage();
@@ -570,7 +562,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.text("Top 10 Productos Base", 14, y);
     y += 5;
 
-    const prodBody = topProductsData.map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} unds`, '']); 
+    const prodBody = topProductsData.slice(0,10).map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} unds`, '']); 
     (doc as any).autoTable({
         startY: y,
         head: [['Rank', 'Producto', 'Volumen', 'Grafica']],
@@ -592,7 +584,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     if (data.expenses && data.expenses.length > 0) {
         doc.setFontSize(12);
-        doc.text("Desglose de Gastos Físicos", 14, y);
+        doc.text("Desglose de Gastos Fisicos", 14, y);
         y += 5;
 
         const expensesBody = data.expenses.map((e:any) => [
@@ -631,21 +623,21 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         const diffStr = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
         const cajerosStr = d.cajero.join(', ') || 'N/A'; 
         const [year, month, day] = d.date.split('-');
-        return [`${day}/${month}`, cajerosStr, `$${d.fondo}`, `+$${d.ventas}`, `+$${d.propinas}`, `-$${d.retiros}`, `$${expected}`, `$${d.reportado}`, diffStr];
+        return [`${day}/${month}`, cajerosStr, `$${d.ventas}`, `-$${d.retiros}`, `$${expected}`, `$${d.reportado}`, diffStr];
     });
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Fecha', 'Cajero', 'Fondo', 'Ventas', 'Propinas', 'Retiros', 'Esperado', 'Reportado', 'Diferencia']],
+        head: [['Fecha', 'Cajero', 'Ventas Efct', 'Retiros', 'Esperado', 'Reportado', 'Diferencia']],
         body: auditBody,
         theme: 'grid',
-        styles: { fontSize: 8 },
+        styles: { fontSize: 9 },
         headStyles: { fillColor: [63, 63, 70] }, 
         didParseCell: function(cellData: any) {
-            if (cellData.section === 'body' && cellData.column.index === 8) {
+            if (cellData.section === 'body' && cellData.column.index === 6) {
                 if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
                 else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
-                else cellData.cell.styles.textColor = [234, 179, 8]; 
+                else cellData.cell.styles.textColor = [217, 119, 6]; 
             }
         }
     });
@@ -653,58 +645,56 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     doc.setFontSize(12);
     doc.setTextColor(...textDark);
-    doc.text("Calculo de Nomina a Pagar", 14, y);
+    doc.text(`Calculo de Nomina a Pagar (Costo Laboral: ${laborCostPct.toFixed(1)}%)`, 14, y);
     y += 5;
 
     const nomBody = nominaArray.map((n:any) => [
         n.cajero, 
         `${n.diasTrabajados} dias`, 
-        `${n.horasTotales.toFixed(1)} hrs`, 
-        `$${n.sueldoBase.toFixed(2)}`, 
+        `$${n.ticketPromedioCajero.toFixed(2)}`, // Nuevo: Rendimiento Upsell
+        `$${(n.sueldoBase + n.ajuste).toFixed(2)}`, 
         `+$${n.propinasNetas.toFixed(2)}`, 
-        `${n.ajuste < 0 ? '-' : '+'}$${Math.abs(n.ajuste).toFixed(2)}`, 
         `$${n.totalPagar.toFixed(2)}`
     ]);
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Cajero', 'Dias Trab.', 'Horas Caja', 'Sueldo Base', 'Propina Neta', 'Ajuste Manual', 'Total a Pagar']],
+        head: [['Cajero', 'Dias', 'Ticket Prom.', 'Base+Ajuste', 'Propinas Netas', 'Total a Pagar']],
         body: nomBody,
         theme: 'striped',
         headStyles: { fillColor: primary, textColor: 255 },
-        columnStyles: { 6: { fontStyle: 'bold', textColor: primary } }
+        columnStyles: { 5: { fontStyle: 'bold', textColor: primary } }
     });
 
-    doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
+    doc.save(`Maiztros_Resultados_${startDate}.pdf`);
   };
 
   // ==========================================
-  // 🌟 ENVÍO DEL REPORTE AL CORREO (CORREGIDO)
+  // 🌟 ENVÍO DEL REPORTE AL CORREO (CORREGIDO Y AMPLIADO)
   // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
           const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
           const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
-          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
+          
+          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden. El costo laboral se mantuvo en ${laborCostPct.toFixed(1)}%.`;
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
-          // AHORA MANDAMOS LA INFORMACIÓN CORRECTA PARA NO DUPLICAR
           const payload = {
               startDate, endDate,
               story: storyForEmail,
-              ticketModa: data.biExtraStats ? data.biExtraStats.ticketModa : 0,
               ventasNetas, gastosFisicos, comisionesTerminal, utilidadNeta,
-              ventasEfectivo, ventasTarjeta, totalDescuentos,
+              ventasEfectivo, ventasTarjeta, totalDescuentos, laborCostPct,
               topProducts: topProductsData.slice(0, 10),
               topToppingsPaid: topToppingsPaidData.slice(0, 10),
-              audit: dailyAuditArray, // Ya va como Array, cero N/A
+              audit: dailyAuditArray, 
               nomina: nominaArray,
-              dayChartData,
-              hourChartData,
-              lowStockItems,
-              expenses: data.expenses || []
+              dayChartData, hourChartData, lowStockItems,
+              expenses: data.expenses || [],
+              pilares: data.biExtraStats ? data.biExtraStats.pilaresChart : [],
+              bcgMatrix: bcgMatrix
           };
 
           const res = await fetch('/api/send-report', {
@@ -803,7 +793,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="flex flex-wrap bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 w-full xl:w-auto gap-1">
             {allowedTabs.map((tab: any) => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>
-                  {tab === 'CLIENTES' ? '👥 Clientes VIP' : tab === 'BI' ? '📊 BI & ESTRATEGIA' : tab}
+                  {tab === 'CLIENTES' ? '👥 Clientes VIP' : tab === 'BI' ? '📊 BI & MENÚ' : tab}
               </button>
             ))}
           </div>
@@ -881,19 +871,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         
                         {data.biExtraStats && (
                             <>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-2xl lg:text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Costo Laboral</p><p className={`text-2xl lg:text-3xl font-black ${laborCostPct > 25 ? 'text-red-400' : 'text-green-400'}`}>{laborCostPct.toFixed(1)}%</p></div>
                                 <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
                                 <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
                                 <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Adopción VIP General">Adopción VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{(ventasNetas > 0 ? (ventasVIP/ventasNetas*100) : 0).toFixed(0)}%</p></div>
                             </>
                         )}
                     </div>
-
-                    {data.biExtraStats && data.biExtraStats.ticketModa > 0 && (
-                        <div className="bg-blue-500/10 border border-blue-500/30 p-6 rounded-2xl">
-                            <p className="text-blue-400 font-bold text-sm">💡 <b>CONSEJO ESTRATÉGICO:</b> Tu ticket más común (Moda) es de <b>${data.biExtraStats.ticketModa.toFixed(2)}</b>. Crea un nuevo combo de <b>$${(data.biExtraStats.ticketModa + 20).toFixed(2)}</b> para empujar a los clientes a gastar un poco más.</p>
-                        </div>
-                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
@@ -927,6 +911,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
+                    {/* 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG) */}
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
@@ -947,39 +932,21 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             ) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
                         </div>
 
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
-                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">💳 Pagos</h3>
-                            <div className="w-48 h-48 my-4">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie data={paymentData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
-                                            {paymentData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                        </Pie>
-                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `$${value.toFixed(2)}`} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="w-full flex justify-between text-sm font-bold">
-                                <span className="text-green-400">💵 ${(ventasEfectivo/ventasNetas*100 || 0).toFixed(0)}% Efct.</span>
-                                <span className="text-blue-400">💳 ${(ventasTarjeta/ventasNetas*100 || 0).toFixed(0)}% Tarj.</span>
-                            </div>
-                        </div>
-
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col items-center justify-center">
-                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">🔄 Retención VIP</h3>
-                            <div className="w-48 h-48 my-4">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie data={retentionData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
-                                            {retentionData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                        </Pie>
-                                        <Tooltip contentStyle={{backgroundColor: '#09090b', borderRadius: '1rem', border: '1px solid #27272a'}} formatter={(value: number) => `${value} tickets`} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="w-full flex justify-between text-sm font-bold">
-                                <span className="text-green-400">Regresan: {retencionStats.returning}</span>
-                                <span className="text-yellow-400">Nuevos: {retencionStats.new}</span>
+                        <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <h3 className="text-xl font-black mb-2 text-white w-full text-left">🧩 Matriz BCG (Ingeniería de Menú)</h3>
+                            <p className="text-xs text-zinc-500 font-bold mb-6">Clasificación automática basada en volumen de ventas e ingresos generados.</p>
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                                {bcgMatrix.map((item:any, idx:number) => (
+                                    <div key={idx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex justify-between items-center">
+                                        <span className="font-bold text-sm text-zinc-300">{item.name}</span>
+                                        <span className={`text-xs font-black uppercase px-2 py-1 rounded ${
+                                            item.category.includes('Estrella') ? 'bg-yellow-500/20 text-yellow-400' :
+                                            item.category.includes('Caballo') ? 'bg-blue-500/20 text-blue-400' :
+                                            item.category.includes('Rompecabezas') ? 'bg-purple-500/20 text-purple-400' :
+                                            'bg-zinc-800 text-zinc-500'
+                                        }`}>{item.category}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -988,7 +955,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-green-400">🌽 Top 10 Productos Base</h3>
                             <div className="space-y-4">
-                                {topProductsData.length > 0 ? topProductsData.map((p, i) => (
+                                {topProductsData.length > 0 ? topProductsData.slice(0,10).map((p, i) => (
                                     <div key={p.name} className="flex items-center gap-4">
                                         <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
                                         <div className="flex-1">
@@ -1021,58 +988,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </div>
                                             <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
                                                 <div className="bg-pink-400 h-full rounded-full" style={{width: `${(p.qty / maxPairQty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
-                                    <div key={t.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
-                                                <p className="text-xs font-black text-orange-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
-                                            </div>
-                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                                <div className="bg-orange-400 h-full rounded-full" style={{width: `${(t.qty / maxPaidQty) * 100}%`}}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
-                            </div>
-                        </div>
-
-                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
-                                    <div key={t.name} className="flex items-center gap-4">
-                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between mb-1">
-                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
-                                                <p className="text-xs font-black text-blue-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
-                                            </div>
-                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                                <div className="bg-blue-400 h-full rounded-full" style={{width: `${(t.qty / maxFreeQty) * 100}%`}}></div>
                                             </div>
                                         </div>
                                     </div>
@@ -1149,14 +1064,74 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
-                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                        <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🎁 Costo de Lealtad (VIP)</h3>
-                        <div className="flex items-center gap-6 h-full pb-4">
-                            <div className="bg-purple-500/10 border border-purple-500/30 p-6 rounded-2xl flex-1 text-center">
-                                <p className="text-xs text-purple-400 font-black uppercase tracking-widest mb-2">Descuentos Aplicados</p>
-                                <p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p>
-                                <p className="text-[10px] text-zinc-500 mt-2 font-bold leading-tight">Dinero restado de los ingresos brutos por canje de puntos.</p>
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                        <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                            <div>
+                                <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento</h3>
+                                <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo asistido: Base ($200/día) + Propinas Netas + Ajuste Manual.</p>
                             </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {nominaArray.length === 0 ? (
+                                <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
+                            ) : (
+                                nominaArray.map((nomina: any, idx: number) => (
+                                    <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
+                                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
+                                        
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div>
+                                                <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
+                                                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
+                                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">🎯 Ticket Promedio: $${nomina.ticketPromedioCajero.toFixed(2)}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
+                                                <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2 mb-6">
+                                            <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                                <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="$200 pesos por día abierto">Base Teórica</p>
+                                                <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
+                                            </div>
+                                            <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                                <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en efectivo y propinas de tarjeta con descuento de comisión">Propinas Neta</p>
+                                                <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasNetas.toFixed(2)}</p>
+                                            </div>
+                                            <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
+                                                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
+                                                <input 
+                                                    type="number" 
+                                                    placeholder="0"
+                                                    value={nominaAdjustments[nomina.cajero] || ''}
+                                                    onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
+                                                    className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-zinc-800 pt-4">
+                                            <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Reloj Checador de Caja (Entrada - Salida)</p>
+                                            <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                                {nomina.turnos.map((t: any, i: number) => (
+                                                    <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-zinc-400 w-16">{t.fecha}</span>
+                                                            <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1188,7 +1163,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   
                                   const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
-                                  const cajerosStr = dayData.cajero.join(', ') || 'N/A';
+                                  const cajerosStr = Array.isArray(dayData.cajero) ? dayData.cajero.join(', ') : (dayData.cajero || 'N/A');
 
                                   const [year, month, day] = dayData.date.split('-');
                                   const displayDate = `${day}/${month}/${year}`;
@@ -1219,77 +1194,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       </table>
                       {dailyAuditArray.length === 0 && (
                           <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
-                      )}
-                  </div>
-                </div>
-
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
-                  <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-                      <div>
-                        <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
-                        <p className="text-xs font-bold text-zinc-500 mt-1">Base ($200/día) + Propinas Netas (Ya se descontó el 4.06% de MP a las tarjetas) + Ajuste Manual.</p>
-                      </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {nominaArray.length === 0 ? (
-                          <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
-                      ) : (
-                          nominaArray.map((nomina: any, idx: number) => (
-                              <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
-                                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
-                                  
-                                  <div className="flex justify-between items-start mb-6">
-                                      <div>
-                                          <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
-                                          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
-                                          <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mt-1">Total Hrs Caja: {nomina.horasTotales.toFixed(1)} hrs</p>
-                                      </div>
-                                      <div className="text-right">
-                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
-                                          <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
-                                      </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-3 gap-2 mb-6">
-                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="$200 pesos por día abierto">Base Teórica</p>
-                                          <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
-                                      </div>
-                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en efectivo y propinas de tarjeta con descuento de comisión">Propinas Neta</p>
-                                          <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasNetas.toFixed(2)}</p>
-                                      </div>
-                                      <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
-                                          <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
-                                          <input 
-                                            type="number" 
-                                            placeholder="0"
-                                            value={nominaAdjustments[nomina.cajero] || ''}
-                                            onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
-                                            className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
-                                          />
-                                      </div>
-                                  </div>
-
-                                  <div className="border-t border-zinc-800 pt-4">
-                                      <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Reloj Checador de Caja (Entrada - Salida)</p>
-                                      <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
-                                          {nomina.turnos.map((t: any, i: number) => (
-                                              <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
-                                                  <div className="flex items-center gap-2">
-                                                      <span className="text-zinc-400 w-16">{t.fecha}</span>
-                                                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
-                                                  </div>
-                                                  <div className="text-right">
-                                                    <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
-                                                  </div>
-                                              </div>
-                                          ))}
-                                      </div>
-                                  </div>
-                              </div>
-                          ))
                       )}
                   </div>
                 </div>
@@ -1347,7 +1251,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: VENTAS (CON DETALLE DE MERCADOPAGO)             */}
+            {/* PESTAÑA: VENTAS                                          */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
@@ -1395,7 +1299,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </p>
                                             {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                             
-                                            {/* DESGLOSE MP EN EL TICKET */}
                                             {isTerminal && o.status !== 'REFUNDED' && (
                                                 <div className="mt-1 border-t border-zinc-800 pt-1">
                                                     <p className="text-[9px] text-orange-400 font-bold">- Comisión MP: $${comisionMP.toFixed(2)}</p>
