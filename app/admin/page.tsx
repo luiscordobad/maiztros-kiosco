@@ -98,7 +98,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const toggleStatus = async (id: string, type: 'product' | 'modifier' | 'coupon' | 'inventory_toggle', currentStatus: boolean) => {
     if (type === 'product') setData({ ...data, products: data.products.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
-    else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
+    else if (type === 'modifier') setData({ ...data, modifiers: data.modifiers.map((m:any) => m.type === category ? { ...m, isAvailable: !currentStatus } : m) });
     else if (type === 'inventory_toggle') setData({ ...data, inventoryItems: data.inventoryItems.map((i:any) => i.id === id ? { ...i, isAvailable: !currentStatus } : i) });
     else if (type === 'coupon') setData({ ...data, coupons: data.coupons.map((i:any) => i.id === id ? { ...i, isActive: !currentStatus } : i) });
     await fetch('/api/admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type, [type === 'coupon' ? 'isActive' : 'isAvailable']: !currentStatus, author: getAuthorName() }) });
@@ -410,27 +410,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
+    // Texto sin emojis y sin acentos para evitar errores de jsPDF
     const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta de la operacion se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
     doc.text(splitStory, 14, y);
     y += (splitStory.length * 5) + 8;
-
-    if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
-        doc.setFillColor(239, 246, 255); 
-        doc.setDrawColor(191, 219, 254); 
-        doc.roundedRect(14, y, 182, 22, 3, 3, 'FD');
-        doc.setTextColor(...primary);
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(`ESTRATEGIA RECOMENDADA:`, 19, y + 8);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(30, 58, 138); 
-        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 19, y + 14);
-        doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar margenes.`, 19, y + 19);
-        y += 30;
-    }
 
     (doc as any).autoTable({
         startY: y,
@@ -581,25 +566,26 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 NUEVO: ENVÍO DEL REPORTE AL CORREO IGUAL AL PDF
+  // 🌟 ENVÍO DEL REPORTE AL CORREO (ESPEJO DEL PDF - FONDO CLARO)
   // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
           const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
           const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
-          const story = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
+          
+          // Texto limpio para el correo (sin emojis rotos)
+          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
 
           const payload = {
-              startDate, endDate, story,
-              ticketModa: data.biExtraStats ? data.biExtraStats.ticketModa : 0,
+              startDate, endDate,
+              story: storyForEmail, // Mandamos la narrativa limpia
               ventasNetas, gastosTotales, utilidadNeta,
               ventasEfectivo, ventasTarjeta, totalDescuentos,
               topProducts: topProductsData.slice(0, 10),
               topToppingsPaid: topToppingsPaidData.slice(0, 10),
-              topToppingsFree: topToppingsFreeData.slice(0, 10),
-              audit: dailyAuditArray,
-              nomina: nominaArray
+              audit: dailyAuditArray, // Mandamos el arreglo completo de auditoría
+              nomina: nominaArray // Mandamos el arreglo completo de nómina
           };
 
           const res = await fetch('/api/send-report', {
@@ -608,7 +594,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               body: JSON.stringify(payload)
           });
           const json = await res.json();
-          if (json.success) alert("✅ Reporte Ejecutivo enviado a maiztrosqro@gmail.com");
+          if (json.success) alert("✅ Reporte Ejecutivo enviado a maiztrosqro@gmail.com (Formato Claro)");
           else alert("❌ Error al enviar: " + json.error);
       } catch (e) {
           alert("Error de conexión");
@@ -758,7 +744,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="animate-in fade-in duration-500">
             
             {/* ======================================================== */}
-            {/* 🌟 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
+            {/* 📊 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
             {/* ======================================================== */}
             {activeTab === 'BI' && role === 'ADMIN' && (
                 <div className="space-y-8">
@@ -783,12 +769,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </>
                         )}
                     </div>
-
-                    {data.biExtraStats && data.biExtraStats.ticketModa > 0 && (
-                        <div className="bg-green-500/10 border border-green-500/30 p-6 rounded-2xl">
-                            <p className="text-green-400 font-bold text-sm">💡 <b>CONSEJO ESTRATÉGICO:</b> Tu ticket más común (Moda) es de <b>${data.biExtraStats.ticketModa.toFixed(2)}</b>. Crea un nuevo combo de <b>$${(data.biExtraStats.ticketModa + 20).toFixed(2)}</b> para empujar a los clientes a gastar un poco más.</p>
-                        </div>
-                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
@@ -979,7 +959,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: FINANZAS                                        */}
+            {/* 💰 PESTAÑA: FINANZAS                                        */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
