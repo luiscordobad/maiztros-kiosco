@@ -265,55 +265,110 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX) - CORREGIDO
+  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA
   // ==========================================
   const auditMap: Record<string, any> = {};
 
   const getStrictDate = (isoString: string) => {
       try {
           const d = new Date(isoString);
-          d.setHours(d.getHours() - 6); // Ajuste manual a UTC-6 (Centro de México)
-          return d.toISOString().split('T')[0]; // Arroja "YYYY-MM-DD"
+          d.setHours(d.getHours() - 6); 
+          return d.toISOString().split('T')[0]; 
       } catch {
           return "Fecha Inválida";
       }
   };
 
-  // 1. Agrupar Ventas en Efectivo y Propinas
   data.orders?.forEach((o: any) => {
-      // ✅ CORRECCIÓN: Ahora suma TODO lo que no sea cancelado (PAID o COMPLETED) en Efectivo
       if (o.status !== 'REFUNDED' && o.paymentMethod === 'EFECTIVO_CAJA') {
           const dStr = getStrictDate(o.updatedAt || o.createdAt);
           if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
-          
           auditMap[dStr].ventas += o.totalAmount;
           auditMap[dStr].propinas += (o.tipAmount || 0);
       }
   });
 
-  // 2. Agrupar Turnos (Fondo y Reportado)
   data.shifts?.filter((s: any) => s.closedAt).forEach((s: any) => {
       const dStr = getStrictDate(s.openedAt);
       if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
-      
       auditMap[dStr].fondo += (s.startingCash || 0);
       auditMap[dStr].reportado += (s.reportedCash || 0);
       auditMap[dStr].cajero.add(s.openedBy);
   });
 
-  // 3. Agrupar Retiros de Caja (Jalados directo de los Gastos de Caja Chica)
   data.expenses?.forEach((e: any) => {
-      // ✅ CORRECCIÓN: Usamos la tabla global de gastos para que no se pierda ningún retiro
       if (e.category === 'CAJA_CHICA' || e.description.toLowerCase().includes('retiro')) {
           const dStr = getStrictDate(e.date || e.createdAt);
           if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
-          
           auditMap[dStr].retiros += e.amount;
       }
   });
 
-  // Convertimos el mapa en un arreglo y lo ordenamos del día más nuevo al más viejo
   const dailyAuditArray = Object.values(auditMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
+
+  // ==========================================
+  // 🌟 NUEVO: MOTOR AUTOMÁTICO DE NÓMINA
+  // ==========================================
+  const nominaMap: Record<string, any> = {};
+
+  data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
+      const cajero = shift.openedBy || 'Desconocido';
+      if (!nominaMap[cajero]) {
+          nominaMap[cajero] = {
+              cajero,
+              diasSet: new Set(),
+              sueldoBase: 0,
+              propinasTotales: 0,
+              totalPagar: 0,
+              turnos: []
+          };
+      }
+
+      // Procesar tiempos del turno localizados a México
+      const sStart = new Date(shift.openedAt);
+      const sEnd = new Date(shift.closedAt);
+      const dateStr = sStart.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+      const timeIn = sStart.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
+      const timeOut = sEnd.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
+
+      // Agregamos la fecha al Set. Si un cajero abre y cierra 2 veces el mismo día, solo cuenta 1 día de base.
+      nominaMap[cajero].diasSet.add(dateStr);
+
+      // Buscar propinas EXACTAS que cayeron en el tiempo de vida de este turno
+      let propinasTurnoEfectivo = 0;
+      let propinasTurnoTarjeta = 0;
+
+      data.orders?.forEach((o: any) => {
+          const oTime = new Date(o.updatedAt || o.createdAt).getTime();
+          if (o.status !== 'REFUNDED' && oTime >= sStart.getTime() && oTime <= sEnd.getTime()) {
+              const tip = o.tipAmount || 0;
+              if (o.paymentMethod === 'TERMINAL') propinasTurnoTarjeta += tip;
+              else propinasTurnoEfectivo += tip;
+          }
+      });
+
+      const propinasTotalTurno = propinasTurnoEfectivo + propinasTurnoTarjeta;
+      nominaMap[cajero].propinasTotales += propinasTotalTurno;
+
+      nominaMap[cajero].turnos.push({
+          fecha: dateStr,
+          entrada: timeIn,
+          salida: timeOut,
+          propinas: propinasTotalTurno,
+          propinasEfct: propinasTurnoEfectivo,
+          propinasTarj: propinasTurnoTarjeta
+      });
+  });
+
+  // Consolidar la matemática final de la Nómina
+  const nominaArray = Object.values(nominaMap).map(n => {
+      const diasTrabajados = n.diasSet.size;
+      n.diasTrabajados = diasTrabajados;
+      n.sueldoBase = diasTrabajados * 200; // 💵 $200 pesos por día
+      n.totalPagar = n.sueldoBase + n.propinasTotales;
+      return n;
+  }).sort((a, b) => b.totalPagar - a.totalPagar);
+
 
   // ==========================================
   // FUNCIONES DE EXPORTACIÓN Y REPORTE
@@ -701,7 +756,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: FINANZAS (100% DINERO Y LIQUIDEZ)                 */}
+            {/* PESTAÑA: FINANZAS                                        */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
@@ -758,6 +813,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                 </div>
 
+                {/* ========================================== */}
+                {/* AUDITORÍA DE CORTES DE CAJA                */}
+                {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
@@ -783,7 +841,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
                                   const difference = dayData.reportado - expectedCash;
                                   
-                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
+                                  const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
                                   const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
 
@@ -816,6 +874,67 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       </table>
                       {dailyAuditArray.length === 0 && (
                           <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
+                      )}
+                  </div>
+                </div>
+
+                {/* ========================================== */}
+                {/* 🌟 NÓMINA POR CAJERO (MÓDULO NUEVO) */}
+                {/* ========================================== */}
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                      <div>
+                        <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
+                        <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo automático de sueldo base ($200 x día) + propinas totales.</p>
+                      </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {nominaArray.length === 0 ? (
+                          <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
+                      ) : (
+                          nominaArray.map((nomina: any, idx: number) => (
+                              <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
+                                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
+                                  
+                                  <div className="flex justify-between items-start mb-6">
+                                      <div>
+                                          <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
+                                          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
+                                      </div>
+                                      <div className="text-right">
+                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
+                                          <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-4 mb-6">
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Sueldo Base</p>
+                                          <p className="text-lg font-black text-white">${nomina.sueldoBase.toFixed(2)}</p>
+                                      </div>
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Propinas</p>
+                                          <p className="text-lg font-black text-pink-400">${nomina.propinasTotales.toFixed(2)}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="border-t border-zinc-800 pt-4">
+                                      <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Desglose de Turnos (Entrada - Salida)</p>
+                                      <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                          {nomina.turnos.map((t: any, i: number) => (
+                                              <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
+                                                  <div className="flex items-center gap-2">
+                                                      <span className="text-zinc-400">{t.fecha}</span>
+                                                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">{t.entrada} - {t.salida}</span>
+                                                  </div>
+                                                  <span className="text-pink-400">+$ {t.propinas.toFixed(2)}</span>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          ))
                       )}
                   </div>
                 </div>
