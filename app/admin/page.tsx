@@ -264,6 +264,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
+  // ==========================================
+  // FUNCIONES DE EXPORTACIÓN Y REPORTE
+  // ==========================================
   const generatePDF = () => {
       const doc = new jsPDF();
       doc.setFontSize(20);
@@ -390,6 +393,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
+        {/* CONTROLES GLOBALES (FECHAS Y SYNC) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
                 <input 
@@ -705,7 +709,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
 
                 {/* ========================================== */}
-                {/* AUDITORÍA DE CORTES DE CAJA (RESTAURADO) */}
+                {/* AUDITORÍA DE CORTES DE CAJA (CORREGIDA) */}
                 {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
@@ -713,36 +717,44 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
                   </div>
                   <div className="overflow-x-auto">
-                      <table className="w-full text-left min-w-[600px]">
+                      <table className="w-full text-left min-w-[800px]">
                           <thead>
                               <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
                                   <th className="pb-4 pl-4">Turno</th>
-                                  <th className="pb-4">Responsable</th>
-                                  <th className="pb-4 text-green-400">Total Entradas</th>
-                                  <th className="pb-4 text-red-400">Total Retiros</th>
-                                  <th className="pb-4 text-yellow-400 font-black">Esperado</th>
+                                  <th className="pb-4">Cajero</th>
+                                  <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
+                                  <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
+                                  <th className="pb-4 text-pink-400" title="Propinas pagadas en efectivo">+ Propinas Efct.</th>
+                                  <th className="pb-4 text-red-400" title="Dinero retirado durante el turno">- Retiros</th>
+                                  <th className="pb-4 text-yellow-400 font-black">= Esperado</th>
                                   <th className="pb-4 text-white font-black">Reportado</th>
                                   <th className="pb-4 text-right pr-4">Diferencia</th>
                               </tr>
                           </thead>
                           <tbody className="text-sm font-bold">
                               {data.shifts?.filter((s:any) => s.closedAt).map((shift: any) => {
-                                  const cashSales = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID').reduce((sum:number, o:any) => sum + o.totalAmount, 0) || 0;
-                                  const totalEntradas = shift.startingCash + cashSales;
+                                  const cashOrders = shift.orders?.filter((o:any)=> o.paymentMethod === 'EFECTIVO_CAJA' && o.status === 'PAID') || [];
+                                  
+                                  const cashSales = cashOrders.reduce((sum:number, o:any) => sum + o.totalAmount, 0);
+                                  const cashTips = cashOrders.reduce((sum:number, o:any) => sum + (o.tipAmount || 0), 0);
+                                  const startingCash = shift.startingCash || 0;
                                   const withdrawals = shift.movements?.filter((m:any) => m.type === 'OUT').reduce((sum:number, m:any) => sum + m.amount, 0) || 0;
                                   
-                                  const expectedCash = totalEntradas - withdrawals;
+                                  // El cálculo perfecto
+                                  const expectedCash = startingCash + cashSales + cashTips - withdrawals;
                                   const reportedCash = shift.reportedCash || 0;
                                   const difference = reportedCash - expectedCash;
                                   
-                                  const isShortage = difference < 0;
-                                  const isExact = difference === 0;
+                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
+                                  const isExact = Math.abs(difference) <= 0.5;
 
                                   return (
                                       <tr key={shift.id} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
                                           <td className="py-4 pl-4 text-zinc-400">{new Date(shift.openedAt).toLocaleDateString()}</td>
                                           <td className="py-4 text-white truncate max-w-[100px]">{shift.openedBy}</td>
-                                          <td className="py-4 text-green-400">${totalEntradas.toFixed(2)}</td>
+                                          <td className="py-4 text-blue-400">${startingCash.toFixed(2)}</td>
+                                          <td className="py-4 text-green-400">+${cashSales.toFixed(2)}</td>
+                                          <td className="py-4 text-pink-400">+${cashTips.toFixed(2)}</td>
                                           <td className="py-4 text-red-400">-${withdrawals.toFixed(2)}</td>
                                           <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
                                           <td className="py-4 text-white font-black">${reportedCash.toFixed(2)}</td>
@@ -750,9 +762,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                               {isExact ? (
                                                   <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
                                               ) : isShortage ? (
-                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black">Falta ${Math.abs(difference).toFixed(2)}</span>
+                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black" title="Falta dinero en la caja">Falta ${Math.abs(difference).toFixed(2)}</span>
                                               ) : (
-                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black">Sobra ${difference.toFixed(2)}</span>
+                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black" title="Hay más dinero del registrado">Sobra ${difference.toFixed(2)}</span>
                                               )}
                                           </td>
                                       </tr>
