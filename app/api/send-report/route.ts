@@ -4,176 +4,181 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-// ========================================================
-// 1. PLANTILLA HTML PROFESIONAL PARA EL CORREO
-// ========================================================
-const generateEmailHTML = (data: any, title: string) => {
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
-      <h1 style="color: #facc15; text-align: center; font-size: 32px; margin-bottom: 0;">🌽 MAIZTROS</h1>
-      <h2 style="color: #a1a1aa; text-align: center; margin-top: 5px; font-weight: normal;">${title}</h2>
-      
-      <div style="background-color: #27272a; padding: 15px; border-radius: 8px; margin-top: 30px; text-align: center;">
-        <p style="margin: 0; color: #e4e4e7; font-size: 16px;"><strong>Periodo Evaluado:</strong><br/> ${data.startDate} al ${data.endDate}</p>
-      </div>
-
-      <h3 style="color: #4ade80; border-bottom: 1px solid #3f3f46; padding-bottom: 10px; margin-top: 30px;">💰 Resumen Financiero</h3>
-      <ul style="list-style: none; padding: 0; font-size: 16px;">
-          <li style="margin-bottom: 12px; display: flex; justify-content: space-between;">
-            <span style="color: #a1a1aa;">Ingresos Brutos:</span> 
-            <b style="color: #ffffff; float: right;">$${data.ventasNetas.toFixed(2)}</b>
-          </li>
-          <li style="margin-bottom: 12px; display: flex; justify-content: space-between;">
-            <span style="color: #a1a1aa;">Gastos (Egresos):</span> 
-            <b style="color: #f87171; float: right;">-$${data.gastosTotales.toFixed(2)}</b>
-          </li>
-          <li style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #3f3f46; font-size: 20px;">
-            <span style="color: #ffffff;">Utilidad Neta:</span> 
-            <b style="color: ${data.utilidadNeta >= 0 ? '#4ade80' : '#f87171'}; float: right;">$${data.utilidadNeta.toFixed(2)}</b>
-          </li>
-      </ul>
-
-      <h3 style="color: #60a5fa; border-bottom: 1px solid #3f3f46; padding-bottom: 10px; margin-top: 40px;">🏆 Top 5 Productos Vendidos</h3>
-      <ul style="padding-left: 0; list-style: none;">
-          ${data.topProducts.map((p:any, i:number) => `
-            <li style="margin-bottom: 10px; background-color: #27272a; padding: 10px 15px; border-radius: 8px;">
-              <strong style="color: #71717a; margin-right: 10px;">#${i+1}</strong> 
-              ${p.name} 
-              <strong style="color: #facc15; float: right;">${p.qty} unds.</strong>
-            </li>
-          `).join('')}
-      </ul>
-      
-      <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 50px;">
-        Este es un reporte automático generado por el Kiosco Inteligente de Maiztros BI.
-      </p>
-    </div>
-  `;
-};
-
-// ========================================================
-// 2. POST: ENVÍO MANUAL DESDE EL PANEL DE ADMIN
-// ========================================================
-export async function POST(req: Request) {
-  try {
-    const data = await req.json();
-    
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: 'maiztrosqro@gmail.com',
-        pass: 'whyn dmeg vtnb ndll' // <-- REEMPLAZA ESTO
-      }
-    });
-
-    const mailOptions = {
-      from: '"Maiztros Admin" <maiztrosqro@gmail.com>',
-      to: 'maiztrosqro@gmail.com',
-      subject: `🌽 Reporte de Inteligencia Maiztros`,
-      html: generateEmailHTML(data, 'Reporte Solicitado Manualmente')
-    };
-
-    await transporter.sendMail(mailOptions);
-    return NextResponse.json({ success: true });
-
-  } catch (error: any) {
-    console.error("Error en envío manual:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+// Configuración de Nodemailer
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'maiztrosqro@gmail.com',
+    pass: 'whyn dmeg vtnb ndll' // <-- RECUERDA PONER TU CLAVE DE 16 LETRAS AQUÍ
   }
-}
+});
 
-// ========================================================
-// 3. GET: ENVÍO AUTOMÁTICO POR VERCEL (CRON JOBS)
-// ========================================================
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const type = searchParams.get('type') || 'DAILY'; // 'DAILY' o 'WEEKLY'
+    const type = searchParams.get('type') || 'daily'; // 'daily' o 'weekly'
 
-    // A) Configurar Fechas
-    const end = new Date();
-    end.setDate(end.getDate() - 1); // Ayer
-    end.setHours(23, 59, 59, 999);
+    // =========================================================================
+    // LÓGICA 1: REPORTE DIARIO (Se dispara silenciosamente al cerrar la caja)
+    // =========================================================================
+    if (type === 'daily') {
+        // 1. Buscar el turno MÁS RECIENTE que acaba de ser cerrado
+        const lastShift = await prisma.shift.findFirst({
+            where: { closedAt: { not: null } },
+            orderBy: { closedAt: 'desc' },
+            include: { movements: true }
+        });
 
-    const start = new Date(end);
-    if (type === 'WEEKLY') {
-      start.setDate(start.getDate() - 6); // Retrocede 6 días más (7 en total)
+        if (!lastShift) return NextResponse.json({ error: "No hay turnos cerrados" }, { status: 400 });
+
+        // Extraer horas exactas en horario de México
+        const openedAt = new Date(lastShift.openedAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+        const closedAt = new Date(lastShift.closedAt!).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+
+        // 2. Buscar todas las órdenes de ese turno exacto
+        const orders = await prisma.order.findMany({
+            where: {
+                createdAt: { gte: lastShift.openedAt, lte: lastShift.closedAt! },
+                status: { not: 'REFUNDED' }
+            }
+        });
+
+        const ventasEfectivo = orders.filter(o => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc, o) => acc + o.totalAmount, 0);
+        const ventasTarjeta = orders.filter(o => o.paymentMethod === 'TERMINAL').reduce((acc, o) => acc + o.totalAmount, 0);
+        const propinas = orders.reduce((acc, o) => acc + (o.tipAmount || 0), 0);
+        const totalVentas = ventasEfectivo + ventasTarjeta;
+        
+        const retiros = lastShift.movements.filter(m => m.type === 'OUT').reduce((acc, m) => acc + m.amount, 0);
+        const esperadoEnCaja = (lastShift.startingCash || 0) + ventasEfectivo + propinas - retiros;
+        const diferencia = (lastShift.reportedCash || 0) - esperadoEnCaja;
+
+        // 3. Top Productos vendidos en ese turno
+        const productsMap: any = {};
+        orders.forEach(o => {
+            if(o.items) {
+                const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
+                items.forEach((i:any) => {
+                    const name = i.product?.name || 'Varios';
+                    productsMap[name] = (productsMap[name] || 0) + (i.quantity || 1);
+                });
+            }
+        });
+        const topProducts = Object.keys(productsMap).map(k => ({ name: k, qty: productsMap[k] })).sort((a,b)=>b.qty - a.qty).slice(0,5);
+
+        // 4. Armar el correo
+        const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
+            <h1 style="color: #facc15; text-align: center; margin-bottom: 0;">🌽 CORTE DE CAJA DIARIO</h1>
+            <p style="text-align: center; color: #a1a1aa; margin-top: 5px;">Reporte Automático de Operación</p>
+
+            <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 30px; border-left: 5px solid #3b82f6;">
+                <h3 style="margin: 0 0 15px 0; color: #60a5fa;">⏱️ Reloj Checador y Asistencia</h3>
+                <p style="margin: 5px 0;"><strong>Cajero Responsable:</strong> ${lastShift.openedBy}</p>
+                <p style="margin: 5px 0;"><strong>Hora de Entrada (Apertura):</strong> ${openedAt}</p>
+                <p style="margin: 5px 0; color: #f87171;"><strong>Hora de Salida (Cierre):</strong> ${closedAt}</p>
+            </div>
+
+            <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 20px; border-left: 5px solid #4ade80;">
+                <h3 style="margin: 0 0 15px 0; color: #4ade80;">💵 Resumen Financiero</h3>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Fondo Inicial:</span> <b>$${lastShift.startingCash?.toFixed(2)}</b></p>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Ventas Efectivo:</span> <b>+$${ventasEfectivo.toFixed(2)}</b></p>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Ventas Tarjeta:</span> <b>+$${ventasTarjeta.toFixed(2)}</b></p>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Propinas Totales:</span> <b style="color:#f472b6;">+$${propinas.toFixed(2)}</b></p>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Retiros/Gastos:</span> <b style="color:#f87171;">-$${retiros.toFixed(2)}</b></p>
+                <hr style="border: 1px dashed #3f3f46; margin: 15px 0;" />
+                <h2 style="margin: 0; display: flex; justify-content: space-between;"><span>Total Ventas:</span> <b>$${totalVentas.toFixed(2)}</b></h2>
+            </div>
+
+            <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 20px; border-left: 5px solid #facc15;">
+                <h3 style="margin: 0 0 15px 0; color: #facc15;">⚖️ Auditoría Física de Billetes</h3>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Sistema Espera:</span> <b>$${esperadoEnCaja.toFixed(2)}</b></p>
+                <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Cajero Entregó:</span> <b>$${(lastShift.reportedCash || 0).toFixed(2)}</b></p>
+                <h3 style="margin: 15px 0 0 0; text-align: right; color: ${diferencia < -0.5 ? '#f87171' : '#4ade80'};">
+                    Diferencia: ${diferencia < -0.5 ? `FALTA $${Math.abs(diferencia).toFixed(2)}` : `SOBRA $${diferencia.toFixed(2)}`}
+                </h3>
+            </div>
+
+            <h3 style="color: #a855f7; margin-top: 30px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🏆 Top 5 Productos del Turno</h3>
+            <ul style="list-style: none; padding: 0;">
+                ${topProducts.map(p => `<li style="background: #27272a; margin-bottom: 5px; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between;"><span>${p.name}</span> <b>${p.qty} unds</b></li>`).join('')}
+            </ul>
+            <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 40px;">Enviado por Maiztros Automations</p>
+        </div>`;
+
+        await transporter.sendMail({
+            from: '"Maiztros Bot" <maiztrosqro@gmail.com>',
+            to: 'maiztrosqro@gmail.com',
+            subject: `🌽 Corte de Caja: ${lastShift.openedBy} | Diferencia: $${diferencia.toFixed(2)}`,
+            html
+        });
+
+        return NextResponse.json({ success: true, message: "Reporte diario enviado" });
     }
-    start.setHours(0, 0, 0, 0);
 
-    const startDateStr = start.toISOString().split('T')[0];
-    const endDateStr = end.toISOString().split('T')[0];
+    // =========================================================================
+    // LÓGICA 2: REPORTE SEMANAL (Se dispara los Lunes vía Vercel Cron)
+    // =========================================================================
+    if (type === 'weekly') {
+        const today = new Date();
+        
+        // Fechas Semana Pasada (Lunes a Domingo)
+        const endLastWeek = new Date(today);
+        endLastWeek.setDate(today.getDate() - today.getDay()); // Domingo pasado
+        endLastWeek.setHours(23, 59, 59, 999);
+        const startLastWeek = new Date(endLastWeek);
+        startLastWeek.setDate(endLastWeek.getDate() - 6); // Lunes pasado
+        startLastWeek.setHours(0, 0, 0, 0);
 
-    // B) Consultar Base de Datos (Prisma)
-    const [orders, expenses] = await Promise.all([
-      prisma.order.findMany({
-        where: {
-          createdAt: { gte: start, lte: end },
-          status: { not: 'REFUNDED' } // Ignorar los cancelados
-        }
-      }),
-      prisma.expense.findMany({
-        where: {
-          date: { gte: start, lte: end }
-        }
-      })
-    ]);
+        // Fechas Semana Trasanterior (Para comparar)
+        const endPrevWeek = new Date(startLastWeek);
+        endPrevWeek.setDate(startLastWeek.getDate() - 1);
+        endPrevWeek.setHours(23, 59, 59, 999);
+        const startPrevWeek = new Date(endPrevWeek);
+        startPrevWeek.setDate(endPrevWeek.getDate() - 6);
+        startPrevWeek.setHours(0, 0, 0, 0);
 
-    // C) Procesar Matemáticas
-    const ventasNetas = orders.reduce((acc, o) => acc + o.totalAmount, 0);
-    const gastosTotales = expenses.reduce((acc, e) => acc + e.amount, 0);
-    const utilidadNeta = ventasNetas - gastosTotales;
+        const [lastWeekOrders, prevWeekOrders] = await Promise.all([
+            prisma.order.findMany({ where: { createdAt: { gte: startLastWeek, lte: endLastWeek }, status: { not: 'REFUNDED' } } }),
+            prisma.order.findMany({ where: { createdAt: { gte: startPrevWeek, lte: endPrevWeek }, status: { not: 'REFUNDED' } } })
+        ]);
 
-    // D) Procesar Ranking de Productos
-    const productVolume: any = {};
-    orders.forEach((o: any) => {
-      if(o.items) {
-          const itemsArr = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
-          itemsArr.forEach((item: any) => {
-              const name = item.product?.name || 'Desconocido';
-              productVolume[name] = (productVolume[name] || 0) + (item.quantity || 1);
-          });
-      }
-    });
-    
-    const topProducts = Object.keys(productVolume)
-      .map(name => ({ name, qty: productVolume[name] }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5); // Solo los mejores 5
+        const salesLastWeek = lastWeekOrders.reduce((acc, o) => acc + o.totalAmount, 0);
+        const salesPrevWeek = prevWeekOrders.reduce((acc, o) => acc + o.totalAmount, 0);
+        
+        let growth = 0;
+        if (salesPrevWeek > 0) growth = ((salesLastWeek - salesPrevWeek) / salesPrevWeek) * 100;
 
-    // E) Armar paquete de datos
-    const reportData = {
-      startDate: startDateStr,
-      endDate: endDateStr,
-      ventasNetas,
-      gastosTotales,
-      utilidadNeta,
-      topProducts
-    };
+        const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
+            <h1 style="color: #a855f7; text-align: center; margin-bottom: 0;">📊 REPORTE EJECUTIVO SEMANAL</h1>
+            <p style="text-align: center; color: #a1a1aa; margin-top: 5px;">Del ${startLastWeek.toLocaleDateString('es-MX')} al ${endLastWeek.toLocaleDateString('es-MX')}</p>
 
-    const title = type === 'WEEKLY' ? 'Cierre de Operaciones Semanal' : 'Cierre de Operaciones Diario';
+            <div style="background-color: #27272a; padding: 30px; border-radius: 12px; margin-top: 30px; text-align: center; border: 2px solid ${growth >= 0 ? '#4ade80' : '#f87171'};">
+                <h3 style="margin: 0 0 10px 0; color: #e4e4e7; font-weight: normal;">Ventas de la Semana</h3>
+                <h1 style="margin: 0; font-size: 48px; color: #ffffff;">$${salesLastWeek.toFixed(2)}</h1>
+                <p style="margin: 15px 0 0 0; font-size: 18px; font-weight: bold; color: ${growth >= 0 ? '#4ade80' : '#f87171'};">
+                    ${growth >= 0 ? '📈 Creciste un' : '📉 Caíste un'} ${Math.abs(growth).toFixed(1)}% vs la semana anterior.
+                </p>
+                <p style="margin: 5px 0 0 0; font-size: 12px; color: #a1a1aa;">(Semana anterior: $${salesPrevWeek.toFixed(2)})</p>
+            </div>
+            
+            <p style="text-align: center; margin-top: 40px; font-size: 14px;">Entra a tu Panel de Control para ver el análisis profundo de inventarios y retención VIP.</p>
+        </div>`;
 
-    // F) Enviar Correo
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: 'maiztrosqro@gmail.com',
-        pass: 'whyn dmeg vtnb ndll' // <-- REEMPLAZA ESTO TAMBIÉN
-      }
-    });
+        await transporter.sendMail({
+            from: '"Maiztros BI" <maiztrosqro@gmail.com>',
+            to: 'maiztrosqro@gmail.com',
+            subject: `📊 Reporte Semanal Maiztros | ${growth >= 0 ? 'Crecimiento' : 'Alerta'}`,
+            html
+        });
 
-    const mailOptions = {
-      from: '"Maiztros Admin" <maiztrosqro@gmail.com>',
-      to: 'maiztrosqro@gmail.com',
-      subject: `🌽 ${title} | ${startDateStr}`,
-      html: generateEmailHTML(reportData, title)
-    };
+        return NextResponse.json({ success: true, message: "Reporte semanal enviado" });
+    }
 
-    await transporter.sendMail(mailOptions);
-    return NextResponse.json({ success: true, message: `Reporte automático ${type} enviado exitosamente.` });
+    return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 });
 
   } catch (error: any) {
-    console.error("Error en Cron Job:", error);
+    console.error("Error en cron:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
