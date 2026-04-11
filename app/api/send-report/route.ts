@@ -13,36 +13,161 @@ const transporter = nodemailer.createTransport({
 });
 
 // =========================================================================
-// POST: SE ACTIVA CUANDO TÚ LE PICAS AL BOTÓN "ENVIAR A MI CORREO" EN ADMIN
+// POST: REPORTE EJECUTIVO (IGUAL AL PDF) DESDE EL BOTÓN DEL ADMIN
 // =========================================================================
 export async function POST(req: Request) {
   try {
-    const { startDate, endDate, ventasNetas, gastosTotales, utilidadNeta, topProducts } = await req.json();
+    const { 
+        startDate, endDate, story, ticketModa,
+        ventasNetas, gastosTotales, utilidadNeta, 
+        ventasEfectivo, ventasTarjeta, totalDescuentos,
+        topProducts, topToppingsPaid, topToppingsFree, 
+        audit, nomina 
+    } = await req.json();
+
+    // Función auxiliar para dibujar barras en HTML
+    const renderBar = (qty: number, max: number, color: string) => {
+        const pct = max > 0 ? (qty / max) * 100 : 0;
+        return `<div style="background-color: #3f3f46; width: 100%; height: 6px; border-radius: 10px; margin-top: 5px; overflow: hidden;">
+                  <div style="background-color: ${color}; width: ${pct}%; height: 100%; border-radius: 10px;"></div>
+                </div>`;
+    };
+
+    const maxProd = topProducts.length > 0 ? Math.max(...topProducts.map((p:any) => p.qty)) : 1;
+    const maxPaid = topToppingsPaid.length > 0 ? Math.max(...topToppingsPaid.map((p:any) => p.qty)) : 1;
 
     const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
-        <h1 style="color: #facc15; text-align: center; margin-bottom: 0;">🌽 REPORTE SOLICITADO</h1>
-        <p style="text-align: center; color: #a1a1aa; margin-top: 5px;">Del ${startDate} al ${endDate}</p>
+    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
+        
+        <h1 style="color: #3b82f6; text-align: center; margin-bottom: 0; font-size: 28px;">MAIZTROS BI - REPORTE EJECUTIVO</h1>
+        <p style="text-align: center; color: #a1a1aa; margin-top: 5px; font-size: 14px;">Periodo Analizado: ${startDate} al ${endDate}</p>
 
-        <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 30px;">
-            <h3 style="margin: 0 0 15px 0; color: #4ade80;">💵 Resumen Financiero</h3>
-            <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Ventas Brutas:</span> <b>$${ventasNetas.toFixed(2)}</b></p>
-            <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Gastos:</span> <b style="color:#f87171;">-$${gastosTotales.toFixed(2)}</b></p>
-            <hr style="border: 1px dashed #3f3f46; margin: 15px 0;" />
-            <h2 style="margin: 0; display: flex; justify-content: space-between; color: ${utilidadNeta >= 0 ? '#4ade80' : '#f87171'};"><span>Utilidad Neta:</span> <b>$${utilidadNeta.toFixed(2)}</b></h2>
+        <div style="margin-top: 30px;">
+            <h3 style="color: #ffffff; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">Resumen de Operación y Ventas</h3>
+            <p style="color: #d4d4d8; font-size: 14px; line-height: 1.6;">${story}</p>
         </div>
 
-        <h3 style="color: #a855f7; margin-top: 30px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🏆 Top Productos</h3>
-        <ul style="list-style: none; padding: 0;">
-            ${topProducts.map((p:any) => `<li style="background: #27272a; margin-bottom: 5px; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between;"><span>${p.name}</span> <b>${p.qty} unds</b></li>`).join('')}
-        </ul>
-        <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 40px;">Solicitado desde Centro de Control BI</p>
+        ${ticketModa > 0 ? `
+        <div style="background-color: #eff6ff; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #bfdbfe;">
+            <h4 style="margin: 0 0 10px 0; color: #2563eb; font-size: 14px;">💡 ESTRATEGIA RECOMENDADA:</h4>
+            <p style="margin: 0; color: #1e3a8a; font-size: 13px; line-height: 1.5;">
+                Tu ticket de compra más frecuente (Moda) es de <b>$${ticketModa.toFixed(2)}</b>. Crea un combo o paquete especial que cueste <b>$${(ticketModa + 20).toFixed(2)}</b> para empujar este promedio hacia arriba y aumentar tus márgenes de ganancia.
+            </p>
+        </div>
+        ` : ''}
+
+        <div style="display: flex; gap: 10px; margin-top: 30px; text-align: center;">
+            <div style="background-color: #27272a; padding: 15px; border-radius: 12px; flex: 1;">
+                <p style="margin: 0; color: #a1a1aa; font-size: 11px; text-transform: uppercase;">Ingresos Brutos</p>
+                <p style="margin: 5px 0 0 0; color: #ffffff; font-size: 20px; font-weight: bold;">$${ventasNetas.toFixed(2)}</p>
+            </div>
+            <div style="background-color: #27272a; padding: 15px; border-radius: 12px; flex: 1;">
+                <p style="margin: 0; color: #a1a1aa; font-size: 11px; text-transform: uppercase;">Gastos Operativos</p>
+                <p style="margin: 5px 0 0 0; color: #f87171; font-size: 20px; font-weight: bold;">-$${gastosTotales.toFixed(2)}</p>
+            </div>
+            <div style="background-color: #27272a; padding: 15px; border-radius: 12px; flex: 1; border: 1px solid ${utilidadNeta >= 0 ? '#22c55e' : '#ef4444'}">
+                <p style="margin: 0; color: ${utilidadNeta >= 0 ? '#4ade80' : '#f87171'}; font-size: 11px; text-transform: uppercase;">Utilidad Neta</p>
+                <p style="margin: 5px 0 0 0; color: ${utilidadNeta >= 0 ? '#4ade80' : '#f87171'}; font-size: 20px; font-weight: bold;">$${utilidadNeta.toFixed(2)}</p>
+            </div>
+        </div>
+
+        <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 15px;">
+            <h4 style="margin: 0 0 15px 0; color: #ffffff;">Flujo de Efectivo (Liquidez)</h4>
+            <p style="margin: 5px 0; display: flex; justify-content: space-between; font-size: 14px;">
+                <span style="color:#a1a1aa;">💵 Efectivo (Caja):</span> <b style="color:#4ade80;">$${ventasEfectivo.toFixed(2)}</b>
+            </p>
+            <p style="margin: 5px 0; display: flex; justify-content: space-between; font-size: 14px;">
+                <span style="color:#a1a1aa;">💳 Tarjeta (Banco):</span> <b style="color:#60a5fa;">$${ventasTarjeta.toFixed(2)}</b>
+            </p>
+            <p style="margin: 5px 0; display: flex; justify-content: space-between; font-size: 14px;">
+                <span style="color:#a1a1aa;">🎁 Costo Lealtad (VIP):</span> <b style="color:#c084fc;">-$${totalDescuentos.toFixed(2)}</b>
+            </p>
+        </div>
+
+        <h3 style="color: #4ade80; margin-top: 40px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🌽 Top 10 Productos Base</h3>
+        <div style="margin-top: 15px;">
+            ${topProducts.map((p:any) => `
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px;">
+                        <span style="color:#e4e4e7;">${p.name}</span>
+                        <span style="color:#4ade80; font-weight:bold;">${p.qty} unds</span>
+                    </div>
+                    ${renderBar(p.qty, maxProd, '#4ade80')}
+                </div>
+            `).join('')}
+        </div>
+
+        <h3 style="color: #fb923c; margin-top: 40px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🧀 Top Toppings (Con Costo)</h3>
+        <div style="margin-top: 15px;">
+            ${topToppingsPaid.map((p:any) => `
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px;">
+                        <span style="color:#e4e4e7;">${p.name}</span>
+                        <span style="color:#fb923c; font-weight:bold;">${p.qty} usos</span>
+                    </div>
+                    ${renderBar(p.qty, maxPaid, '#fb923c')}
+                </div>
+            `).join('')}
+        </div>
+
+        <h3 style="color: #ffffff; margin-top: 40px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">💰 Auditoría de Cortes de Caja</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 1px solid #52525b; color: #a1a1aa;">
+                    <th style="padding: 8px 4px;">Día</th>
+                    <th style="padding: 8px 4px;">Esperado</th>
+                    <th style="padding: 8px 4px;">Reportado</th>
+                    <th style="padding: 8px 4px; text-align: right;">Diferencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${audit.map((a:any) => {
+                    const expected = a.fondo + a.ventas + a.propinas - a.retiros;
+                    const diff = a.reportado - expected;
+                    const diffColor = Math.abs(diff) <= 0.5 ? '#4ade80' : (diff < 0 ? '#f87171' : '#facc15');
+                    const diffText = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
+                    const [year, month, day] = a.date.split('-');
+                    return `
+                    <tr style="border-bottom: 1px solid #3f3f46;">
+                        <td style="padding: 8px 4px; color:#d4d4d8;">${day}/${month}</td>
+                        <td style="padding: 8px 4px; color:#e4e4e7;">$${expected.toFixed(2)}</td>
+                        <td style="padding: 8px 4px; color:#ffffff; font-weight:bold;">$${a.reportado.toFixed(2)}</td>
+                        <td style="padding: 8px 4px; text-align: right; color:${diffColor}; font-weight:bold;">${diffText}</td>
+                    </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+
+        <h3 style="color: #ffffff; margin-top: 40px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🧑‍🍳 Nómina a Pagar</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 1px solid #52525b; color: #a1a1aa;">
+                    <th style="padding: 8px 4px;">Cajero</th>
+                    <th style="padding: 8px 4px;">Días</th>
+                    <th style="padding: 8px 4px;">Propinas</th>
+                    <th style="padding: 8px 4px; text-align: right;">Total Pagar</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${nomina.map((n:any) => `
+                    <tr style="border-bottom: 1px solid #3f3f46;">
+                        <td style="padding: 8px 4px; color:#e4e4e7; font-weight:bold;">${n.cajero}</td>
+                        <td style="padding: 8px 4px; color:#d4d4d8;">${n.diasTrabajados}</td>
+                        <td style="padding: 8px 4px; color:#f472b6;">+$${n.propinasTotales.toFixed(2)}</td>
+                        <td style="padding: 8px 4px; text-align: right; color:#60a5fa; font-weight:bold; font-size: 14px;">$${n.totalPagar.toFixed(2)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+
+        <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 50px;">Generado por Maiztros Automations</p>
     </div>`;
 
     await transporter.sendMail({
         from: '"Maiztros BI" <maiztrosqro@gmail.com>',
         to: 'maiztrosqro@gmail.com',
-        subject: `📊 Reporte Solicitado Maiztros | ${startDate}`,
+        subject: `📊 Reporte Ejecutivo Maiztros | ${startDate} al ${endDate}`,
         html
     });
 
@@ -53,7 +178,7 @@ export async function POST(req: Request) {
 }
 
 // =========================================================================
-// GET: SE ACTIVA EN LOS CRON JOBS Y AL CERRAR LA CAJA SILENCIOSAMENTE
+// GET: SE MANTIENE INTACTO (Para Cron Jobs y Cierre de Caja Automático)
 // =========================================================================
 export async function GET(req: Request) {
   try {
