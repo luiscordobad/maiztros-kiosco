@@ -281,24 +281,25 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
   const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
+  
+  // Variables para las gráficas del PDF
+  const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
+  const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
 
   const pilarColors: Record<string, string> = {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA
+  // AUDITORÍA DE CAJA Y NÓMINA (PARA EL PDF)
   // ==========================================
   const auditMap: Record<string, any> = {};
-
   const getStrictDate = (isoString: string) => {
       try {
           const d = new Date(isoString);
           d.setHours(d.getHours() - 6); 
           return d.toISOString().split('T')[0]; 
-      } catch {
-          return "Fecha Inválida";
-      }
+      } catch { return "Fecha Inválida"; }
   };
 
   data.orders?.forEach((o: any) => {
@@ -328,26 +329,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const dailyAuditArray = Object.values(auditMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 
-  // ==========================================
-  // MOTOR AUTOMÁTICO DE NÓMINA
-  // ==========================================
   const nominaMap: Record<string, any> = {};
-
   data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
       const cajero = shift.openedBy || 'Desconocido';
       if (!nominaMap[cajero]) {
-          nominaMap[cajero] = {
-              cajero,
-              diasSet: new Set(),
-              sueldoBase: 0,
-              horasTotales: 0,
-              propinasTotales: 0,
-              ajuste: nominaAdjustments[cajero] || 0,
-              totalPagar: 0,
-              turnos: []
-          };
+          nominaMap[cajero] = { cajero, diasSet: new Set(), sueldoBase: 0, horasTotales: 0, propinasTotales: 0, ajuste: nominaAdjustments[cajero] || 0, totalPagar: 0, turnos: [] };
       }
-
       const sStart = new Date(shift.openedAt);
       const sEnd = new Date(shift.closedAt);
       const dateStr = sStart.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
@@ -357,7 +344,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       const diffMs = sEnd.getTime() - sStart.getTime();
       const diffHrs = diffMs / (1000 * 60 * 60);
       nominaMap[cajero].horasTotales += diffHrs;
-
       nominaMap[cajero].diasSet.add(dateStr);
 
       let propinasTurnoEfectivo = 0;
@@ -371,17 +357,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               else propinasTurnoEfectivo += tip;
           }
       });
-
       const propinasTotalTurno = propinasTurnoEfectivo + propinasTurnoTarjeta;
       nominaMap[cajero].propinasTotales += propinasTotalTurno;
-
-      nominaMap[cajero].turnos.push({
-          fecha: dateStr,
-          entrada: timeIn,
-          salida: timeOut,
-          horas: diffHrs,
-          propinas: propinasTotalTurno
-      });
+      nominaMap[cajero].turnos.push({ fecha: dateStr, entrada: timeIn, salida: timeOut, horas: diffHrs, propinas: propinasTotalTurno });
   });
 
   const nominaArray = Object.values(nominaMap).map(n => {
@@ -399,7 +377,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 EL NUEVO PDF EJECUTIVO (STORYTELLING)
+  // 🌟 EL NUEVO PDF EJECUTIVO (BLANCO, LIMPIO, STORYTELLING)
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -429,7 +407,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.setFontSize(14);
     doc.setTextColor(...textDark);
     doc.setFont("helvetica", "bold");
-    doc.text("Resumen de Operacion", 14, y);
+    doc.text("Resumen de Operacion y Ventas", 14, y);
     y += 6;
 
     doc.setFontSize(10);
@@ -440,30 +418,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
     // Texto sin acentos para evitar cualquier error de encoding en jsPDF
-    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta de la operacion se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
+    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen libre de ganancia operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
     doc.text(splitStory, 14, y);
     y += (splitStory.length * 5) + 8;
 
-    // 3. ESTRATEGIA (Caja de color azul claro)
-    if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
-        doc.setFillColor(239, 246, 255); // bg-blue-50
-        doc.setDrawColor(191, 219, 254); // border-blue-200
-        doc.roundedRect(14, y, 182, 22, 3, 3, 'FD');
-        doc.setTextColor(...primary);
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(`ESTRATEGIA RECOMENDADA:`, 19, y + 8);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(30, 58, 138); // text-blue-900
-        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 19, y + 14);
-        doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar margenes.`, 19, y + 19);
-        y += 30;
-    }
-
-    // 4. FINANZAS (Tabla KPI)
+    // 3. FINANZAS (Tabla KPI)
     (doc as any).autoTable({
         startY: y,
         head: [['Ingresos Brutos', 'Gastos Operativos', 'Utilidad Neta P&L']],
@@ -480,90 +441,172 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     });
     y = (doc as any).lastAutoTable.finalY + 10;
 
-    // 5. LIQUIDEZ Y PAGOS
+    // 4. LIQUIDEZ Y PAGOS
     (doc as any).autoTable({
         startY: y,
-        head: [['Efectivo (Caja Física)', 'Tarjeta (Terminal)', 'Descuentos (Costo VIP)']],
+        head: [['Efectivo (Caja)', 'Tarjeta (Banco)', 'Costo Lealtad (VIP)']],
         body: [[`$${ventasEfectivo.toFixed(2)}`, `$${ventasTarjeta.toFixed(2)}`, `-$${totalDescuentos.toFixed(2)}`]],
         theme: 'plain',
         headStyles: { textColor: textGray, fontStyle: 'bold', halign: 'center' },
         bodyStyles: { halign: 'center', fontSize: 12, textColor: textDark }
     });
 
-    // --- NUEVA PAGINA PARA BUSINESS INTELLIGENCE ---
+    // --- NUEVA PAGINA 2: TENDENCIAS ---
     doc.addPage();
     y = 20;
 
-    doc.setFontSize(16);
+    doc.setFontSize(18);
     doc.setTextColor(...textDark);
     doc.setFont("helvetica", "bold");
-    doc.text("Business Intelligence: Rendimiento de Productos", 14, y);
+    doc.text("Analisis de Tendencias", 14, y);
     y += 10;
 
-    // 6. TOP PRODUCTOS (CON BARRAS GRÁFICAS)
+    // 5. VENTAS POR DÍA
     doc.setFontSize(12);
+    doc.text("Ventas por Dia de la Semana", 14, y);
+    y += 5;
+
+    const daysBody = dayChartData.map(d => [d.Dia, `$${d.Ventas.toFixed(2)}`, '']);
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Dia', 'Ventas', 'Proporcion Visual']],
+        body: daysBody,
+        theme: 'striped',
+        headStyles: { fillColor: primary, textColor: 255 },
+        columnStyles: { 0: { cellWidth: 30, fontStyle: 'bold' }, 1: { cellWidth: 40 }, 2: { cellWidth: 100 } },
+        didDrawCell: function(cellData: any) {
+            if (cellData.column.index === 2 && cellData.section === 'body') {
+                const ventas = dayChartData[cellData.row.index].Ventas;
+                if (ventas > 0) {
+                    const percent = ventas / maxDayVentas;
+                    const barWidth = 90 * percent;
+                    doc.setFillColor(168, 85, 247); // purple-500
+                    doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
+                }
+            }
+        }
+    });
+    y = (doc as any).lastAutoTable.finalY + 15;
+
+    // 6. TRÁFICO POR HORAS
+    doc.setFontSize(12);
+    doc.setTextColor(...textDark);
+    doc.text("Trafico de Ventas por Hora", 14, y);
+    y += 5;
+
+    const hoursBody = hourChartData.map(h => [h.Hora, `$${h.Ventas.toFixed(2)}`, '']);
+    (doc as any).autoTable({
+        startY: y,
+        head: [['Hora', 'Ventas', 'Proporcion Visual']],
+        body: hoursBody,
+        theme: 'striped',
+        headStyles: { fillColor: [234, 179, 8], textColor: textDark }, // yellow-500
+        columnStyles: { 0: { cellWidth: 30, fontStyle: 'bold' }, 1: { cellWidth: 40 }, 2: { cellWidth: 100 } },
+        didDrawCell: function(cellData: any) {
+            if (cellData.column.index === 2 && cellData.section === 'body') {
+                const ventas = hourChartData[cellData.row.index].Ventas;
+                if (ventas > 0) {
+                    const percent = ventas / maxHourVentas;
+                    const barWidth = 90 * percent;
+                    doc.setFillColor(250, 204, 21); // yellow-400
+                    doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
+                }
+            }
+        }
+    });
+
+    // --- NUEVA PAGINA 3: OPERACIÓN E INVENTARIO ---
+    doc.addPage();
+    y = 20;
+
+    doc.setFontSize(18);
+    doc.setTextColor(...textDark);
+    doc.setFont("helvetica", "bold");
+    doc.text("Operacion, Inventario y Gastos", 14, y);
+    y += 10;
+
+    // 7. ALERTAS DE INVENTARIO (MÓDULO ROJO)
+    const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
+    if (lowStockItems.length > 0) {
+        doc.setFillColor(254, 242, 242); // red-50
+        doc.setDrawColor(252, 165, 165); // red-300
+        doc.roundedRect(14, y, 182, 10 + (lowStockItems.length * 5), 3, 3, 'FD');
+        doc.setTextColor(220, 38, 38); // red-600
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text(`ALERTA: Insumos por agotarse (<= 5 unidades):`, 19, y + 8);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...textDark);
+        lowStockItems.forEach((item:any, idx:number) => {
+            doc.text(`- ${item.name} (Quedan: ${item.stock.toFixed(1)} ${item.unit})`, 19, y + 14 + (idx * 5));
+        });
+        y += 15 + (lowStockItems.length * 5);
+    }
+
+    // 8. TOP PRODUCTOS
+    doc.setFontSize(12);
+    doc.setTextColor(...textDark);
+    doc.setFont("helvetica", "bold");
     doc.text("Top 10 Productos Base", 14, y);
     y += 5;
 
-    // Pasamos un string vacío en la 4ta columna para que dibuje la barra encima
     const prodBody = topProductsData.map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} unds`, '']); 
     (doc as any).autoTable({
         startY: y,
         head: [['Rank', 'Producto', 'Volumen', 'Grafica']],
         body: prodBody,
         theme: 'striped',
-        headStyles: { fillColor: primary, textColor: 255 },
-        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 70 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 70 } },
+        headStyles: { fillColor: [34, 197, 94], textColor: 255 }, // green-500
+        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 60 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 80 } },
         didDrawCell: function(cellData: any) {
             if (cellData.column.index === 3 && cellData.section === 'body') {
                 const qty = topProductsData[cellData.row.index].qty;
                 const percent = qty / maxProductQty;
-                const barWidth = 60 * percent;
-                doc.setFillColor(59, 130, 246); // blue-500
+                const barWidth = 70 * percent;
+                doc.setFillColor(74, 222, 128); // green-400
                 doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
             }
         }
     });
     y = (doc as any).lastAutoTable.finalY + 15;
 
-    // 7. TOP TOPPINGS (CON BARRAS GRÁFICAS)
-    doc.setFontSize(12);
-    doc.setTextColor(...textDark);
-    doc.text("Top 10 Extras y Toppings (Con Costo)", 14, y);
-    y += 5;
+    // 9. DESGLOSE DE GASTOS
+    if (data.expenses && data.expenses.length > 0) {
+        doc.setFontSize(12);
+        doc.text("Desglose de Gastos y Egresos", 14, y);
+        y += 5;
 
-    const topBody = topToppingsPaidData.map((p:any, i:number) => [`#${i+1}`, p.name, `${p.qty} usos`, '']); 
-    (doc as any).autoTable({
-        startY: y,
-        head: [['Rank', 'Topping', 'Frecuencia', 'Grafica']],
-        body: topBody,
-        theme: 'striped',
-        headStyles: { fillColor: [249, 115, 22], textColor: 255 }, // orange-500
-        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 70 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 70 } },
-        didDrawCell: function(cellData: any) {
-            if (cellData.column.index === 3 && cellData.section === 'body') {
-                const qty = topToppingsPaidData[cellData.row.index].qty;
-                const percent = qty / maxPaidQty;
-                const barWidth = 60 * percent;
-                doc.setFillColor(251, 146, 60); // orange-400
-                doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
-            }
-        }
-    });
+        const expensesBody = data.expenses.map((e:any) => [
+            new Date(e.date).toLocaleDateString(), 
+            e.category, 
+            e.description, 
+            `-$${e.amount.toFixed(2)}`
+        ]);
 
-    // --- NUEVA PAGINA PARA AUDITORIA Y NOMINA ---
+        (doc as any).autoTable({
+            startY: y,
+            head: [['Fecha', 'Categoria', 'Descripcion', 'Monto']],
+            body: expensesBody,
+            theme: 'grid',
+            headStyles: { fillColor: [244, 244, 245], textColor: textDark },
+            columnStyles: { 3: { textColor: red, fontStyle: 'bold', halign: 'right' } }
+        });
+    }
+
+    // --- NUEVA PAGINA 4: AUDITORIA Y NOMINA ---
     doc.addPage();
     y = 20;
 
-    doc.setFontSize(16);
+    doc.setFontSize(18);
     doc.setTextColor(...textDark);
     doc.setFont("helvetica", "bold");
-    doc.text("Auditoria Operativa y Nomina", 14, y);
+    doc.text("Auditoria y Nomina del Equipo", 14, y);
     y += 10;
 
-    // 8. TABLA DE AUDITORIA DE CAJA
+    // 10. TABLA DE AUDITORIA DE CAJA
     doc.setFontSize(12);
-    doc.text("Cortes de Caja (Diario)", 14, y);
+    doc.text("Cortes de Caja Diarios", 14, y);
     y += 5;
 
     const auditBody = dailyAuditArray.map((d:any) => {
@@ -581,21 +624,21 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         body: auditBody,
         theme: 'grid',
         styles: { fontSize: 8 },
-        headStyles: { fillColor: [63, 63, 70] }, // zinc-700
+        headStyles: { fillColor: textDark, textColor: 255 },
         didParseCell: function(cellData: any) {
             if (cellData.section === 'body' && cellData.column.index === 8) {
                 if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
                 else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
-                else cellData.cell.styles.textColor = [234, 179, 8]; // yellow-500
+                else cellData.cell.styles.textColor = [217, 119, 6]; // orange-600
             }
         }
     });
     y = (doc as any).lastAutoTable.finalY + 15;
 
-    // 9. NÓMINA
+    // 11. NÓMINA
     doc.setFontSize(12);
     doc.setTextColor(...textDark);
-    doc.text("Calculo de Nomina y Rendimiento", 14, y);
+    doc.text("Calculo de Nomina a Pagar", 14, y);
     y += 5;
 
     const nomBody = nominaArray.map((n:any) => [
@@ -613,7 +656,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         head: [['Cajero', 'Dias Trab.', 'Horas Caja', 'Sueldo Base', 'Propinas', 'Ajuste Manual', 'Total a Pagar']],
         body: nomBody,
         theme: 'striped',
-        headStyles: { fillColor: [63, 63, 70] },
+        headStyles: { fillColor: primary, textColor: 255 },
         columnStyles: { 6: { fontStyle: 'bold', textColor: primary } }
     });
 
@@ -1160,7 +1203,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                           <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en tickets">Propinas</p>
                                           <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasTotales.toFixed(2)}</p>
                                       </div>
-                                      {/* INPUT DE AJUSTE MANUAL LUIS */}
                                       <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
                                           <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
                                           <input 
@@ -1428,6 +1470,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
+            {/* ======================================================== */}
+            {/* PESTAÑA: AUDITORIA Y LOGS                                */}
+            {/* ======================================================== */}
             {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
@@ -1452,6 +1497,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
+            {/* ======================================================== */}
+            {/* PESTAÑA: INVENTARIO FÍSICO                               */}
+            {/* ======================================================== */}
             {activeTab === 'INVENTARIO' && (
                 <div className="space-y-12 animate-in fade-in duration-300">
                   <section className="bg-zinc-900/50 p-8 rounded-[2rem] border border-zinc-800">
@@ -1482,6 +1530,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
+            {/* ======================================================== */}
+            {/* PESTAÑA: PÁNICO (APAGAR/PRENDER)                         */}
+            {/* ======================================================== */}
             {activeTab === 'PANICO' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
