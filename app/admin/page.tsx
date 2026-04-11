@@ -20,6 +20,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
   const [emailSending, setEmailSending] = useState(false);
+  
+  // 🌟 BUG 1 CORREGIDO: Restaurada la variable del correo de tickets
+  const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
   const [nominaAdjustments, setNominaAdjustments] = useState<Record<string, number>>({});
 
@@ -141,6 +144,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     await fetch(`/api/admin?id=${id}&type=expense&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
+  const handleRefund = async (orderId: string) => {
+    if (!confirm('¿Estás seguro de cancelar esta orden?')) return;
+    setData({ ...data, orders: data.orders.map((o:any) => o.id === orderId ? { ...o, status: 'REFUNDED' } : o) });
+    await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, newStatus: 'REFUNDED' }) });
+    await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'audit', action: 'ORDEN_CANCELADA', details: `Orden ID: ${orderId}`, author: getAuthorName() }) });
+  };
+
   const exportToCSV = () => {
     let csv = 'Turno,Estado,Fecha,Cliente,MetodoPago,Canal,MontoBruto,Descuento,MontoNeto,Cupon\n';
     data.orders.forEach((o:any) => { const date = new Date(o.createdAt); csv += `${o.turnNumber},${o.status},${date.toLocaleDateString()},${o.customerName},${o.paymentMethod},${o.orderType || 'DINE_IN'},${o.totalAmount + (o.pointsDiscount||0)},${o.pointsDiscount||0},${o.totalAmount},${o.couponCode||'N/A'}\n`; });
@@ -159,6 +169,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const sendTicketEmail = async (orderId: string, orderUrl: string, turnNumber: string) => {
       const email = window.prompt(`Ingresa el correo del cliente (Ticket #${turnNumber}):`);
       if (!email) return;
+
+      setTicketEmailing(orderId);
       try {
           const res = await fetch('/api/send-ticket', {
               method: 'POST',
@@ -171,6 +183,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       } catch (e) {
           alert("Error de red al enviar el correo.");
       }
+      setTicketEmailing(null);
   };
 
   // ==========================================
@@ -185,11 +198,15 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
-  // 🌟 CÁLCULO DE COMISIONES MP
+  // 🌟 CÁLCULO DE COMISIONES MP GLOBALES
   let comisionesTerminal = 0;
+  let propinasTarjetaBrutas = 0;
+  
   validOrders.forEach((o:any) => {
       if (o.paymentMethod === 'TERMINAL') {
-          const cobroTotal = o.totalAmount + (o.tipAmount || 0);
+          const tip = o.tipAmount || 0;
+          propinasTarjetaBrutas += tip;
+          const cobroTotal = o.totalAmount + tip;
           comisionesTerminal += (cobroTotal * MP_RATE);
       }
   });
@@ -277,6 +294,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
   const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
+  
+  // 🌟 BUG 2 CORREGIDO: Restaurada la variable maxFreeQty y maxPairQty
+  const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
+  const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
 
   const pilarColors: Record<string, string> = {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
@@ -349,7 +370,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           if (o.status !== 'REFUNDED' && oTime >= sStart.getTime() && oTime <= sEnd.getTime()) {
               const tip = o.tipAmount || 0;
               if (o.paymentMethod === 'TERMINAL') {
-                  propinasTurnoTarjetaNetas += tip * (1 - MP_RATE); // 🌟 DESCONTAMOS MP DE LA PROPINA
+                  propinasTurnoTarjetaNetas += tip * (1 - MP_RATE);
               } else {
                   propinasTurnoEfectivo += tip;
               }
@@ -629,7 +650,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             if (cellData.section === 'body' && cellData.column.index === 8) {
                 if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
                 else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
-                else cellData.cell.styles.textColor = [234, 179, 8]; 
+                else cellData.cell.styles.textColor = [217, 119, 6]; 
             }
         }
     });
@@ -1031,7 +1052,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
 
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <h3 className="text-xl font-black mb-6 text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
+                                </div>
+                            </div>
                             <div className="space-y-4">
                                 {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
                                     <div key={t.name} className="flex items-center gap-4">
@@ -1095,10 +1121,26 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             </div>
                             <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                                 <div>
-                                    <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal)</p>
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Depósitos en tránsito</p>
+                                    <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal Bruto)</p>
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Cobrado en terminal (Inc. Props)</p>
                                 </div>
-                                <span className="font-black text-3xl text-blue-400">${ventasTarjeta.toFixed(2)}</span>
+                                <span className="font-black text-3xl text-blue-400">${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between items-center bg-orange-950/20 p-4 rounded-xl border border-orange-900/50">
+                                <div>
+                                    <p className="text-sm font-bold text-orange-400 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500"></span> Comisiones MP</p>
+                                    <p className="text-[10px] text-orange-500/70 uppercase font-black mt-1">Retención del 4.06%</p>
+                                </div>
+                                <span className="font-black text-3xl text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
+                            </div>
+                            
+                            <div className="flex justify-between items-center bg-green-950/20 p-4 rounded-xl border border-green-900/50 mt-2">
+                                <div>
+                                    <p className="text-sm font-bold text-green-400 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Depósito Neto (Banco)</p>
+                                    <p className="text-[10px] text-green-500/70 uppercase font-black mt-1">Dinero real a tu cuenta</p>
+                                </div>
+                                <span className="font-black text-3xl text-green-400">${((ventasTarjeta + propinasTarjetaBrutas) - comisionesTerminal).toFixed(2)}</span>
                             </div>
                         </div>
                     </div>
@@ -1142,6 +1184,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   
                                   const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
+                                  
+                                  // 🌟 BUG 3 CORREGIDO: Evitamos que el array de cajeros imprima N/A
                                   const cajerosStr = dayData.cajero.join(', ') || 'N/A';
 
                                   const [year, month, day] = dayData.date.split('-');
@@ -1301,7 +1345,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: VENTAS                                          */}
+            {/* PESTAÑA: VENTAS (CON DETALLE DE MERCADOPAGO)             */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
@@ -1319,46 +1363,64 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       </div>
                       
                       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                          {data.orders.slice().reverse().map((o: any) => (
-                              <div key={o.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row justify-between md:items-center gap-4 transition-colors ${o.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                  <div className="flex gap-4 items-center">
-                                      <div className="bg-zinc-900 p-3 rounded-xl">
-                                        <p className="text-2xl font-black italic text-yellow-500 w-16">#{o.turnNumber}</p>
-                                      </div>
-                                      <div>
-                                          <div className="flex items-center gap-2">
-                                              <p className="font-bold text-lg">{o.customerName}</p>
-                                              {o.orderType === 'TAKEOUT' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-2 py-0.5 rounded uppercase font-black tracking-widest">App VIP</span>}
-                                          </div>
-                                          <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">{new Date(o.createdAt).toLocaleString()}</p>
-                                          <div className="mt-1">
-                                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${o.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{o.paymentMethod === 'TERMINAL' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
-                                          </div>
-                                      </div>
-                                  </div>
-                                  <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                                      <div className="text-right">
-                                        <p className={`font-black text-xl ${o.status === 'REFUNDED' ? 'line-through text-red-500' : 'text-white'}`}>${(o.totalAmount + o.tipAmount).toFixed(2)}</p>
-                                        {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
-                                      </div>
-                                      <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
-                                          <button 
-                                              onClick={() => sendTicketEmail(o.id, getTicketUrl(o.turnNumber), o.turnNumber)} 
-                                              disabled={ticketEmailing === o.id}
-                                              className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors disabled:opacity-50" 
-                                              title="Enviar Ticket al Cliente">
-                                              {ticketEmailing === o.id ? '⏳' : '📧'}
-                                          </button>
-                                          
-                                          {o.customerPhone && (
-                                            <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar por WA">📱</button>
-                                          )}
-                                          <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
-                                          {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
-                                      </div>
-                                  </div>
-                              </div>
-                          ))}
+                          {data.orders.slice().reverse().map((o: any) => {
+                              // 🌟 CÁLCULO EN TIEMPO REAL POR TICKET
+                              const isTerminal = o.paymentMethod === 'TERMINAL';
+                              const cobroBruto = o.totalAmount + (o.tipAmount || 0);
+                              const comisionMP = isTerminal ? (cobroBruto * MP_RATE) : 0;
+                              const depositoNeto = cobroBruto - comisionMP;
+
+                              return (
+                                <div key={o.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row justify-between md:items-center gap-4 transition-colors ${o.status === 'REFUNDED' ? 'bg-red-950/20 border-red-900/50 opacity-60' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <div className="flex gap-4 items-center">
+                                        <div className="bg-zinc-900 p-3 rounded-xl">
+                                            <p className="text-2xl font-black italic text-yellow-500 w-16">#{o.turnNumber}</p>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-bold text-lg">{o.customerName}</p>
+                                                {o.orderType === 'TAKEOUT' && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-2 py-0.5 rounded uppercase font-black tracking-widest">App VIP</span>}
+                                            </div>
+                                            <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">{new Date(o.createdAt).toLocaleString()}</p>
+                                            <div className="mt-1">
+                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${o.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{o.paymentMethod === 'TERMINAL' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                                        <div className="text-right">
+                                            <p className={`font-black text-xl ${o.status === 'REFUNDED' ? 'line-through text-red-500' : 'text-white'}`}>
+                                                ${cobroBruto.toFixed(2)}
+                                            </p>
+                                            {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
+                                            
+                                            {/* 🌟 DESGLOSE MP EN EL TICKET */}
+                                            {isTerminal && o.status !== 'REFUNDED' && (
+                                                <div className="mt-1 border-t border-zinc-800 pt-1">
+                                                    <p className="text-[9px] text-orange-400 font-bold">- Comisión MP: $${comisionMP.toFixed(2)}</p>
+                                                    <p className="text-[10px] text-green-400 font-black">Depósito Real: $${depositoNeto.toFixed(2)}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-2 border-t md:border-t-0 border-zinc-800 pt-3 md:pt-0">
+                                            <button 
+                                                onClick={() => sendTicketEmail(o.id, getTicketUrl(o.turnNumber), o.turnNumber)} 
+                                                disabled={ticketEmailing === o.id}
+                                                className="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-blue-500/30 transition-colors disabled:opacity-50" 
+                                                title="Enviar Ticket al Cliente">
+                                                {ticketEmailing === o.id ? '⏳' : '📧'}
+                                            </button>
+                                            
+                                            {o.customerPhone && (
+                                                <button onClick={() => sendWhatsAppPromo(o.customerPhone, o.customerName)} className="bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-zinc-950 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-black transition-colors" title="Enviar por WA">📱</button>
+                                            )}
+                                            <button onClick={() => window.open(getTicketUrl(o.turnNumber), '_blank')} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold border border-zinc-700 transition-colors">🖨️ Ver Ticket</button>
+                                            {o.status !== 'REFUNDED' && <button onClick={() => handleRefund(o.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-xs font-black border border-red-500/30 transition-colors">🛑</button>}
+                                        </div>
+                                    </div>
+                                </div>
+                              );
+                          })}
                       </div>
                   </div>
                 </div>
