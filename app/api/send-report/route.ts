@@ -10,24 +10,21 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'maiztrosqro@gmail.com',
-    pass: 'whyn dmeg vtnb ndll' // <-- Usa tu clave de aplicación de 16 letras
+    pass: 'whyn dmeg vtnb ndll' // <-- Usa tu clave de 16 letras
   }
 });
 
-// =========================================================================
-// POST: ENVIAR REPORTE EJECUTIVO (ESPEJO DEL PDF - FONDO CLARO)
-// =========================================================================
 export async function POST(req: Request) {
   try {
     const { 
-        startDate, endDate, story,
+        startDate, endDate, story, ticketModa,
         ventasNetas, gastosTotales, utilidadNeta, 
         ventasEfectivo, ventasTarjeta, totalDescuentos,
         topProducts, topToppingsPaid,
-        audit, nomina 
+        audit, nomina,
+        dayChartData, hourChartData, lowStockItems, expenses
     } = await req.json();
 
-    // Función auxiliar para dibujar barras en HTML (Diseño Claro)
     const renderBar = (qty: number, max: number, color: string) => {
         const pct = max > 0 ? (qty / max) * 100 : 0;
         return `<div style="background-color: #e4e4e7; width: 100%; height: 8px; border-radius: 4px; margin-top: 5px; overflow: hidden;">
@@ -37,12 +34,13 @@ export async function POST(req: Request) {
 
     const maxProd = topProducts.length > 0 ? Math.max(...topProducts.map((p:any) => p.qty)) : 1;
     const maxPaid = topToppingsPaid.length > 0 ? Math.max(...topToppingsPaid.map((p:any) => p.qty)) : 1;
+    const maxDay = dayChartData.length > 0 ? Math.max(...dayChartData.map((d:any) => d.Ventas)) : 1;
+    const maxHour = hourChartData.length > 0 ? Math.max(...hourChartData.map((h:any) => h.Ventas)) : 1;
 
-    // Paleta de colores para fondo claro
-    const textDark = "#18181b"; // zinc-950
-    const textGray = "#71717a"; // zinc-500
-    const primaryBlue = "#2563eb"; // blue-600
-    const bgLight = "#f4f4f5"; // zinc-100 para bloques
+    const textDark = "#18181b"; 
+    const textGray = "#71717a"; 
+    const primaryBlue = "#2563eb"; 
+    const bgLight = "#f4f4f5"; 
 
     const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #ffffff; color: ${textDark}; padding: 40px; border: 1px solid #e4e4e7; border-radius: 16px;">
@@ -54,6 +52,24 @@ export async function POST(req: Request) {
             <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Resumen de Operación y Ventas</p>
             <p style="margin: 10px 0 0 0; color: #3f3f46; font-size: 14px; line-height: 1.6;">${story}</p>
         </div>
+
+        ${ticketModa > 0 ? `
+        <div style="background-color: #eff6ff; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #bfdbfe;">
+            <h4 style="margin: 0 0 10px 0; color: #2563eb; font-size: 14px;">💡 ESTRATEGIA RECOMENDADA:</h4>
+            <p style="margin: 0; color: #1e3a8a; font-size: 13px; line-height: 1.5;">
+                Tu ticket de compra más frecuente (Moda) es de <b>$${ticketModa.toFixed(2)}</b>. Crea un combo especial que cueste <b>$${(ticketModa + 20).toFixed(2)}</b> para empujar este promedio y aumentar márgenes.
+            </p>
+        </div>
+        ` : ''}
+
+        ${lowStockItems && lowStockItems.length > 0 ? `
+        <div style="background-color: #fef2f2; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #fecaca;">
+            <h4 style="margin: 0 0 10px 0; color: #dc2626; font-size: 14px;">⚠️ ALERTA DE INVENTARIO BAJO:</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #991b1b; font-size: 13px;">
+                ${lowStockItems.map((item:any) => `<li><b>${item.name}</b> (Quedan: ${item.stock} ${item.unit})</li>`).join('')}
+            </ul>
+        </div>
+        ` : ''}
 
         <table style="width: 100%; margin-top: 30px; border-collapse: collapse; text-align: center; border: 1px solid #e4e4e7; border-radius: 8px; overflow: hidden;">
             <thead>
@@ -77,8 +93,43 @@ export async function POST(req: Request) {
         </div>
 
         <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
-            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Tendencias y Rendimiento de Productos</p>
-            
+            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Tendencias de Tráfico</p>
+            <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 48%; vertical-align: top; padding-right: 2%">
+                        <p style="margin: 0; color: ${textDark}; font-size: 14px; font-weight: bold;">Ventas por Día</p>
+                        <div style="margin-top: 15px;">
+                            ${dayChartData.map((d:any) => `
+                                <div style="margin-bottom: 12px;">
+                                    <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                                        <span style="color: ${textDark};">${d.Dia}</span>
+                                        <span style="color: #a855f7; font-weight:bold;">$${d.Ventas.toFixed(2)}</span>
+                                    </div>
+                                    ${renderBar(d.Ventas, maxDay, "#a855f7")}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </td>
+                    <td style="width: 48%; vertical-align: top; padding-left: 2%">
+                        <p style="margin: 0; color: ${textDark}; font-size: 14px; font-weight: bold;">Tráfico por Hora</p>
+                        <div style="margin-top: 15px;">
+                            ${hourChartData.map((h:any) => `
+                                <div style="margin-bottom: 12px;">
+                                    <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                                        <span style="color: ${textDark};">${h.Hora}</span>
+                                        <span style="color: #ca8a04; font-weight:bold;">$${h.Ventas.toFixed(2)}</span>
+                                    </div>
+                                    ${renderBar(h.Ventas, maxHour, "#eab308")}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
+            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Rendimiento de Productos</p>
             <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
                 <tr>
                     <td style="width: 48%; vertical-align: top; padding-right: 2%">
@@ -102,7 +153,7 @@ export async function POST(req: Request) {
                                 <div style="margin-bottom: 12px;">
                                     <div style="display: flex; justify-content: space-between; font-size: 13px;">
                                         <span style="color: ${textDark};">${p.name}</span>
-                                        <span style="color: #ca8a04; font-weight:bold;">${p.qty} usos</span>
+                                        <span style="color: #ea580c; font-weight:bold;">${p.qty} usos</span>
                                     </div>
                                     ${renderBar(p.qty, maxPaid, "#f97316")}
                                 </div>
@@ -113,8 +164,34 @@ export async function POST(req: Request) {
             </table>
         </div>
 
+        ${expenses && expenses.length > 0 ? `
         <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
-            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Auditoria Operativa (Cortes de Caja)</p>
+            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Desglose de Gastos y Egresos</p>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; text-align: left;">
+                <thead>
+                    <tr style="background-color: ${bgLight}; color: ${textDark}; font-weight: bold; border-bottom: 1px solid #e4e4e7;">
+                        <th style="padding: 10px 5px;">Fecha</th>
+                        <th style="padding: 10px 5px;">Categoría</th>
+                        <th style="padding: 10px 5px;">Descripción</th>
+                        <th style="padding: 10px 5px; text-align: right;">Monto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${expenses.map((e:any) => `
+                        <tr style="border-bottom: 1px solid #e4e4e7;">
+                            <td style="padding: 10px 5px; color: ${textGray};">${new Date(e.date).toLocaleDateString('es-MX')}</td>
+                            <td style="padding: 10px 5px; color: ${textDark};">${e.category}</td>
+                            <td style="padding: 10px 5px; color: ${textDark};">${e.description}</td>
+                            <td style="padding: 10px 5px; text-align: right; color: #ef4444; font-weight: bold;">-$${e.amount.toFixed(2)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : ''}
+
+        <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
+            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Auditoría Operativa (Cortes de Caja)</p>
             <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; text-align: left;">
                 <thead>
                     <tr style="background-color: ${bgLight}; color: ${textDark}; font-weight: bold; border-bottom: 1px solid #e4e4e7;">
@@ -134,7 +211,7 @@ export async function POST(req: Request) {
                         const diffColor = Math.abs(diff) <= 0.5 ? '#16a34a' : (diff < 0 ? '#ef4444' : '#ca8a04');
                         const diffText = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
                         const [year, month, day] = a.date.split('-');
-                        const cajerosStr = Array.from(a.cajero).join(', ') || 'N/A';
+                        const cajerosStr = a.cajero.join(', ') || 'N/A'; // ¡Error arreglado aquí!
                         return `
                         <tr style="border-bottom: 1px solid #e4e4e7;">
                             <td style="padding: 10px 5px; color: ${textGray};">${day}/${month}</td>
@@ -152,7 +229,7 @@ export async function POST(req: Request) {
         </div>
 
         <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
-            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Nomina Calculada a Pagar</p>
+            <p style="margin: 0; color: ${textDark}; font-size: 16px; font-weight: bold;">Nómina Calculada a Pagar</p>
             <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; text-align: left;">
                 <thead>
                     <tr style="background-color: ${bgLight}; color: ${textDark}; font-weight: bold; border-bottom: 1px solid #e4e4e7;">
