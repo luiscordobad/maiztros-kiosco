@@ -20,7 +20,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [data, setData] = useState<any>({ products: [], modifiers: [], coupons: [], orders: [], shifts: [], inventoryItems: [], expenses: [], auditLogs: [], customers: [], biExtraStats: null });
   const [loading, setLoading] = useState(true);
   const [emailSending, setEmailSending] = useState(false);
-  const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
   const [nominaAdjustments, setNominaAdjustments] = useState<Record<string, number>>({});
 
@@ -41,6 +40,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [newCouponMinAmount, setNewCouponMinAmount] = useState('');
 
   const [addAmounts, setAddAmounts] = useState<Record<string, string>>({});
+
+  // 🌟 TASA EXACTA MERCADOPAGO (3.5% + IVA = 4.06%)
+  const MP_RATE = 0.0406;
 
   const fetchData = async () => {
     setLoading(true);
@@ -139,13 +141,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     await fetch(`/api/admin?id=${id}&type=expense&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
-  const handleRefund = async (orderId: string) => {
-    if (!confirm('¿Estás seguro de cancelar esta orden?')) return;
-    setData({ ...data, orders: data.orders.map((o:any) => o.id === orderId ? { ...o, status: 'REFUNDED' } : o) });
-    await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, newStatus: 'REFUNDED' }) });
-    await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'audit', action: 'ORDEN_CANCELADA', details: `Orden ID: ${orderId}`, author: getAuthorName() }) });
-  };
-
   const exportToCSV = () => {
     let csv = 'Turno,Estado,Fecha,Cliente,MetodoPago,Canal,MontoBruto,Descuento,MontoNeto,Cupon\n';
     data.orders.forEach((o:any) => { const date = new Date(o.createdAt); csv += `${o.turnNumber},${o.status},${date.toLocaleDateString()},${o.customerName},${o.paymentMethod},${o.orderType || 'DINE_IN'},${o.totalAmount + (o.pointsDiscount||0)},${o.pointsDiscount||0},${o.totalAmount},${o.couponCode||'N/A'}\n`; });
@@ -164,8 +159,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const sendTicketEmail = async (orderId: string, orderUrl: string, turnNumber: string) => {
       const email = window.prompt(`Ingresa el correo del cliente (Ticket #${turnNumber}):`);
       if (!email) return;
-
-      setTicketEmailing(orderId);
       try {
           const res = await fetch('/api/send-ticket', {
               method: 'POST',
@@ -178,41 +171,44 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       } catch (e) {
           alert("Error de red al enviar el correo.");
       }
-      setTicketEmailing(null);
   };
 
   // ==========================================
-  // CÁLCULOS FINANCIEROS Y DE BI
+  // CÁLCULOS FINANCIEROS Y DE BI (CON MERCADOPAGO)
   // ==========================================
   const validOrders = data.orders ? data.orders.filter((o:any) => o.status !== 'REFUNDED') : []; 
   const totalOrders = validOrders.length;
   
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
   const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
-  const gastosTotales = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
+  
+  const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+  const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+
+  // 🌟 CÁLCULO DE COMISIONES MP
+  let comisionesTerminal = 0;
+  validOrders.forEach((o:any) => {
+      if (o.paymentMethod === 'TERMINAL') {
+          const cobroTotal = o.totalAmount + (o.tipAmount || 0);
+          comisionesTerminal += (cobroTotal * MP_RATE);
+      }
+  });
+
+  const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
+  const gastosTotales = gastosFisicos + comisionesTerminal; // Sumamos la comisión a los egresos
   
   const utilidadNeta = ventasNetas - gastosTotales;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
-  const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
-  const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
-
   const ventasVIP = validOrders.filter((o:any) => o.customerPhone || o.pointsDiscount > 0 || o.couponCode).reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasGeneral = ventasNetas - ventasVIP;
 
-  const ventasApp = validOrders.filter((o:any) => o.orderType === 'TAKEOUT').length;
-  const ventasKiosco = validOrders.filter((o:any) => o.orderType === 'DINE_IN' || !o.orderType).length;
-  
   const paymentData = [
     { name: 'Efectivo', value: ventasEfectivo, color: '#4ade80' },
     { name: 'Tarjeta', value: ventasTarjeta, color: '#60a5fa' }
   ];
-  const vipData = [
-    { name: 'Clientes VIP', value: ventasVIP, color: '#facc15' },
-    { name: 'Público General', value: ventasGeneral, color: '#71717a' }
-  ];
-
+  
   const retencionStats = data.biExtraStats?.retention || { new: 0, returning: 0, general: 0 };
   const totalVipOrders = retencionStats.new + retencionStats.returning;
   const returningPct = totalVipOrders > 0 ? (retencionStats.returning / totalVipOrders) * 100 : 0;
@@ -279,9 +275,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
-  const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
-  const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
-  
   const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
   const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
 
@@ -290,7 +283,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA Y NÓMINA
+  // AUDITORÍA DE CAJA Y NÓMINA (CON DESCUENTO MP)
   // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
@@ -326,7 +319,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       }
   });
 
-  // 🌟 CORRECCIÓN DEL "N/A": Convertimos el Set() a un Array normal para que JSON.stringify no lo borre
   const dailyAuditArray = Object.values(auditMap).map((a: any) => ({
       ...a,
       cajero: Array.from(a.cajero)
@@ -336,7 +328,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
       const cajero = shift.openedBy || 'Desconocido';
       if (!nominaMap[cajero]) {
-          nominaMap[cajero] = { cajero, diasSet: new Set(), sueldoBase: 0, horasTotales: 0, propinasTotales: 0, ajuste: nominaAdjustments[cajero] || 0, totalPagar: 0, turnos: [] };
+          nominaMap[cajero] = { cajero, diasSet: new Set(), sueldoBase: 0, horasTotales: 0, propinasNetas: 0, ajuste: nominaAdjustments[cajero] || 0, totalPagar: 0, turnos: [] };
       }
       const sStart = new Date(shift.openedAt);
       const sEnd = new Date(shift.closedAt);
@@ -350,19 +342,22 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       nominaMap[cajero].diasSet.add(dateStr);
 
       let propinasTurnoEfectivo = 0;
-      let propinasTurnoTarjeta = 0;
+      let propinasTurnoTarjetaNetas = 0;
 
       data.orders?.forEach((o: any) => {
           const oTime = new Date(o.updatedAt || o.createdAt).getTime();
           if (o.status !== 'REFUNDED' && oTime >= sStart.getTime() && oTime <= sEnd.getTime()) {
               const tip = o.tipAmount || 0;
-              if (o.paymentMethod === 'TERMINAL') propinasTurnoTarjeta += tip;
-              else propinasTurnoEfectivo += tip;
+              if (o.paymentMethod === 'TERMINAL') {
+                  propinasTurnoTarjetaNetas += tip * (1 - MP_RATE); // 🌟 DESCONTAMOS MP DE LA PROPINA
+              } else {
+                  propinasTurnoEfectivo += tip;
+              }
           }
       });
-      const propinasTotalTurno = propinasTurnoEfectivo + propinasTurnoTarjeta;
-      nominaMap[cajero].propinasTotales += propinasTotalTurno;
-      nominaMap[cajero].turnos.push({ fecha: dateStr, entrada: timeIn, salida: timeOut, horas: diffHrs, propinas: propinasTotalTurno });
+      const propinasTotalTurnoNeta = propinasTurnoEfectivo + propinasTurnoTarjetaNetas;
+      nominaMap[cajero].propinasNetas += propinasTotalTurnoNeta;
+      nominaMap[cajero].turnos.push({ fecha: dateStr, entrada: timeIn, salida: timeOut, horas: diffHrs, propinas: propinasTotalTurnoNeta });
   });
 
   const nominaArray = Object.values(nominaMap).map(n => {
@@ -370,7 +365,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       n.diasTrabajados = diasTrabajados;
       n.sueldoBase = diasTrabajados * 200; 
       n.ajuste = nominaAdjustments[n.cajero] || 0;
-      n.totalPagar = n.sueldoBase + n.propinasTotales + n.ajuste;
+      n.totalPagar = n.sueldoBase + n.propinasNetas + n.ajuste;
       return n;
   }).sort((a, b) => b.totalPagar - a.totalPagar);
 
@@ -380,7 +375,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 EL NUEVO PDF EJECUTIVO (BLANCO, LIMPIO)
+  // 🌟 PDF EJECUTIVO (BLANCO Y LIMPIO)
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -417,7 +412,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
-    // Texto limpio de emojis
     const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
@@ -435,22 +429,23 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         
         doc.setFont("helvetica", "normal");
         doc.setTextColor(30, 58, 138); 
-        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 19, y + 14);
+        doc.text(`Tu ticket de compra mas frecuente (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo especial`, 19, y + 14);
         doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar margenes.`, 19, y + 19);
         y += 30;
     }
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Ingresos Brutos', 'Gastos Operativos', 'Utilidad Neta P&L']],
-        body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosTotales.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
+        head: [['Ingresos Brutos', 'Gastos Op.', 'Comisiones MP', 'Utilidad Neta P&L']],
+        body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosFisicos.toFixed(2)}`, `-$${comisionesTerminal.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
         theme: 'grid',
         headStyles: { fillColor: [244, 244, 245], textColor: textDark, fontStyle: 'bold', halign: 'center' },
-        bodyStyles: { halign: 'center', fontSize: 14, fontStyle: 'bold' },
+        bodyStyles: { halign: 'center', fontSize: 13, fontStyle: 'bold' },
         didParseCell: function(cellData: any) {
             if (cellData.row.index === 0 && cellData.section === 'body') {
                 if (cellData.column.index === 1) cellData.cell.styles.textColor = red;
-                if (cellData.column.index === 2) cellData.cell.styles.textColor = utilidadNeta >= 0 ? green : red;
+                if (cellData.column.index === 2) cellData.cell.styles.textColor = [249, 115, 22]; // orange
+                if (cellData.column.index === 3) cellData.cell.styles.textColor = utilidadNeta >= 0 ? green : red;
             }
         }
     });
@@ -618,7 +613,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         const expected = d.fondo + d.ventas + d.propinas - d.retiros;
         const diff = d.reportado - expected;
         const diffStr = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
-        const cajerosStr = d.cajero.join(', ') || 'N/A'; // 🌟 YA FUNCIONA PERFECTO AQUÍ
+        const cajerosStr = d.cajero.join(', ') || 'N/A'; 
         const [year, month, day] = d.date.split('-');
         return [`${day}/${month}`, cajerosStr, `$${d.fondo}`, `+$${d.ventas}`, `+$${d.propinas}`, `-$${d.retiros}`, `$${expected}`, `$${d.reportado}`, diffStr];
     });
@@ -629,12 +624,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         body: auditBody,
         theme: 'grid',
         styles: { fontSize: 8 },
-        headStyles: { fillColor: textDark, textColor: 255 },
+        headStyles: { fillColor: [63, 63, 70] }, 
         didParseCell: function(cellData: any) {
             if (cellData.section === 'body' && cellData.column.index === 8) {
                 if (cellData.cell.raw === 'Exacto') cellData.cell.styles.textColor = green;
                 else if (cellData.cell.raw.includes('Falta')) cellData.cell.styles.textColor = red;
-                else cellData.cell.styles.textColor = [217, 119, 6]; 
+                else cellData.cell.styles.textColor = [234, 179, 8]; 
             }
         }
     });
@@ -650,14 +645,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         `${n.diasTrabajados} dias`, 
         `${n.horasTotales.toFixed(1)} hrs`, 
         `$${n.sueldoBase.toFixed(2)}`, 
-        `+$${n.propinasTotales.toFixed(2)}`, 
+        `+$${n.propinasNetas.toFixed(2)}`, 
         `${n.ajuste < 0 ? '-' : '+'}$${Math.abs(n.ajuste).toFixed(2)}`, 
         `$${n.totalPagar.toFixed(2)}`
     ]);
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Cajero', 'Dias Trab.', 'Horas Caja', 'Sueldo Base', 'Propinas', 'Ajuste Manual', 'Total a Pagar']],
+        head: [['Cajero', 'Dias Trab.', 'Horas Caja', 'Sueldo Base', 'Propina Neta', 'Ajuste Manual', 'Total a Pagar']],
         body: nomBody,
         theme: 'striped',
         headStyles: { fillColor: primary, textColor: 255 },
@@ -667,9 +662,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
-  // ==========================================
-  // 🌟 ENVÍO DEL REPORTE AL CORREO IGUAL AL PDF
-  // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
@@ -679,16 +671,15 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
-          // Empaquetamos todo lo necesario para que la API construya el correo espejo
           const payload = {
               startDate, endDate,
               story: storyForEmail,
               ticketModa: data.biExtraStats ? data.biExtraStats.ticketModa : 0,
-              ventasNetas, gastosTotales, utilidadNeta,
+              ventasNetas, gastosTotales, utilidadNeta, comisionesTerminal,
               ventasEfectivo, ventasTarjeta, totalDescuentos,
               topProducts: topProductsData.slice(0, 10),
               topToppingsPaid: topToppingsPaidData.slice(0, 10),
-              audit: dailyAuditArray, // 🌟 ¡Lleva el Array corregido sin N/A!
+              audit: dailyAuditArray, 
               nomina: nominaArray,
               dayChartData,
               hourChartData,
@@ -1020,12 +1011,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
-                                </div>
-                            </div>
+                            <h3 className="text-xl font-black mb-6 text-orange-400">🧀 Top Toppings (Con Costo)</h3>
                             <div className="space-y-4">
                                 {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
                                     <div key={t.name} className="flex items-center gap-4">
@@ -1045,12 +1031,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
 
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                            <div className="mb-6 flex justify-between items-end">
-                                <div>
-                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
-                                </div>
-                            </div>
+                            <h3 className="text-xl font-black mb-6 text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
                             <div className="space-y-4">
                                 {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
                                     <div key={t.name} className="flex items-center gap-4">
@@ -1073,27 +1054,31 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: FINANZAS                                        */}
+            {/* 💰 PESTAÑA: FINANZAS                                        */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-zinc-900 p-6 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">📈</div>
                     <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Ingresos Brutos</p>
-                    <p className="text-5xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
+                    <p className="text-4xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
                   </div>
-                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
+                  <div className="bg-zinc-900 p-6 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Operativos</p>
-                    <p className="text-5xl font-black text-red-400 relative z-10">-${gastosTotales.toFixed(2)}</p>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Físicos</p>
+                    <p className="text-4xl font-black text-red-400 relative z-10">-${gastosFisicos.toFixed(2)}</p>
                   </div>
-                  <div className={`p-8 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                  <div className="bg-orange-950/20 p-6 rounded-[2rem] border border-orange-900/50 shadow-xl relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💳</div>
+                    <p className="text-orange-500 font-bold uppercase tracking-widest mb-2 relative z-10">Comisiones MP (4%)</p>
+                    <p className="text-4xl font-black text-orange-400 relative z-10">-${comisionesTerminal.toFixed(2)}</p>
+                  </div>
+                  <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
                     <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
-                    <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                    <p className={`text-4xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
                   </div>
                 </div>
 
@@ -1157,7 +1142,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   
                                   const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
-                                  const cajerosStr = dayData.cajero.join(', ') || 'N/A'; // Array de cajeros
+                                  const cajerosStr = dayData.cajero.join(', ') || 'N/A';
 
                                   const [year, month, day] = dayData.date.split('-');
                                   const displayDate = `${day}/${month}/${year}`;
@@ -1196,7 +1181,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                   <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
                       <div>
                         <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
-                        <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo asistido: Base ($200/día) + Propinas reales + Ajuste Manual de Luis.</p>
+                        <p className="text-xs font-bold text-zinc-500 mt-1">Base ($200/día) + Propinas Netas (Ya se descontó el 4.06% de MP a las tarjetas) + Ajuste Manual.</p>
                       </div>
                   </div>
                   
@@ -1226,8 +1211,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                           <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
                                       </div>
                                       <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en tickets">Propinas</p>
-                                          <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasTotales.toFixed(2)}</p>
+                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en efectivo y propinas de tarjeta con descuento de comisión">Propinas Neta</p>
+                                          <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasNetas.toFixed(2)}</p>
                                       </div>
                                       <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
                                           <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
