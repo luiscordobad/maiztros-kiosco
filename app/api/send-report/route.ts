@@ -4,25 +4,63 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-// Configuración de Nodemailer
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'maiztrosqro@gmail.com',
-    pass: 'whyn dmeg vtnb ndll' // <-- RECUERDA PONER TU CLAVE DE 16 LETRAS AQUÍ
+    pass: 'AQUI_VA_TU_CONTRASEÑA_DE_APLICACION' // <-- RECUERDA PONER TU CLAVE DE 16 LETRAS
   }
 });
 
+// =========================================================================
+// POST: SE ACTIVA CUANDO TÚ LE PICAS AL BOTÓN "ENVIAR A MI CORREO" EN ADMIN
+// =========================================================================
+export async function POST(req: Request) {
+  try {
+    const { startDate, endDate, ventasNetas, gastosTotales, utilidadNeta, topProducts } = await req.json();
+
+    const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
+        <h1 style="color: #facc15; text-align: center; margin-bottom: 0;">🌽 REPORTE SOLICITADO</h1>
+        <p style="text-align: center; color: #a1a1aa; margin-top: 5px;">Del ${startDate} al ${endDate}</p>
+
+        <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 30px;">
+            <h3 style="margin: 0 0 15px 0; color: #4ade80;">💵 Resumen Financiero</h3>
+            <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Ventas Brutas:</span> <b>$${ventasNetas.toFixed(2)}</b></p>
+            <p style="margin: 5px 0; display: flex; justify-content: space-between;"><span>Gastos:</span> <b style="color:#f87171;">-$${gastosTotales.toFixed(2)}</b></p>
+            <hr style="border: 1px dashed #3f3f46; margin: 15px 0;" />
+            <h2 style="margin: 0; display: flex; justify-content: space-between; color: ${utilidadNeta >= 0 ? '#4ade80' : '#f87171'};"><span>Utilidad Neta:</span> <b>$${utilidadNeta.toFixed(2)}</b></h2>
+        </div>
+
+        <h3 style="color: #a855f7; margin-top: 30px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🏆 Top Productos</h3>
+        <ul style="list-style: none; padding: 0;">
+            ${topProducts.map((p:any) => `<li style="background: #27272a; margin-bottom: 5px; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between;"><span>${p.name}</span> <b>${p.qty} unds</b></li>`).join('')}
+        </ul>
+        <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 40px;">Solicitado desde Centro de Control BI</p>
+    </div>`;
+
+    await transporter.sendMail({
+        from: '"Maiztros BI" <maiztrosqro@gmail.com>',
+        to: 'maiztrosqro@gmail.com',
+        subject: `📊 Reporte Solicitado Maiztros | ${startDate}`,
+        html
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+// =========================================================================
+// GET: SE ACTIVA EN LOS CRON JOBS Y AL CERRAR LA CAJA SILENCIOSAMENTE
+// =========================================================================
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const type = searchParams.get('type') || 'daily'; // 'daily' o 'weekly'
+    const type = searchParams.get('type') || 'daily';
 
-    // =========================================================================
-    // LÓGICA 1: REPORTE DIARIO (Se dispara silenciosamente al cerrar la caja)
-    // =========================================================================
     if (type === 'daily') {
-        // 1. Buscar el turno MÁS RECIENTE que acaba de ser cerrado
         const lastShift = await prisma.shift.findFirst({
             where: { closedAt: { not: null } },
             orderBy: { closedAt: 'desc' },
@@ -31,11 +69,9 @@ export async function GET(req: Request) {
 
         if (!lastShift) return NextResponse.json({ error: "No hay turnos cerrados" }, { status: 400 });
 
-        // Extraer horas exactas en horario de México
         const openedAt = new Date(lastShift.openedAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
         const closedAt = new Date(lastShift.closedAt!).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
 
-        // 2. Buscar todas las órdenes de ese turno exacto
         const orders = await prisma.order.findMany({
             where: {
                 createdAt: { gte: lastShift.openedAt, lte: lastShift.closedAt! },
@@ -52,7 +88,6 @@ export async function GET(req: Request) {
         const esperadoEnCaja = (lastShift.startingCash || 0) + ventasEfectivo + propinas - retiros;
         const diferencia = (lastShift.reportedCash || 0) - esperadoEnCaja;
 
-        // 3. Top Productos vendidos en ese turno
         const productsMap: any = {};
         orders.forEach(o => {
             if(o.items) {
@@ -65,7 +100,6 @@ export async function GET(req: Request) {
         });
         const topProducts = Object.keys(productsMap).map(k => ({ name: k, qty: productsMap[k] })).sort((a,b)=>b.qty - a.qty).slice(0,5);
 
-        // 4. Armar el correo
         const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; color: #ffffff; padding: 30px; border-radius: 16px;">
             <h1 style="color: #facc15; text-align: center; margin-bottom: 0;">🌽 CORTE DE CAJA DIARIO</h1>
@@ -74,8 +108,8 @@ export async function GET(req: Request) {
             <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 30px; border-left: 5px solid #3b82f6;">
                 <h3 style="margin: 0 0 15px 0; color: #60a5fa;">⏱️ Reloj Checador y Asistencia</h3>
                 <p style="margin: 5px 0;"><strong>Cajero Responsable:</strong> ${lastShift.openedBy}</p>
-                <p style="margin: 5px 0;"><strong>Hora de Entrada (Apertura):</strong> ${openedAt}</p>
-                <p style="margin: 5px 0; color: #f87171;"><strong>Hora de Salida (Cierre):</strong> ${closedAt}</p>
+                <p style="margin: 5px 0;"><strong>Hora de Entrada:</strong> ${openedAt}</p>
+                <p style="margin: 5px 0; color: #f87171;"><strong>Hora de Salida:</strong> ${closedAt}</p>
             </div>
 
             <div style="background-color: #27272a; padding: 20px; border-radius: 12px; margin-top: 20px; border-left: 5px solid #4ade80;">
@@ -97,11 +131,6 @@ export async function GET(req: Request) {
                     Diferencia: ${diferencia < -0.5 ? `FALTA $${Math.abs(diferencia).toFixed(2)}` : `SOBRA $${diferencia.toFixed(2)}`}
                 </h3>
             </div>
-
-            <h3 style="color: #a855f7; margin-top: 30px; border-bottom: 1px solid #3f3f46; padding-bottom: 10px;">🏆 Top 5 Productos del Turno</h3>
-            <ul style="list-style: none; padding: 0;">
-                ${topProducts.map(p => `<li style="background: #27272a; margin-bottom: 5px; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between;"><span>${p.name}</span> <b>${p.qty} unds</b></li>`).join('')}
-            </ul>
             <p style="text-align: center; color: #52525b; font-size: 11px; margin-top: 40px;">Enviado por Maiztros Automations</p>
         </div>`;
 
@@ -111,25 +140,18 @@ export async function GET(req: Request) {
             subject: `🌽 Corte de Caja: ${lastShift.openedBy} | Diferencia: $${diferencia.toFixed(2)}`,
             html
         });
-
         return NextResponse.json({ success: true, message: "Reporte diario enviado" });
     }
 
-    // =========================================================================
-    // LÓGICA 2: REPORTE SEMANAL (Se dispara los Lunes vía Vercel Cron)
-    // =========================================================================
     if (type === 'weekly') {
         const today = new Date();
-        
-        // Fechas Semana Pasada (Lunes a Domingo)
         const endLastWeek = new Date(today);
-        endLastWeek.setDate(today.getDate() - today.getDay()); // Domingo pasado
+        endLastWeek.setDate(today.getDate() - today.getDay());
         endLastWeek.setHours(23, 59, 59, 999);
         const startLastWeek = new Date(endLastWeek);
-        startLastWeek.setDate(endLastWeek.getDate() - 6); // Lunes pasado
+        startLastWeek.setDate(endLastWeek.getDate() - 6);
         startLastWeek.setHours(0, 0, 0, 0);
 
-        // Fechas Semana Trasanterior (Para comparar)
         const endPrevWeek = new Date(startLastWeek);
         endPrevWeek.setDate(startLastWeek.getDate() - 1);
         endPrevWeek.setHours(23, 59, 59, 999);
@@ -161,8 +183,6 @@ export async function GET(req: Request) {
                 </p>
                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #a1a1aa;">(Semana anterior: $${salesPrevWeek.toFixed(2)})</p>
             </div>
-            
-            <p style="text-align: center; margin-top: 40px; font-size: 14px;">Entra a tu Panel de Control para ver el análisis profundo de inventarios y retención VIP.</p>
         </div>`;
 
         await transporter.sendMail({
@@ -171,14 +191,10 @@ export async function GET(req: Request) {
             subject: `📊 Reporte Semanal Maiztros | ${growth >= 0 ? 'Crecimiento' : 'Alerta'}`,
             html
         });
-
         return NextResponse.json({ success: true, message: "Reporte semanal enviado" });
     }
-
     return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 });
-
   } catch (error: any) {
-    console.error("Error en cron:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
