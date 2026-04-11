@@ -265,40 +265,47 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 AUDITORÍA DE CAJA AGRUPADA POR DÍA (SOLUCIÓN DEFINITIVA)
+  // 🌟 AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX)
   // ==========================================
-  const auditByDate: Record<string, any> = {};
+  const auditMap: Record<string, any> = {};
 
-  const getMexicoDateString = (isoString: string) => {
-      const date = new Date(isoString);
-      return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+  const getStrictDate = (isoString: string) => {
+      try {
+          const d = new Date(isoString);
+          d.setHours(d.getHours() - 6); // Ajuste manual a UTC-6 (Centro de México)
+          return d.toISOString().split('T')[0]; // Arroja "YYYY-MM-DD" perfecto
+      } catch {
+          return "Fecha Inválida";
+      }
   };
 
-  // 1. Sumamos TODAS las ventas y propinas en efectivo del día
+  // 1. Agrupar Ventas en Efectivo y Propinas
   data.orders?.forEach((o: any) => {
       if (o.status === 'PAID' && o.paymentMethod === 'EFECTIVO_CAJA') {
-          const dateStr = getMexicoDateString(o.createdAt);
-          if (!auditByDate[dateStr]) auditByDate[dateStr] = { dateStr, rawDate: o.createdAt, cajero: new Set(), fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0 };
-          auditByDate[dateStr].ventas += o.totalAmount;
-          auditByDate[dateStr].propinas += (o.tipAmount || 0);
+          const dStr = getStrictDate(o.updatedAt || o.createdAt);
+          if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
+          
+          auditMap[dStr].ventas += o.totalAmount;
+          auditMap[dStr].propinas += (o.tipAmount || 0);
       }
   });
 
-  // 2. Sumamos TODOS los turnos (Fondos, Reportados y Retiros) del día
-  data.shifts?.filter((s: any) => s.closedAt).forEach((shift: any) => {
-      const dateStr = getMexicoDateString(shift.openedAt);
-      if (!auditByDate[dateStr]) auditByDate[dateStr] = { dateStr, rawDate: shift.openedAt, cajero: new Set(), fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0 };
+  // 2. Agrupar Turnos (Fondo, Reporte final y Retiros)
+  data.shifts?.filter((s: any) => s.closedAt).forEach((s: any) => {
+      const dStr = getStrictDate(s.openedAt);
+      if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
       
-      auditByDate[dateStr].cajero.add(shift.openedBy);
-      auditByDate[dateStr].fondo += (shift.startingCash || 0);
-      auditByDate[dateStr].reportado += (shift.reportedCash || 0);
-      
-      const withdrawals = shift.movements?.filter((m: any) => m.type === 'OUT').reduce((sum: number, m: any) => sum + m.amount, 0) || 0;
-      auditByDate[dateStr].retiros += withdrawals;
+      auditMap[dStr].fondo += (s.startingCash || 0);
+      auditMap[dStr].reportado += (s.reportedCash || 0);
+      auditMap[dStr].cajero.add(s.openedBy);
+
+      // Sumamos los gastos que se hicieron FÍSICAMENTE en la caja en este turno
+      const withdrawals = s.movements?.filter((m: any) => m.type === 'OUT').reduce((sum: number, m: any) => sum + m.amount, 0) || 0;
+      auditMap[dStr].retiros += withdrawals;
   });
 
-  // Ordenamos del día más reciente al más antiguo
-  const dailyAuditArray = Object.values(auditByDate).sort((a: any, b: any) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
+  // Convertimos el mapa en un arreglo y lo ordenamos del día más nuevo al más viejo
+  const dailyAuditArray = Object.values(auditMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 
   // ==========================================
   // FUNCIONES DE EXPORTACIÓN Y REPORTE
@@ -483,18 +490,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-2xl lg:text-3xl font-black text-white">{totalOrders}</p></div>
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-2xl lg:text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
-                        
-                        {data.biExtraStats && (
-                            <>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-2xl lg:text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
-                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Clientes que regresan vs Nuevos">Retención VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{returningPct.toFixed(0)}%</p></div>
-                            </>
-                        )}
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
+                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Adopción VIP General">Adopción VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{(ventasNetas > 0 ? (ventasVIP/ventasNetas*100) : 0).toFixed(0)}%</p></div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -743,9 +744,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                 </div>
 
-                {/* ========================================== */}
-                {/* AUDITORÍA DE CORTES DE CAJA                */}
-                {/* ========================================== */}
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
@@ -771,13 +769,17 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
                                   const difference = dayData.reportado - expectedCash;
                                   
-                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
+                                  const isShortage = difference < -0.5; 
                                   const isExact = Math.abs(difference) <= 0.5;
                                   const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
 
+                                  // Formateo de fecha de YYYY-MM-DD a DD/MM/YYYY para que se vea bien
+                                  const [year, month, day] = dayData.date.split('-');
+                                  const displayDate = `${day}/${month}/${year}`;
+
                                   return (
                                       <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
-                                          <td className="py-4 pl-4 text-zinc-400">{dayData.dateStr}</td>
+                                          <td className="py-4 pl-4 text-zinc-400">{displayDate}</td>
                                           <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
                                           <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
                                           <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
