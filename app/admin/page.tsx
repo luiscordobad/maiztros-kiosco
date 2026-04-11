@@ -22,7 +22,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [emailSending, setEmailSending] = useState(false);
   const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
-  // ESTADO PARA AJUSTES MANUALES DE NÓMINA
   const [nominaAdjustments, setNominaAdjustments] = useState<Record<string, number>>({});
 
   const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -55,9 +54,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   useEffect(() => { fetchData(); }, [startDate, endDate]);
 
-  // ==========================================
-  // 🌟 BOTONES RÁPIDOS DE QUINCENAS
-  // ==========================================
   const setQuincena1 = () => {
       const d = new Date();
       setStartDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);
@@ -66,7 +62,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const setQuincena2 = () => {
       const d = new Date();
-      // Obtener el último día del mes dinámicamente
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
       setStartDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-16`);
       setEndDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${lastDay}`);
@@ -292,7 +287,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX)
+  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA
   // ==========================================
   const auditMap: Record<string, any> = {};
 
@@ -334,7 +329,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const dailyAuditArray = Object.values(auditMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 
   // ==========================================
-  // 🌟 MOTOR AUTOMÁTICO DE NÓMINA (FLEXIBLE)
+  // MOTOR AUTOMÁTICO DE NÓMINA
   // ==========================================
   const nominaMap: Record<string, any> = {};
 
@@ -347,7 +342,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               sueldoBase: 0,
               horasTotales: 0,
               propinasTotales: 0,
-              ajuste: nominaAdjustments[cajero] || 0, // Inyectamos el ajuste manual
+              ajuste: nominaAdjustments[cajero] || 0,
               totalPagar: 0,
               turnos: []
           };
@@ -359,7 +354,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       const timeIn = sStart.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
       const timeOut = sEnd.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
 
-      // Calcular Horas exactas que duró el turno abierto
       const diffMs = sEnd.getTime() - sStart.getTime();
       const diffHrs = diffMs / (1000 * 60 * 60);
       nominaMap[cajero].horasTotales += diffHrs;
@@ -394,38 +388,105 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       const diasTrabajados = n.diasSet.size;
       n.diasTrabajados = diasTrabajados;
       n.sueldoBase = diasTrabajados * 200; 
-      
-      // El ajuste manual viene del input que controlas en la pantalla
       n.ajuste = nominaAdjustments[n.cajero] || 0;
       n.totalPagar = n.sueldoBase + n.propinasTotales + n.ajuste;
-      
       return n;
   }).sort((a, b) => b.totalPagar - a.totalPagar);
 
-  // Manejador del Input de Ajuste
   const handleAjusteNomina = (cajero: string, value: string) => {
       const valNum = parseFloat(value) || 0;
       setNominaAdjustments(prev => ({...prev, [cajero]: valNum}));
   };
 
   // ==========================================
-  // FUNCIONES DE EXPORTACIÓN Y REPORTE
+  // 🌟 EL NUEVO PDF STORYTELLING
   // ==========================================
   const generatePDF = () => {
       const doc = new jsPDF();
-      doc.setFontSize(20);
-      doc.text("Reporte de Ventas Maiztros", 14, 20);
+      
+      // Fondo Oscuro Total
+      doc.setFillColor(24, 24, 27); // #18181b
+      doc.rect(0, 0, 210, 297, 'F');
+
+      // Título
+      doc.setTextColor(250, 204, 21); // yellow-400
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text("MAIZTROS BI - REPORTE EJECUTIVO", 14, 25);
+
+      // Subtítulo
+      doc.setTextColor(161, 161, 170); // zinc-400
       doc.setFontSize(12);
-      doc.text(`Periodo: ${startDate} al ${endDate}`, 14, 30);
-      doc.text(`Ventas Netas: $${ventasNetas.toFixed(2)}`, 14, 40);
-      doc.text(`Utilidad Neta: $${utilidadNeta.toFixed(2)}`, 14, 48);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Periodo Analizado: ${startDate} al ${endDate}`, 14, 33);
 
-      doc.setFontSize(16);
-      doc.text("Top 10 Productos", 14, 65);
-      const prodBody = topProductsData.map(p => [p.name, p.qty.toString()]);
-      (doc as any).autoTable({ startY: 70, head: [['Producto', 'Unidades Vendidas']], body: prodBody });
+      // --- TARJETA 1: VENTAS ---
+      doc.setFillColor(39, 39, 42); // #27272a
+      doc.roundedRect(14, 45, 85, 28, 3, 3, 'F');
+      doc.setTextColor(161, 161, 170);
+      doc.setFontSize(10);
+      doc.text("INGRESOS BRUTOS", 20, 55);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(`$${ventasNetas.toFixed(2)}`, 20, 65);
 
-      doc.save(`Maiztros_Reporte_${startDate}.pdf`);
+      // --- TARJETA 2: UTILIDAD ---
+      doc.setFillColor(39, 39, 42);
+      doc.roundedRect(110, 45, 85, 28, 3, 3, 'F');
+      doc.setTextColor(161, 161, 170);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("UTILIDAD NETA P&L", 116, 55);
+      doc.setTextColor(74, 222, 128); // green-400
+      doc.setFontSize(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(`$${utilidadNeta.toFixed(2)}`, 116, 65);
+
+      // --- STORYTELLING ---
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.text("Resumen de Operación", 14, 90);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(212, 212, 216); // zinc-300
+      
+      const story = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen libre de ganancia de la operación se situó en un ${margenGanancia.toFixed(1)}%. Además, se registró la visita de ${retencionStats.returning} clientes VIP recurrentes, lo que demuestra una sólida fidelidad hacia nuestra marca y sazón.`;
+      const splitStory = doc.splitTextToSize(story, 180);
+      doc.text(splitStory, 14, 98);
+
+      // --- TABLA DE TOP PRODUCTOS ---
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.text("Top 5 Productos Base", 14, 130);
+
+      const prodBody = topProductsData.slice(0, 5).map((p, i) => [`#${i+1}`, p.name, `${p.qty} unds`]);
+      (doc as any).autoTable({
+          startY: 135,
+          head: [['Rank', 'Producto', 'Volumen']],
+          body: prodBody,
+          theme: 'grid',
+          headStyles: { fillColor: [250, 204, 21], textColor: [24, 24, 27], fontStyle: 'bold' },
+          bodyStyles: { fillColor: [39, 39, 42], textColor: [255, 255, 255] },
+          alternateRowStyles: { fillColor: [24, 24, 27] }
+      });
+
+      // --- CONSEJO ESTRATÉGICO ---
+      if (data.biExtraStats && data.biExtraStats.ticketModa > 0) {
+          let finalY = (doc as any).lastAutoTable.finalY + 15;
+          doc.setFillColor(20, 83, 45); // green-900 bg
+          doc.roundedRect(14, finalY, 180, 22, 3, 3, 'F');
+          doc.setTextColor(74, 222, 128); // green-400
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "bold");
+          doc.text(`💡 ESTRATEGIA RECOMENDADA:`, 20, finalY + 8);
+          doc.setFont("helvetica", "normal");
+          doc.text(`Tu ticket más repetido (Moda) es de $${data.biExtraStats.ticketModa.toFixed(2)}. Crea un combo o paquete especial`, 20, finalY + 14);
+          doc.text(`que cueste $${(data.biExtraStats.ticketModa + 20).toFixed(2)} para empujar este promedio hacia arriba y aumentar márgenes.`, 20, finalY + 19);
+      }
+
+      doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
   const sendEmailReport = async () => {
@@ -540,7 +601,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         <div className="bg-zinc-900 p-4 rounded-[2rem] border border-zinc-800 mb-8">
             <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
                 
-                {/* 🌟 BOTONES DE QUINCENA RÁPIDOS */}
                 <div className="flex flex-wrap gap-2 w-full xl:w-auto">
                     <button onClick={setQuincena1} className="bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500 hover:text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex-1 md:flex-none">1ra Quincena</button>
                     <button onClick={setQuincena2} className="bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500 hover:text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex-1 md:flex-none">2da Quincena</button>
@@ -807,7 +867,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: FINANZAS (100% DINERO Y LIQUIDEZ)                 */}
+            {/* PESTAÑA: FINANZAS                                        */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
@@ -864,9 +924,68 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     </div>
                 </div>
 
-                {/* ========================================== */}
-                {/* 🌟 NÓMINA POR CAJERO (MÓDULO NUEVO FLEXIBLE) */}
-                {/* ========================================== */}
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
+                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left min-w-[800px]">
+                          <thead>
+                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
+                                  <th className="pb-4 pl-4">Día</th>
+                                  <th className="pb-4">Cajero</th>
+                                  <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
+                                  <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
+                                  <th className="pb-4 text-pink-400" title="Propinas pagadas en efectivo">+ Propinas Efct.</th>
+                                  <th className="pb-4 text-red-400" title="Dinero retirado durante el turno">- Retiros</th>
+                                  <th className="pb-4 text-yellow-400 font-black">= Esperado</th>
+                                  <th className="pb-4 text-white font-black">Reportado</th>
+                                  <th className="pb-4 text-right pr-4">Diferencia</th>
+                              </tr>
+                          </thead>
+                          <tbody className="text-sm font-bold">
+                              {dailyAuditArray.map((dayData: any, idx: number) => {
+                                  const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
+                                  const difference = dayData.reportado - expectedCash;
+                                  
+                                  const isShortage = difference < -0.5; 
+                                  const isExact = Math.abs(difference) <= 0.5;
+                                  const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
+
+                                  const [year, month, day] = dayData.date.split('-');
+                                  const displayDate = `${day}/${month}/${year}`;
+
+                                  return (
+                                      <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
+                                          <td className="py-4 pl-4 text-zinc-400">{displayDate}</td>
+                                          <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
+                                          <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
+                                          <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
+                                          <td className="py-4 text-pink-400">+${dayData.propinas.toFixed(2)}</td>
+                                          <td className="py-4 text-red-400">-${dayData.retiros.toFixed(2)}</td>
+                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
+                                          <td className="py-4 text-white font-black">${dayData.reportado.toFixed(2)}</td>
+                                          <td className="py-4 pr-4 text-right">
+                                              {isExact ? (
+                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
+                                              ) : isShortage ? (
+                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black" title="Falta dinero en la caja">Falta ${Math.abs(difference).toFixed(2)}</span>
+                                              ) : (
+                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black" title="Hay más dinero del registrado">Sobra ${difference.toFixed(2)}</span>
+                                              )}
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
+                      {dailyAuditArray.length === 0 && (
+                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
+                      )}
+                  </div>
+                </div>
+
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
                       <div>
@@ -904,7 +1023,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                           <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en tickets">Propinas</p>
                                           <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasTotales.toFixed(2)}</p>
                                       </div>
-                                      {/* INPUT DE AJUSTE MANUAL LUIS */}
                                       <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
                                           <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
                                           <input 
@@ -935,68 +1053,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   </div>
                               </div>
                           ))
-                      )}
-                  </div>
-                </div>
-
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-left min-w-[800px]">
-                          <thead>
-                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
-                                  <th className="pb-4 pl-4">Día</th>
-                                  <th className="pb-4">Cajero</th>
-                                  <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
-                                  <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
-                                  <th className="pb-4 text-pink-400" title="Propinas pagadas en efectivo">+ Propinas Efct.</th>
-                                  <th className="pb-4 text-red-400" title="Dinero retirado durante el turno">- Retiros</th>
-                                  <th className="pb-4 text-yellow-400 font-black">= Esperado</th>
-                                  <th className="pb-4 text-white font-black">Reportado</th>
-                                  <th className="pb-4 text-right pr-4">Diferencia</th>
-                              </tr>
-                          </thead>
-                          <tbody className="text-sm font-bold">
-                              {dailyAuditArray.map((dayData: any, idx: number) => {
-                                  const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
-                                  const difference = dayData.reportado - expectedCash;
-                                  
-                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
-                                  const isExact = Math.abs(difference) <= 0.5;
-                                  const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
-
-                                  const [year, month, day] = dayData.date.split('-');
-                                  const displayDate = `${day}/${month}/${year}`;
-
-                                  return (
-                                      <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
-                                          <td className="py-4 pl-4 text-zinc-400">{displayDate}</td>
-                                          <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
-                                          <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
-                                          <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
-                                          <td className="py-4 text-pink-400">+${dayData.propinas.toFixed(2)}</td>
-                                          <td className="py-4 text-red-400">-${dayData.retiros.toFixed(2)}</td>
-                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
-                                          <td className="py-4 text-white font-black">${dayData.reportado.toFixed(2)}</td>
-                                          <td className="py-4 pr-4 text-right">
-                                              {isExact ? (
-                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
-                                              ) : isShortage ? (
-                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black" title="Falta dinero en la caja">Falta ${Math.abs(difference).toFixed(2)}</span>
-                                              ) : (
-                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black" title="Hay más dinero del registrado">Sobra ${difference.toFixed(2)}</span>
-                                              )}
-                                          </td>
-                                      </tr>
-                                  );
-                              })}
-                          </tbody>
-                      </table>
-                      {dailyAuditArray.length === 0 && (
-                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
                       )}
                   </div>
                 </div>
