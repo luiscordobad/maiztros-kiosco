@@ -22,6 +22,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [emailSending, setEmailSending] = useState(false);
   const [ticketEmailing, setTicketEmailing] = useState<string | null>(null);
 
+  // ESTADO PARA AJUSTES MANUALES DE NÓMINA
+  const [nominaAdjustments, setNominaAdjustments] = useState<Record<string, number>>({});
+
   const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
   const lastWeek = new Date();
@@ -51,6 +54,30 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   useEffect(() => { fetchData(); }, [startDate, endDate]);
+
+  // ==========================================
+  // 🌟 BOTONES RÁPIDOS DE QUINCENAS
+  // ==========================================
+  const setQuincena1 = () => {
+      const d = new Date();
+      setStartDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);
+      setEndDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-15`);
+  };
+
+  const setQuincena2 = () => {
+      const d = new Date();
+      // Obtener el último día del mes dinámicamente
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      setStartDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-16`);
+      setEndDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${lastDay}`);
+  };
+
+  const setMesActual = () => {
+      const d = new Date();
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      setStartDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);
+      setEndDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${lastDay}`);
+  };
 
   const getAuthorName = () => role === 'ADMIN' ? 'Luis (Jefe)' : 'Cajero (Staff)';
 
@@ -265,7 +292,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA
+  // AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX)
   // ==========================================
   const auditMap: Record<string, any> = {};
 
@@ -307,7 +334,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const dailyAuditArray = Object.values(auditMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 
   // ==========================================
-  // 🌟 NUEVO: MOTOR AUTOMÁTICO DE NÓMINA
+  // 🌟 MOTOR AUTOMÁTICO DE NÓMINA (FLEXIBLE)
   // ==========================================
   const nominaMap: Record<string, any> = {};
 
@@ -318,23 +345,27 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               cajero,
               diasSet: new Set(),
               sueldoBase: 0,
+              horasTotales: 0,
               propinasTotales: 0,
+              ajuste: nominaAdjustments[cajero] || 0, // Inyectamos el ajuste manual
               totalPagar: 0,
               turnos: []
           };
       }
 
-      // Procesar tiempos del turno localizados a México
       const sStart = new Date(shift.openedAt);
       const sEnd = new Date(shift.closedAt);
       const dateStr = sStart.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
       const timeIn = sStart.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
       const timeOut = sEnd.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
 
-      // Agregamos la fecha al Set. Si un cajero abre y cierra 2 veces el mismo día, solo cuenta 1 día de base.
+      // Calcular Horas exactas que duró el turno abierto
+      const diffMs = sEnd.getTime() - sStart.getTime();
+      const diffHrs = diffMs / (1000 * 60 * 60);
+      nominaMap[cajero].horasTotales += diffHrs;
+
       nominaMap[cajero].diasSet.add(dateStr);
 
-      // Buscar propinas EXACTAS que cayeron en el tiempo de vida de este turno
       let propinasTurnoEfectivo = 0;
       let propinasTurnoTarjeta = 0;
 
@@ -354,21 +385,28 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           fecha: dateStr,
           entrada: timeIn,
           salida: timeOut,
-          propinas: propinasTotalTurno,
-          propinasEfct: propinasTurnoEfectivo,
-          propinasTarj: propinasTurnoTarjeta
+          horas: diffHrs,
+          propinas: propinasTotalTurno
       });
   });
 
-  // Consolidar la matemática final de la Nómina
   const nominaArray = Object.values(nominaMap).map(n => {
       const diasTrabajados = n.diasSet.size;
       n.diasTrabajados = diasTrabajados;
-      n.sueldoBase = diasTrabajados * 200; // 💵 $200 pesos por día
-      n.totalPagar = n.sueldoBase + n.propinasTotales;
+      n.sueldoBase = diasTrabajados * 200; 
+      
+      // El ajuste manual viene del input que controlas en la pantalla
+      n.ajuste = nominaAdjustments[n.cajero] || 0;
+      n.totalPagar = n.sueldoBase + n.propinasTotales + n.ajuste;
+      
       return n;
   }).sort((a, b) => b.totalPagar - a.totalPagar);
 
+  // Manejador del Input de Ajuste
+  const handleAjusteNomina = (cajero: string, value: string) => {
+      const valNum = parseFloat(value) || 0;
+      setNominaAdjustments(prev => ({...prev, [cajero]: valNum}));
+  };
 
   // ==========================================
   // FUNCIONES DE EXPORTACIÓN Y REPORTE
@@ -499,37 +537,50 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center gap-4 col-span-1 md:col-span-2">
-                <input 
-                    type="date" 
-                    max={todayStr} 
-                    value={startDate} 
-                    onChange={e => {
-                        setStartDate(e.target.value);
-                        if (e.target.value > endDate) setEndDate(e.target.value);
-                    }} 
-                    className="bg-transparent text-white font-bold outline-none flex-1 w-full cursor-pointer"
-                />
-                <span className="text-zinc-600">→</span>
-                <input 
-                    type="date" 
-                    max={todayStr} 
-                    value={endDate} 
-                    onChange={e => {
-                        setEndDate(e.target.value);
-                        if (e.target.value < startDate) setStartDate(e.target.value);
-                    }} 
-                    className="bg-transparent text-white font-bold outline-none flex-1 w-full cursor-pointer"
-                />
-            </div>
-            {role === 'ADMIN' ? (
-                <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/30 flex justify-between items-center">
-                    <span className="text-xs font-bold text-green-500 tracking-widest">UTILIDAD P&L</span>
-                    <span className="font-black text-xl text-green-400">${utilidadNeta.toFixed(0)}</span>
+        <div className="bg-zinc-900 p-4 rounded-[2rem] border border-zinc-800 mb-8">
+            <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
+                
+                {/* 🌟 BOTONES DE QUINCENA RÁPIDOS */}
+                <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+                    <button onClick={setQuincena1} className="bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500 hover:text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex-1 md:flex-none">1ra Quincena</button>
+                    <button onClick={setQuincena2} className="bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500 hover:text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex-1 md:flex-none">2da Quincena</button>
+                    <button onClick={setMesActual} className="bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex-1 md:flex-none">Mes Completo</button>
                 </div>
-            ) : <div></div>}
-            <button onClick={fetchData} className="bg-zinc-800 hover:bg-zinc-700 text-white font-black p-4 rounded-2xl transition-colors">🔄 Aplicar / Sync</button>
+
+                <div className="flex items-center gap-4 w-full xl:w-auto bg-zinc-950 p-2 rounded-xl border border-zinc-800">
+                    <input 
+                        type="date" 
+                        max={todayStr} 
+                        value={startDate} 
+                        onChange={e => {
+                            setStartDate(e.target.value);
+                            if (e.target.value > endDate) setEndDate(e.target.value);
+                        }} 
+                        className="bg-transparent text-white font-bold outline-none flex-1 cursor-pointer"
+                    />
+                    <span className="text-zinc-600">→</span>
+                    <input 
+                        type="date" 
+                        max={todayStr} 
+                        value={endDate} 
+                        onChange={e => {
+                            setEndDate(e.target.value);
+                            if (e.target.value < startDate) setStartDate(e.target.value);
+                        }} 
+                        className="bg-transparent text-white font-bold outline-none flex-1 cursor-pointer"
+                    />
+                </div>
+
+                <div className="flex gap-4 w-full xl:w-auto">
+                    {role === 'ADMIN' && (
+                        <div className="bg-green-500/10 px-6 py-3 rounded-xl border border-green-500/30 flex justify-between items-center flex-1">
+                            <span className="text-[10px] font-black text-green-500 uppercase tracking-widest mr-4">Utilidad Neta</span>
+                            <span className="font-black text-lg text-green-400">${utilidadNeta.toFixed(0)}</span>
+                        </div>
+                    )}
+                    <button onClick={fetchData} className="bg-zinc-100 hover:bg-white text-zinc-950 font-black px-8 py-3 rounded-xl transition-transform active:scale-95 shadow-lg flex-1 xl:flex-none">🔄 Sync</button>
+                </div>
+            </div>
         </div>
 
         {loading ? (
@@ -756,7 +807,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: FINANZAS                                        */}
+            {/* PESTAÑA: FINANZAS (100% DINERO Y LIQUIDEZ)                 */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
@@ -814,8 +865,80 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
 
                 {/* ========================================== */}
-                {/* AUDITORÍA DE CORTES DE CAJA                */}
+                {/* 🌟 NÓMINA POR CAJERO (MÓDULO NUEVO FLEXIBLE) */}
                 {/* ========================================== */}
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                      <div>
+                        <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
+                        <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo asistido: Base ($200/día) + Propinas reales + Ajuste Manual de Luis.</p>
+                      </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {nominaArray.length === 0 ? (
+                          <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
+                      ) : (
+                          nominaArray.map((nomina: any, idx: number) => (
+                              <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
+                                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
+                                  
+                                  <div className="flex justify-between items-start mb-6">
+                                      <div>
+                                          <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
+                                          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
+                                          <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mt-1">Total Hrs Caja: {nomina.horasTotales.toFixed(1)} hrs</p>
+                                      </div>
+                                      <div className="text-right">
+                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
+                                          <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-3 gap-2 mb-6">
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="$200 pesos por día abierto">Base Teórica</p>
+                                          <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
+                                      </div>
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en tickets">Propinas</p>
+                                          <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasTotales.toFixed(2)}</p>
+                                      </div>
+                                      {/* INPUT DE AJUSTE MANUAL LUIS */}
+                                      <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
+                                          <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
+                                          <input 
+                                            type="number" 
+                                            placeholder="0"
+                                            value={nominaAdjustments[nomina.cajero] || ''}
+                                            onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
+                                            className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
+                                          />
+                                      </div>
+                                  </div>
+
+                                  <div className="border-t border-zinc-800 pt-4">
+                                      <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Reloj Checador de Caja (Entrada - Salida)</p>
+                                      <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                          {nomina.turnos.map((t: any, i: number) => (
+                                              <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
+                                                  <div className="flex items-center gap-2">
+                                                      <span className="text-zinc-400 w-16">{t.fecha}</span>
+                                                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
+                                                  </div>
+                                                  <div className="text-right">
+                                                    <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+                </div>
+
                 <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
@@ -841,7 +964,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
                                   const difference = dayData.reportado - expectedCash;
                                   
-                                  const isShortage = difference < -0.5; 
+                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
                                   const isExact = Math.abs(difference) <= 0.5;
                                   const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
 
@@ -874,67 +997,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       </table>
                       {dailyAuditArray.length === 0 && (
                           <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
-                      )}
-                  </div>
-                </div>
-
-                {/* ========================================== */}
-                {/* 🌟 NÓMINA POR CAJERO (MÓDULO NUEVO) */}
-                {/* ========================================== */}
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
-                  <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-                      <div>
-                        <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
-                        <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo automático de sueldo base ($200 x día) + propinas totales.</p>
-                      </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {nominaArray.length === 0 ? (
-                          <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
-                      ) : (
-                          nominaArray.map((nomina: any, idx: number) => (
-                              <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
-                                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
-                                  
-                                  <div className="flex justify-between items-start mb-6">
-                                      <div>
-                                          <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
-                                          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
-                                      </div>
-                                      <div className="text-right">
-                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
-                                          <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
-                                      </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-4 mb-6">
-                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Sueldo Base</p>
-                                          <p className="text-lg font-black text-white">${nomina.sueldoBase.toFixed(2)}</p>
-                                      </div>
-                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Propinas</p>
-                                          <p className="text-lg font-black text-pink-400">${nomina.propinasTotales.toFixed(2)}</p>
-                                      </div>
-                                  </div>
-
-                                  <div className="border-t border-zinc-800 pt-4">
-                                      <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Desglose de Turnos (Entrada - Salida)</p>
-                                      <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
-                                          {nomina.turnos.map((t: any, i: number) => (
-                                              <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
-                                                  <div className="flex items-center gap-2">
-                                                      <span className="text-zinc-400">{t.fecha}</span>
-                                                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">{t.entrada} - {t.salida}</span>
-                                                  </div>
-                                                  <span className="text-pink-400">+$ {t.propinas.toFixed(2)}</span>
-                                              </div>
-                                          ))}
-                                      </div>
-                                  </div>
-                              </div>
-                          ))
                       )}
                   </div>
                 </div>
