@@ -265,7 +265,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX)
+  // 🌟 AUDITORÍA DE CAJA: AGRUPADOR ESTRICTO POR DÍA (MX) - CORREGIDO
   // ==========================================
   const auditMap: Record<string, any> = {};
 
@@ -273,7 +273,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       try {
           const d = new Date(isoString);
           d.setHours(d.getHours() - 6); // Ajuste manual a UTC-6 (Centro de México)
-          return d.toISOString().split('T')[0]; // Arroja "YYYY-MM-DD" perfecto
+          return d.toISOString().split('T')[0]; // Arroja "YYYY-MM-DD"
       } catch {
           return "Fecha Inválida";
       }
@@ -281,7 +281,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   // 1. Agrupar Ventas en Efectivo y Propinas
   data.orders?.forEach((o: any) => {
-      if (o.status === 'PAID' && o.paymentMethod === 'EFECTIVO_CAJA') {
+      // ✅ CORRECCIÓN: Ahora suma TODO lo que no sea cancelado (PAID o COMPLETED) en Efectivo
+      if (o.status !== 'REFUNDED' && o.paymentMethod === 'EFECTIVO_CAJA') {
           const dStr = getStrictDate(o.updatedAt || o.createdAt);
           if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
           
@@ -290,7 +291,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       }
   });
 
-  // 2. Agrupar Turnos (Fondo, Reporte final y Retiros)
+  // 2. Agrupar Turnos (Fondo y Reportado)
   data.shifts?.filter((s: any) => s.closedAt).forEach((s: any) => {
       const dStr = getStrictDate(s.openedAt);
       if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
@@ -298,10 +299,17 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       auditMap[dStr].fondo += (s.startingCash || 0);
       auditMap[dStr].reportado += (s.reportedCash || 0);
       auditMap[dStr].cajero.add(s.openedBy);
+  });
 
-      // Sumamos los gastos que se hicieron FÍSICAMENTE en la caja en este turno
-      const withdrawals = s.movements?.filter((m: any) => m.type === 'OUT').reduce((sum: number, m: any) => sum + m.amount, 0) || 0;
-      auditMap[dStr].retiros += withdrawals;
+  // 3. Agrupar Retiros de Caja (Jalados directo de los Gastos de Caja Chica)
+  data.expenses?.forEach((e: any) => {
+      // ✅ CORRECCIÓN: Usamos la tabla global de gastos para que no se pierda ningún retiro
+      if (e.category === 'CAJA_CHICA' || e.description.toLowerCase().includes('retiro')) {
+          const dStr = getStrictDate(e.date || e.createdAt);
+          if (!auditMap[dStr]) auditMap[dStr] = { date: dStr, fondo: 0, ventas: 0, propinas: 0, retiros: 0, reportado: 0, cajero: new Set() };
+          
+          auditMap[dStr].retiros += e.amount;
+      }
   });
 
   // Convertimos el mapa en un arreglo y lo ordenamos del día más nuevo al más viejo
@@ -490,12 +498,18 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Órdenes</p><p className="text-2xl lg:text-3xl font-black text-white">{totalOrders}</p></div>
                         <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Ticket Prom.</p><p className="text-2xl lg:text-3xl font-black text-yellow-400">${ticketPromedio.toFixed(2)}</p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
-                        <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Adopción VIP General">Adopción VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{(ventasNetas > 0 ? (ventasVIP/ventasNetas*100) : 0).toFixed(0)}%</p></div>
+                        
+                        {data.biExtraStats && (
+                            <>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Moda Ticket</p><p className="text-2xl lg:text-3xl font-black text-purple-400">${data.biExtraStats.ticketModa.toFixed(2)}</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2">Con Extras</p><p className="text-2xl lg:text-3xl font-black text-blue-400">{totalOrders > 0 ? ((data.biExtraStats.extrasTicketsCount / totalOrders)*100).toFixed(0) : 0}%</p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Tiempo de Preparación de la Cocina (Minutos)">Tiempo Prep.</p><p className="text-2xl lg:text-3xl font-black text-orange-400">{data.biExtraStats.avgPrepTime.toFixed(1)} <span className="text-xs">min</span></p></div>
+                                <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 col-span-2 md:col-span-1"><p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2" title="Adopción VIP General">Adopción VIP</p><p className="text-2xl lg:text-3xl font-black text-green-400">{(ventasNetas > 0 ? (ventasVIP/ventasNetas*100) : 0).toFixed(0)}%</p></div>
+                            </>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -769,11 +783,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                   const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
                                   const difference = dayData.reportado - expectedCash;
                                   
-                                  const isShortage = difference < -0.5; 
+                                  const isShortage = difference < -0.5; // Tolerancia de 50 centavos
                                   const isExact = Math.abs(difference) <= 0.5;
                                   const cajerosStr = Array.from(dayData.cajero).join(', ') || 'N/A';
 
-                                  // Formateo de fecha de YYYY-MM-DD a DD/MM/YYYY para que se vea bien
                                   const [year, month, day] = dayData.date.split('-');
                                   const displayDate = `${day}/${month}/${year}`;
 
