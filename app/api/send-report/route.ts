@@ -25,7 +25,7 @@ export async function POST(req: Request) {
         topProducts, topToppingsPaid,
         audit, nomina,
         dayChartData, hourChartData, lowStockItems, expenses,
-        pilares, bcgMatrix
+        pilares
     } = await req.json();
 
     const renderBar = (val: number, max: number, color: string) => {
@@ -44,6 +44,9 @@ export async function POST(req: Request) {
     const textGray = "#71717a"; 
     const primaryBlue = "#2563eb"; 
     const bgLight = "#f4f4f5"; 
+
+    // Gastos mostrados en la tarjeta superior = Físicos + Comisiones
+    const gastosTotalesVisual = gastosFisicos + comisionesTerminal;
 
     const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #ffffff; color: ${textDark}; padding: 40px; border: 1px solid #e4e4e7; border-radius: 16px;">
@@ -68,25 +71,28 @@ export async function POST(req: Request) {
             <thead>
                 <tr style="background-color: #f1f5f9; font-size: 11px; text-transform: uppercase; color: #475569;">
                     <th style="padding: 12px; border: 1px solid #e2e8f0;">Ingresos Brutos</th>
-                    <th style="padding: 12px; border: 1px solid #e2e8f0;">Gastos Físicos</th>
-                    <th style="padding: 12px; border: 1px solid #e2e8f0;">Comisiones MP</th>
+                    <th style="padding: 12px; border: 1px solid #e2e8f0;">Gastos Operativos</th>
                     <th style="padding: 12px; border: 1px solid #e2e8f0;">Utilidad Neta</th>
                 </tr>
             </thead>
             <tbody>
                 <tr style="font-size: 18px; font-weight: bold;">
                     <td style="padding: 15px; border: 1px solid #e2e8f0; color: #18181b;">$${ventasNetas.toFixed(2)}</td>
-                    <td style="padding: 15px; border: 1px solid #e2e8f0; color: #ef4444;">-$${gastosFisicos.toFixed(2)}</td>
-                    <td style="padding: 15px; border: 1px solid #e2e8f0; color: #ea580c;">-$${comisionesTerminal.toFixed(2)}</td>
+                    <td style="padding: 15px; border: 1px solid #e2e8f0; color: #ef4444;">
+                        -$${gastosTotalesVisual.toFixed(2)}<br>
+                        <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">Incluye Comisiones MP</span>
+                    </td>
                     <td style="padding: 15px; border: 1px solid #e2e8f0; color: ${utilidadNeta >= 0 ? '#16a34a' : '#ef4444'};">$${utilidadNeta.toFixed(2)}</td>
                 </tr>
             </tbody>
         </table>
 
-        <div style="margin-top: 15px; text-align: center; font-size: 13px; color: #71717a;">
-            Efectivo (Caja): <b>$${ventasEfectivo.toFixed(2)}</b> | Tarjeta (Banco): <b>$${ventasTarjeta.toFixed(2)}</b> | Costo Lealtad VIP: <b>-$${totalDescuentos.toFixed(2)}</b>
+        <div style="margin-top: 20px; text-align: center; font-size: 13px; color: ${textGray};">
+            <p style="margin: 0;">Efectivo (Caja): <b>$${ventasEfectivo.toFixed(2)}</b> | Tarjeta Bruto: <b>$${ventasTarjeta.toFixed(2)}</b> | Costo VIP: <b>-$${totalDescuentos.toFixed(2)}</b></p>
+            <p style="margin: 5px 0 0 0; color: #ea580c; font-weight: bold;">Comisiones MP Retenidas: -$${comisionesTerminal.toFixed(2)}</p>
         </div>
-        <div style="margin-top: 10px; text-align: center; font-size: 13px; color: ${laborCostPct > 25 ? '#ef4444' : '#16a34a'}; font-weight: bold;">
+
+        <div style="margin-top: 15px; text-align: center; font-size: 13px; color: ${laborCostPct > 25 ? '#ef4444' : '#16a34a'}; font-weight: bold;">
             Costo Laboral (Nómina vs Ventas): ${laborCostPct.toFixed(1)}% ${laborCostPct > 25 ? '(⚠️ Alto)' : '(✅ Saludable)'}
         </div>
 
@@ -118,24 +124,35 @@ export async function POST(req: Request) {
         </div>` : ''}
 
         <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
-            <p style="margin: 0; font-size: 16px; font-weight: bold;">Ingeniería de Menú y Categorías</p>
+            <p style="margin: 0 0 15px 0; font-size: 16px; font-weight: bold;">Ventas por Pilar (Categoría)</p>
+            <ul style="padding-left: 20px; margin: 0; font-size: 14px; color: #3f3f46;">
+                ${pilares.map((p:any) => `
+                    <li style="margin-bottom: 8px;"><b>${p.name}:</b> $${p.revenue.toFixed(2)}</li>
+                `).join('')}
+            </ul>
+        </div>
+
+        <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
+            <p style="margin: 0; font-size: 16px; font-weight: bold;">Rendimiento de Productos</p>
             <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
                 <tr>
                     <td style="width: 48%; vertical-align: top; padding-right: 2%">
-                        <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: bold;">Ventas por Pilar (Categoría)</p>
-                        <ul style="padding-left: 20px; margin: 0; font-size: 13px; color: #3f3f46;">
-                            ${pilares.map((p:any) => `
-                                <li style="margin-bottom: 8px;"><b>${p.name}:</b> $${p.revenue.toFixed(2)}</li>
-                            `).join('')}
-                        </ul>
+                        <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: bold;">Top 10 Productos Base</p>
+                        ${topProducts.map((p:any) => `
+                            <div style="margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>${p.name}</span><b style="color:#16a34a;">${p.qty} unds</b></div>
+                                ${renderBar(p.qty, maxProd, primaryBlue)}
+                            </div>
+                        `).join('')}
                     </td>
                     <td style="width: 48%; vertical-align: top; padding-left: 2%">
-                        <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: bold;">Matriz BCG (Rendimiento)</p>
-                        <ul style="padding-left: 20px; margin: 0; font-size: 12px; color: #3f3f46;">
-                            ${bcgMatrix.slice(0,6).map((b:any) => `
-                                <li style="margin-bottom: 8px;"><b>${b.name}:</b> ${b.category}</li>
-                            `).join('')}
-                        </ul>
+                        <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: bold;">Top Extras (Con Costo)</p>
+                        ${topToppingsPaid.map((p:any) => `
+                            <div style="margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>${p.name}</span><b style="color:#ea580c;">${p.qty} usos</b></div>
+                                ${renderBar(p.qty, maxPaid, "#f97316")}
+                            </div>
+                        `).join('')}
                     </td>
                 </tr>
             </table>
@@ -197,12 +214,11 @@ export async function POST(req: Request) {
 
         <div style="margin-top: 40px; border-top: 2px solid #e4e4e7; padding-top: 30px;">
             <p style="margin: 0 0 5px 0; font-size: 16px; font-weight: bold;">Nómina Detallada y Rendimiento</p>
-            <p style="margin: 0 0 15px 0; color: #71717a; font-size: 11px;">*Propinas incluyen efectivo + propinas de tarjeta (ya descontado el 4.06% de MP).</p>
             <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
                 <tr style="background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
                     <th style="padding: 10px 5px;">Cajero</th>
                     <th style="padding: 10px 5px;">Días Trab.</th>
-                    <th style="padding: 10px 5px;">Rendimiento (Upsell)</th>
+                    <th style="padding: 10px 5px;">Upsell (Ticket Prom)</th>
                     <th style="padding: 10px 5px;">Base + Ajuste</th>
                     <th style="padding: 10px 5px;">Propinas N.</th>
                     <th style="padding: 10px 5px; text-align: right;">Total a Pagar</th>
@@ -211,7 +227,7 @@ export async function POST(req: Request) {
                     <tr style="border-bottom: 1px solid #e2e8f0;">
                         <td style="padding: 10px 5px; font-weight:bold;">${n.cajero}</td>
                         <td style="padding: 10px 5px; color:#71717a;">${n.diasTrabajados}</td>
-                        <td style="padding: 10px 5px; color:#6366f1;">Ticket Prom: $${n.ticketPromedioCajero.toFixed(2)}</td>
+                        <td style="padding: 10px 5px; color:#6366f1;">$${n.ticketPromedioCajero.toFixed(2)}</td>
                         <td style="padding: 10px 5px;">$${(n.sueldoBase + n.ajuste).toFixed(2)}</td>
                         <td style="padding: 10px 5px; color:#db2777;">+$${n.propinasNetas.toFixed(2)}</td>
                         <td style="padding: 10px 5px; text-align: right; color:#2563eb; font-weight:bold; font-size:14px;">$${n.totalPagar.toFixed(2)}</td>
@@ -239,7 +255,7 @@ export async function POST(req: Request) {
 }
 
 // =========================================================================
-// GET: CIERRES DE CAJA DIARIOS AUTOMÁTICOS
+// GET: EL SÚPER REPORTE AUTOMÁTICO DE CIERRE DE CAJA DIARIO
 // =========================================================================
 export async function GET(req: Request) {
   try {
@@ -376,7 +392,7 @@ export async function GET(req: Request) {
                 <p style="margin: 0 0 15px 0; color: #ea580c; font-size: 16px; font-weight: bold;">Transacciones MercadoPago (Terminal)</p>
                 <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
                     <tr style="border-bottom: 1px solid #ffedd5;">
-                        <td style="padding: 8px 0; color: #374151;">Total Cobrado en Terminal:</td>
+                        <td style="padding: 8px 0; color: #374151;">Cobrado en Terminal (Ventas + Props):</td>
                         <td style="text-align: right; font-weight: bold;">$${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</td>
                     </tr>
                     <tr style="border-bottom: 1px solid #ffedd5;">
@@ -452,7 +468,7 @@ export async function GET(req: Request) {
             <p style="text-align: center; color: #71717a; margin-top: 5px;">Del ${startLastWeek.toLocaleDateString('es-MX')} al ${endLastWeek.toLocaleDateString('es-MX')}</p>
 
             <div style="background-color: #f8fafc; padding: 30px; border-radius: 12px; margin-top: 30px; text-align: center; border: 2px solid ${growth >= 0 ? '#16a34a' : '#ef4444'};">
-                <p style="margin: 0 0 10px 0; color: #475569;">Ventas de la Semana</p>
+                <p style="margin: 0 0 10px 0; color: #475569;">Ventas Netas de la Semana</p>
                 <p style="margin: 0; font-size: 48px; font-weight: bold; color: #18181b;">$${salesLastWeek.toFixed(2)}</p>
                 <p style="margin: 15px 0 0 0; font-size: 18px; font-weight: bold; color: ${growth >= 0 ? '#16a34a' : '#ef4444'};">
                     ${growth >= 0 ? '📈 Crecimos un' : '📉 Caímos un'} ${Math.abs(growth).toFixed(1)}% vs semana pasada.
