@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'maiztrosqro@gmail.com',
-    pass: 'AQUI_VA_TU_CONTRASEÑA_DE_APLICACION' // <-- Usa tu clave de 16 letras
+    pass: 'whyn dmeg vtnb ndll' // <-- Usa tu clave de 16 letras
   }
 });
 
