@@ -209,6 +209,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
   
+  // Utilidad Neta real (Separando comisiones y gastos)
   const utilidadNeta = ventasNetas - gastosFisicos - comisionesTerminal;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
@@ -291,11 +292,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const maxProductQty = Math.max(1, ...topProductsData.map(d => d.qty));
   const maxPaidQty = Math.max(1, ...topToppingsPaidData.map(d => d.qty));
   const maxFreeQty = Math.max(1, ...topToppingsFreeData.map(d => d.qty));
+  const maxPairQty = data.biExtraStats?.topPairs && data.biExtraStats.topPairs.length > 0 ? Math.max(1, ...data.biExtraStats.topPairs.map((d:any) => d.qty)) : 1;
   
   const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
   const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
 
-  // Matriz BCG Lógica
+  // 🧩 Matriz BCG Lógica (Excluye el consejo estratégico)
   const prodKeys = Object.keys(productStats);
   const totalItems = prodKeys.length || 1;
   const avgQty = prodKeys.reduce((acc, k) => acc + productStats[k].qty, 0) / totalItems;
@@ -315,7 +317,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // AUDITORÍA DE CAJA, NÓMINA Y COSTO LABORAL
+  // AUDITORÍA DE CAJA Y NÓMINA 
   // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
@@ -389,7 +391,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               } else {
                   propinasTurnoEfectivo += tip;
               }
-              // Para medir el Upselling
               nominaMap[cajero].ventasCobradas += o.totalAmount;
               nominaMap[cajero].ordenesCobradas += 1;
           }
@@ -416,12 +417,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // 🌟 CÁLCULO DE COSTO LABORAL
-  const totalNominaEmpresa = nominaArray.reduce((acc:number, n:any) => acc + n.sueldoBase + n.ajuste, 0); // No se suman propinas porque las paga el cliente
+  const totalNominaEmpresa = nominaArray.reduce((acc:number, n:any) => acc + n.sueldoBase + n.ajuste, 0); 
   const laborCostPct = ventasNetas > 0 ? (totalNominaEmpresa / ventasNetas) * 100 : 0;
 
-
   // ==========================================
-  // 🌟 PDF EJECUTIVO (NUEVOS MÓDULOS)
+  // 🌟 PDF EJECUTIVO (BLANCO Y LIMPIO - SIN CONSEJO)
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -458,13 +458,12 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
-    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden. El costo laboral se mantiene en ${laborCostPct.toFixed(1)}%.`;
+    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad neta se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden. El Costo Laboral representa el ${laborCostPct.toFixed(1)}% de los ingresos.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
     doc.text(splitStory, 14, y);
-    y += (splitStory.length * 5) + 8;
+    y += (splitStory.length * 5) + 12;
 
-    // TABLA P&L EN EL PDF
     (doc as any).autoTable({
         startY: y,
         head: [['Ingresos Brutos', 'Gastos Físicos', 'Comisiones MP', 'Utilidad Neta P&L']],
@@ -500,18 +499,29 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.text("Analisis de Tendencias y Menu", 14, y);
     y += 10;
 
-    // MATRIZ BCG Y PILARES
     doc.setFontSize(12);
-    doc.text("Ventas por Pilar (Categoria)", 14, y);
+    doc.text("Ventas por Dia de la Semana", 14, y);
     y += 5;
-    
-    const pilaresBody = data.biExtraStats ? data.biExtraStats.pilaresChart.map((p:any) => [p.name, `$${p.revenue.toFixed(2)}`]) : [];
+
+    const daysBody = dayChartData.map(d => [d.Dia, `$${d.Ventas.toFixed(2)}`, '']);
     (doc as any).autoTable({
         startY: y,
-        head: [['Pilar', 'Ingresos Generados']],
-        body: pilaresBody,
+        head: [['Dia', 'Ventas', 'Proporcion']],
+        body: daysBody,
         theme: 'striped',
         headStyles: { fillColor: primary, textColor: 255 },
+        columnStyles: { 0: { cellWidth: 30, fontStyle: 'bold' }, 1: { cellWidth: 40 }, 2: { cellWidth: 100 } },
+        didDrawCell: function(cellData: any) {
+            if (cellData.column.index === 2 && cellData.section === 'body') {
+                const ventas = dayChartData[cellData.row.index].Ventas;
+                if (ventas > 0) {
+                    const percent = ventas / maxDayVentas;
+                    const barWidth = 90 * percent;
+                    doc.setFillColor(168, 85, 247); 
+                    doc.roundedRect(cellData.cell.x + 2, cellData.cell.y + 2, barWidth, cellData.cell.height - 4, 1, 1, 'F');
+                }
+            }
+        }
     });
     y = (doc as any).lastAutoTable.finalY + 15;
 
@@ -523,7 +533,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const bcgBody = bcgMatrix.slice(0,10).map((b:any) => [b.name, b.category]);
     (doc as any).autoTable({
         startY: y,
-        head: [['Producto', 'Clasificacion']],
+        head: [['Producto', 'Clasificacion BCG']],
         body: bcgBody,
         theme: 'grid',
         headStyles: { fillColor: [63, 63, 70], textColor: 255 }, 
@@ -645,13 +655,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     doc.setFontSize(12);
     doc.setTextColor(...textDark);
-    doc.text(`Calculo de Nomina a Pagar (Costo Laboral: ${laborCostPct.toFixed(1)}%)`, 14, y);
+    doc.text("Calculo de Nomina a Pagar", 14, y);
     y += 5;
 
     const nomBody = nominaArray.map((n:any) => [
         n.cajero, 
         `${n.diasTrabajados} dias`, 
-        `$${n.ticketPromedioCajero.toFixed(2)}`, // Nuevo: Rendimiento Upsell
+        `$${n.ticketPromedioCajero.toFixed(2)}`, 
         `$${(n.sueldoBase + n.ajuste).toFixed(2)}`, 
         `+$${n.propinasNetas.toFixed(2)}`, 
         `$${n.totalPagar.toFixed(2)}`
@@ -666,19 +676,16 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         columnStyles: { 5: { fontStyle: 'bold', textColor: primary } }
     });
 
-    doc.save(`Maiztros_Resultados_${startDate}.pdf`);
+    doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
-  // ==========================================
-  // 🌟 ENVÍO DEL REPORTE AL CORREO (CORREGIDO Y AMPLIADO)
-  // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
           const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
           const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
           
-          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden. El costo laboral se mantuvo en ${laborCostPct.toFixed(1)}%.`;
+          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad neta se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
@@ -911,7 +918,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
-                    {/* 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG) */}
+                    {/* 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG Y PILARES) */}
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
@@ -988,6 +995,58 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </div>
                                             <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
                                                 <div className="bg-pink-400 h-full rounded-full" style={{width: `${(p.qty / maxPairQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {topToppingsPaidData.length > 0 ? topToppingsPaidData.map((t, i) => (
+                                    <div key={t.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
+                                                <p className="text-xs font-black text-orange-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-orange-400 h-full rounded-full" style={{width: `${(t.qty / maxPaidQty) * 100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-zinc-600 text-sm">Sin datos suficientes.</p>}
+                            </div>
+                        </div>
+
+                        <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {topToppingsFreeData.length > 0 ? topToppingsFreeData.map((t, i) => (
+                                    <div key={t.name} className="flex items-center gap-4">
+                                        <span className="text-xs font-black text-zinc-600 w-4">0{i+1}</span>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between mb-1">
+                                                <p className="text-sm font-bold truncate max-w-[150px]">{t.name}</p>
+                                                <p className="text-xs font-black text-blue-400">{t.qty} <span className="text-[10px] text-zinc-500 uppercase">usos</span></p>
+                                            </div>
+                                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                                <div className="bg-blue-400 h-full rounded-full" style={{width: `${(t.qty / maxFreeQty) * 100}%`}}></div>
                                             </div>
                                         </div>
                                     </div>
@@ -1251,7 +1310,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: VENTAS                                          */}
+            {/* PESTAÑA: VENTAS (CON DETALLE DE MERCADOPAGO)             */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
