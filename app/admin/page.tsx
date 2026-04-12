@@ -202,15 +202,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       if (o.paymentMethod === 'TERMINAL') {
           const tip = o.tipAmount || 0;
           propinasTarjetaBrutas += tip;
-          const cobroTotal = o.totalAmount + tip;
-          comisionesTerminal += (cobroTotal * MP_RATE);
+          comisionesTerminal += ((o.totalAmount + tip) * MP_RATE);
       }
   });
 
   const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
+  const gastosTotales = gastosFisicos + comisionesTerminal; 
   
-  // Utilidad Neta real (Separando comisiones y gastos)
-  const utilidadNeta = ventasNetas - gastosFisicos - comisionesTerminal;
+  const utilidadNeta = ventasNetas - gastosTotales;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
@@ -251,7 +250,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const orderOfDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const dayChartData = orderOfDays.map(d => ({ Dia: d, Ventas: dayMap[d] || 0 }));
 
-  // 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG Y RENDIMIENTO)
   const productStats: Record<string, { qty: number, revenue: number }> = {};
   const toppingVolumePaid: any = {};
   const toppingVolumeFree: any = {};
@@ -297,7 +295,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const maxDayVentas = Math.max(1, ...dayChartData.map(d => d.Ventas));
   const maxHourVentas = Math.max(1, ...hourChartData.map(d => d.Ventas));
 
-  // 🧩 Matriz BCG Lógica (Excluye el consejo estratégico)
   const prodKeys = Object.keys(productStats);
   const totalItems = prodKeys.length || 1;
   const avgQty = prodKeys.reduce((acc, k) => acc + productStats[k].qty, 0) / totalItems;
@@ -416,12 +413,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       setNominaAdjustments(prev => ({...prev, [cajero]: valNum}));
   };
 
-  // 🌟 CÁLCULO DE COSTO LABORAL
   const totalNominaEmpresa = nominaArray.reduce((acc:number, n:any) => acc + n.sueldoBase + n.ajuste, 0); 
   const laborCostPct = ventasNetas > 0 ? (totalNominaEmpresa / ventasNetas) * 100 : 0;
 
   // ==========================================
-  // 🌟 PDF EJECUTIVO (BLANCO Y LIMPIO - SIN CONSEJO)
+  // 🌟 PDF EJECUTIVO
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -458,7 +454,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
     const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
     
-    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad neta se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden. El Costo Laboral representa el ${laborCostPct.toFixed(1)}% de los ingresos.`;
+    const story = `Durante este periodo, Maiztros proceso exitosamente ${totalOrders} ordenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situo en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a traves de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparacion promedio de ${prepTime} minutos por orden. El Costo Laboral representa el ${laborCostPct.toFixed(1)}% de los ingresos brutos.`;
     
     const splitStory = doc.splitTextToSize(story, 180);
     doc.text(splitStory, 14, y);
@@ -631,7 +627,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         const expected = d.fondo + d.ventas + d.propinas - d.retiros;
         const diff = d.reportado - expected;
         const diffStr = Math.abs(diff) <= 0.5 ? 'Exacto' : (diff < 0 ? `Falta $${Math.abs(diff).toFixed(2)}` : `Sobra $${diff.toFixed(2)}`);
-        const cajerosStr = d.cajero.join(', ') || 'N/A'; 
+        const cajerosStr = Array.isArray(d.cajero) ? d.cajero.join(', ') : (d.cajero || 'N/A'); 
         const [year, month, day] = d.date.split('-');
         return [`${day}/${month}`, cajerosStr, `$${d.ventas}`, `-$${d.retiros}`, `$${expected}`, `$${d.reportado}`, diffStr];
     });
@@ -655,7 +651,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     doc.setFontSize(12);
     doc.setTextColor(...textDark);
-    doc.text("Calculo de Nomina a Pagar", 14, y);
+    doc.text(`Calculo de Nomina a Pagar (Costo Laboral: ${laborCostPct.toFixed(1)}%)`, 14, y);
     y += 5;
 
     const nomBody = nominaArray.map((n:any) => [
@@ -679,13 +675,16 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
   };
 
+  // ==========================================
+  // 🌟 ENVÍO DEL REPORTE AL CORREO 
+  // ==========================================
   const sendEmailReport = async () => {
       setEmailSending(true);
       try {
           const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
           const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
           
-          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad neta se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
+          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden. El costo laboral se mantuvo en ${laborCostPct.toFixed(1)}%.`;
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
@@ -860,7 +859,266 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="animate-in fade-in duration-500">
             
             {/* ======================================================== */}
-            {/* 📊 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
+            {/* 💰 PESTAÑA: FINANZAS (DISEÑO ORIGINAL RESTAURADO)        */}
+            {/* ======================================================== */}
+            {activeTab === 'FINANZAS' && role === 'ADMIN' && (
+              <div className="space-y-8">
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">📈</div>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Ingresos Brutos</p>
+                    <p className="text-5xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
+                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Operativos</p>
+                    <p className="text-5xl font-black text-red-400 relative z-10">-${gastosTotales.toFixed(2)}</p>
+                    <p className="text-[10px] font-bold mt-3 opacity-90 relative z-10 text-zinc-500">Incluye Físicos y Comisiones MP</p>
+                  </div>
+                  <div className={`p-8 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
+                    <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta P&L</p>
+                    <p className={`text-5xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
+                    <p className="text-sm font-bold mt-3 opacity-90 relative z-10 text-zinc-400">Margen Libre: <span className="bg-black/20 px-2 py-1 rounded">{margenGanancia.toFixed(1)}%</span></p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                        <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🌊 Flujo de Efectivo (Liquidez)</h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                <div>
+                                    <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Efectivo (Caja Física)</p>
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Dinero disponible hoy</p>
+                                </div>
+                                <span className="font-black text-3xl text-green-400">${ventasEfectivo.toFixed(2)}</span>
+                            </div>
+                            
+                            <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                <div className="flex justify-between items-center mb-3 pb-3 border-b border-zinc-800">
+                                    <div>
+                                        <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal Bruto)</p>
+                                        <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Cobrado en terminal (Inc. Props)</p>
+                                    </div>
+                                    <span className="font-black text-3xl text-blue-400">${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <p className="text-[10px] text-orange-400 uppercase font-black">Comisiones MP Retenidas</p>
+                                    <span className="font-black text-sm text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <p className="text-[10px] text-green-400 uppercase font-black">Depósito Neto a Banco</p>
+                                    <span className="font-black text-lg text-green-400">${((ventasTarjeta + propinasTarjetaBrutas) - comisionesTerminal).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
+                        <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🎁 Costo de Lealtad (VIP)</h3>
+                        <div className="flex items-center gap-6 h-full pb-4">
+                            <div className="bg-purple-500/10 border border-purple-500/30 p-6 rounded-2xl flex-1 text-center">
+                                <p className="text-xs text-purple-400 font-black uppercase tracking-widest mb-2">Descuentos Aplicados</p>
+                                <p className="text-4xl font-black text-purple-400">${totalDescuentos.toFixed(2)}</p>
+                                <p className="text-[10px] text-zinc-500 mt-2 font-bold leading-tight">Dinero restado de los ingresos brutos por canje de puntos.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                      <div>
+                          <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
+                          <p className="text-xs font-bold text-zinc-500 mt-1">Cuadre exacto de efectivo por turno.</p>
+                      </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left min-w-[800px]">
+                          <thead>
+                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
+                                  <th className="pb-4 pl-4">Día</th>
+                                  <th className="pb-4">Cajero</th>
+                                  <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
+                                  <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
+                                  <th className="pb-4 text-pink-400" title="Propinas pagadas en efectivo">+ Propinas Efct.</th>
+                                  <th className="pb-4 text-red-400" title="Dinero retirado durante el turno">- Retiros</th>
+                                  <th className="pb-4 text-yellow-400 font-black">= Esperado</th>
+                                  <th className="pb-4 text-white font-black">Reportado</th>
+                                  <th className="pb-4 text-right pr-4">Diferencia</th>
+                              </tr>
+                          </thead>
+                          <tbody className="text-sm font-bold">
+                              {dailyAuditArray.map((dayData: any, idx: number) => {
+                                  const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
+                                  const difference = dayData.reportado - expectedCash;
+                                  const isShortage = difference < -0.5; 
+                                  const isExact = Math.abs(difference) <= 0.5;
+                                  const cajerosStr = Array.isArray(dayData.cajero) ? dayData.cajero.join(', ') : (dayData.cajero || 'N/A');
+                                  const [year, month, day] = dayData.date.split('-');
+                                  const displayDate = `${day}/${month}/${year}`;
+
+                                  return (
+                                      <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
+                                          <td className="py-4 pl-4 text-zinc-400">{displayDate}</td>
+                                          <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
+                                          <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
+                                          <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
+                                          <td className="py-4 text-pink-400">+${dayData.propinas.toFixed(2)}</td>
+                                          <td className="py-4 text-red-400">-${dayData.retiros.toFixed(2)}</td>
+                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
+                                          <td className="py-4 text-white font-black">${dayData.reportado.toFixed(2)}</td>
+                                          <td className="py-4 pr-4 text-right">
+                                              {isExact ? (
+                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
+                                              ) : isShortage ? (
+                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black" title="Falta dinero en la caja">Falta ${Math.abs(difference).toFixed(2)}</span>
+                                              ) : (
+                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black" title="Hay más dinero del registrado">Sobra ${difference.toFixed(2)}</span>
+                                              )}
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
+                      {dailyAuditArray.length === 0 && (
+                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
+                      )}
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-zinc-800 pb-4 gap-4">
+                      <div>
+                        <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento del Equipo</h3>
+                        <p className="text-xs font-bold text-zinc-500 mt-1">Base ($200/día) + Propinas Netas (Descontando MP) + Ajuste Manual.</p>
+                      </div>
+                      <div className={`px-4 py-2 rounded-xl border ${laborCostPct > 25 ? 'bg-red-500/10 border-red-500/30' : 'bg-green-500/10 border-green-500/30'}`}>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Costo Laboral</p>
+                          <p className={`font-black text-xl ${laborCostPct > 25 ? 'text-red-400' : 'text-green-400'}`}>{laborCostPct.toFixed(1)}%</p>
+                      </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {nominaArray.length === 0 ? (
+                          <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
+                      ) : (
+                          nominaArray.map((nomina: any, idx: number) => (
+                              <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
+                                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
+                                  
+                                  <div className="flex justify-between items-start mb-6">
+                                      <div>
+                                          <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
+                                          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
+                                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">🎯 Ticket Promedio: $${nomina.ticketPromedioCajero.toFixed(2)}</p>
+                                      </div>
+                                      <div className="text-right">
+                                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
+                                          <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-3 gap-2 mb-6">
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="$200 pesos por día abierto">Base Teórica</p>
+                                          <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
+                                      </div>
+                                      <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en efectivo y propinas de tarjeta con descuento de comisión">Propinas Neta</p>
+                                          <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasNetas.toFixed(2)}</p>
+                                      </div>
+                                      <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
+                                          <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
+                                          <input 
+                                            type="number" 
+                                            placeholder="0"
+                                            value={nominaAdjustments[nomina.cajero] || ''}
+                                            onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
+                                            className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
+                                          />
+                                      </div>
+                                  </div>
+
+                                  <div className="border-t border-zinc-800 pt-4">
+                                      <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Reloj Checador de Caja (Entrada - Salida)</p>
+                                      <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                          {nomina.turnos.map((t: any, i: number) => (
+                                              <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
+                                                  <div className="flex items-center gap-2">
+                                                      <span className="text-zinc-400 w-16">{t.fecha}</span>
+                                                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
+                                                  </div>
+                                                  <div className="text-right">
+                                                    <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                  <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
+                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Monto Total</label>
+                        <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-black text-2xl outline-none focus:border-red-400" />
+                      </div>
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Categoría</label>
+                        <select value={newExpenseCategory} onChange={e => setNewExpenseCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-400">
+                          <option value="INSUMOS">Insumos (Súper, Elote, etc.)</option>
+                          <option value="NOMINA">Nómina / Colaboradores</option>
+                          <option value="SERVICIOS">Servicios (Luz, Agua, Gas, Renta)</option>
+                          <option value="OTROS">Otros Gastos</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción</label>
+                        <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="Ej. Pago de gas" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white outline-none focus:border-red-400" />
+                      </div>
+                      <button onClick={handleAddExpense} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-lg mt-4 transition-all active:scale-95">Guardar Gasto</button>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
+                    <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                      {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
+                        data.expenses?.map((e: any) => (
+                          <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="bg-zinc-800 text-zinc-400 px-2 py-1 rounded text-xs font-bold uppercase">{e.category}</span>
+                                <span className="text-sm text-zinc-500">{new Date(e.date).toLocaleDateString()}</span>
+                              </div>
+                              <p className="font-bold text-white text-lg">{e.description}</p>
+                            </div>
+                            <div className="flex items-center gap-4 w-full md:w-auto justify-end">
+                              <p className="font-black text-2xl text-red-400">-${e.amount.toFixed(2)}</p>
+                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors">🗑️</button>
+                            </div>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* 📊 PESTAÑA: BUSINESS INTELLIGENCE                         */}
             {/* ======================================================== */}
             {activeTab === 'BI' && role === 'ADMIN' && (
                 <div className="space-y-8">
@@ -918,7 +1176,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                     </div>
 
-                    {/* 🌟 INGENIERÍA DE MENÚ (MATRIZ BCG Y PILARES) */}
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2">🎯 Ventas por Pilar</h3>
@@ -1058,258 +1315,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* 💰 PESTAÑA: FINANZAS                                        */}
-            {/* ======================================================== */}
-            {activeTab === 'FINANZAS' && role === 'ADMIN' && (
-              <div className="space-y-8">
-                
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  <div className="bg-zinc-900 p-6 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">📈</div>
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Ingresos Brutos</p>
-                    <p className="text-4xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-zinc-900 p-6 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest mb-2 relative z-10">Gastos Físicos</p>
-                    <p className="text-4xl font-black text-red-400 relative z-10">-${gastosFisicos.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-orange-950/20 p-6 rounded-[2rem] border border-orange-900/50 shadow-xl relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">💳</div>
-                    <p className="text-orange-500 font-bold uppercase tracking-widest mb-2 relative z-10">Comisiones MP (4%)</p>
-                    <p className="text-4xl font-black text-orange-400 relative z-10">-${comisionesTerminal.toFixed(2)}</p>
-                  </div>
-                  <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden ${utilidadNeta >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                    <div className="absolute -right-4 -top-4 text-8xl opacity-10">🏦</div>
-                    <p className={`font-bold uppercase tracking-widest mb-2 relative z-10 ${utilidadNeta >= 0 ? 'text-green-500' : 'text-red-500'}`}>Utilidad Neta</p>
-                    <p className={`text-4xl font-black relative z-10 ${utilidadNeta >= 0 ? 'text-green-400' : 'text-red-400'}`}>${utilidadNeta.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
-                        <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🌊 Flujo de Efectivo (Liquidez)</h3>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                                <div>
-                                    <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Efectivo (Caja Física)</p>
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Dinero disponible hoy</p>
-                                </div>
-                                <span className="font-black text-3xl text-green-400">${ventasEfectivo.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                                <div>
-                                    <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal Bruto)</p>
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Cobrado en terminal (Inc. Props)</p>
-                                </div>
-                                <span className="font-black text-3xl text-blue-400">${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</span>
-                            </div>
-                            
-                            <div className="flex justify-between items-center bg-orange-950/20 p-4 rounded-xl border border-orange-900/50">
-                                <div>
-                                    <p className="text-sm font-bold text-orange-400 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500"></span> Comisiones MP</p>
-                                    <p className="text-[10px] text-orange-500/70 uppercase font-black mt-1">Retención del 4.06%</p>
-                                </div>
-                                <span className="font-black text-3xl text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
-                            </div>
-                            
-                            <div className="flex justify-between items-center bg-green-950/20 p-4 rounded-xl border border-green-900/50 mt-2">
-                                <div>
-                                    <p className="text-sm font-bold text-green-400 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Depósito Neto (Banco)</p>
-                                    <p className="text-[10px] text-green-500/70 uppercase font-black mt-1">Dinero real a tu cuenta</p>
-                                </div>
-                                <span className="font-black text-3xl text-green-400">${((ventasTarjeta + propinasTarjetaBrutas) - comisionesTerminal).toFixed(2)}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
-                        <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-                            <div>
-                                <h3 className="text-2xl font-black text-white">🧑‍🍳 Nómina y Rendimiento</h3>
-                                <p className="text-xs font-bold text-zinc-500 mt-1">Cálculo asistido: Base ($200/día) + Propinas Netas + Ajuste Manual.</p>
-                            </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {nominaArray.length === 0 ? (
-                                <p className="text-zinc-500 font-bold col-span-2 text-center py-8">No hay turnos registrados en estas fechas.</p>
-                            ) : (
-                                nominaArray.map((nomina: any, idx: number) => (
-                                    <div key={idx} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">
-                                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
-                                        
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div>
-                                                <h4 className="text-xl font-black text-white">{nomina.cajero}</h4>
-                                                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{nomina.diasTrabajados} {nomina.diasTrabajados === 1 ? 'Día' : 'Días'} Laborado(s)</p>
-                                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">🎯 Ticket Promedio: $${nomina.ticketPromedioCajero.toFixed(2)}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Total a Pagar</p>
-                                                <p className="text-3xl font-black text-blue-400">${nomina.totalPagar.toFixed(2)}</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-2 mb-6">
-                                            <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                                <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="$200 pesos por día abierto">Base Teórica</p>
-                                                <p className="text-sm font-black text-white mt-1">${nomina.sueldoBase.toFixed(2)}</p>
-                                            </div>
-                                            <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                                <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest" title="Suma de propinas en efectivo y propinas de tarjeta con descuento de comisión">Propinas Neta</p>
-                                                <p className="text-sm font-black text-pink-400 mt-1">+${nomina.propinasNetas.toFixed(2)}</p>
-                                            </div>
-                                            <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
-                                                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
-                                                <input 
-                                                    type="number" 
-                                                    placeholder="0"
-                                                    value={nominaAdjustments[nomina.cajero] || ''}
-                                                    onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
-                                                    className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="border-t border-zinc-800 pt-4">
-                                            <p className="text-xs font-black text-zinc-600 uppercase tracking-widest mb-3">Reloj Checador de Caja (Entrada - Salida)</p>
-                                            <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
-                                                {nomina.turnos.map((t: any, i: number) => (
-                                                    <div key={i} className="flex justify-between items-center text-xs font-bold bg-zinc-900/50 p-2 rounded-lg">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-zinc-400 w-16">{t.fecha}</span>
-                                                            <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl flex flex-col mt-8">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-2xl font-black text-white">💰 Auditoría de Cortes de Caja</h3>
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-950 px-3 py-1 rounded-lg">Cálculo Exacto</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-left min-w-[800px]">
-                          <thead>
-                              <tr className="border-b border-zinc-800 text-zinc-500 text-xs font-black uppercase tracking-widest">
-                                  <th className="pb-4 pl-4">Día</th>
-                                  <th className="pb-4">Cajero</th>
-                                  <th className="pb-4 text-blue-400" title="Dinero con el que abrió la caja">Fondo Inicial</th>
-                                  <th className="pb-4 text-green-400" title="Suma de tickets pagados en efectivo">+ Ventas Efct.</th>
-                                  <th className="pb-4 text-pink-400" title="Propinas pagadas en efectivo">+ Propinas Efct.</th>
-                                  <th className="pb-4 text-red-400" title="Dinero retirado durante el turno">- Retiros</th>
-                                  <th className="pb-4 text-yellow-400 font-black">= Esperado</th>
-                                  <th className="pb-4 text-white font-black">Reportado</th>
-                                  <th className="pb-4 text-right pr-4">Diferencia</th>
-                              </tr>
-                          </thead>
-                          <tbody className="text-sm font-bold">
-                              {dailyAuditArray.map((dayData: any, idx: number) => {
-                                  const expectedCash = dayData.fondo + dayData.ventas + dayData.propinas - dayData.retiros;
-                                  const difference = dayData.reportado - expectedCash;
-                                  
-                                  const isShortage = difference < -0.5; 
-                                  const isExact = Math.abs(difference) <= 0.5;
-                                  const cajerosStr = Array.isArray(dayData.cajero) ? dayData.cajero.join(', ') : (dayData.cajero || 'N/A');
-
-                                  const [year, month, day] = dayData.date.split('-');
-                                  const displayDate = `${day}/${month}/${year}`;
-
-                                  return (
-                                      <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-950/50 transition-colors">
-                                          <td className="py-4 pl-4 text-zinc-400">{displayDate}</td>
-                                          <td className="py-4 text-white truncate max-w-[100px]">{cajerosStr}</td>
-                                          <td className="py-4 text-blue-400">${dayData.fondo.toFixed(2)}</td>
-                                          <td className="py-4 text-green-400">+${dayData.ventas.toFixed(2)}</td>
-                                          <td className="py-4 text-pink-400">+${dayData.propinas.toFixed(2)}</td>
-                                          <td className="py-4 text-red-400">-${dayData.retiros.toFixed(2)}</td>
-                                          <td className="py-4 text-yellow-400 font-black">${expectedCash.toFixed(2)}</td>
-                                          <td className="py-4 text-white font-black">${dayData.reportado.toFixed(2)}</td>
-                                          <td className="py-4 pr-4 text-right">
-                                              {isExact ? (
-                                                  <span className="bg-zinc-800 text-zinc-400 px-3 py-1 rounded text-xs font-black">Exacto</span>
-                                              ) : isShortage ? (
-                                                  <span className="bg-red-500/20 text-red-500 border border-red-500/50 px-3 py-1 rounded text-xs font-black" title="Falta dinero en la caja">Falta ${Math.abs(difference).toFixed(2)}</span>
-                                              ) : (
-                                                  <span className="bg-green-500/20 text-green-400 border border-green-500/50 px-3 py-1 rounded text-xs font-black" title="Hay más dinero del registrado">Sobra ${difference.toFixed(2)}</span>
-                                              )}
-                                          </td>
-                                      </tr>
-                                  );
-                              })}
-                          </tbody>
-                      </table>
-                      {dailyAuditArray.length === 0 && (
-                          <div className="text-center py-8 text-zinc-500 font-bold">No hay turnos ni ventas registradas en estos días.</div>
-                      )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-                  <div className="lg:col-span-1 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-2xl font-black text-white mb-6">Registrar Gasto</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Monto Total</label>
-                        <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-black text-2xl outline-none focus:border-red-400" />
-                      </div>
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Categoría</label>
-                        <select value={newExpenseCategory} onChange={e => setNewExpenseCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-400">
-                          <option value="INSUMOS">Insumos (Súper, Elote, etc.)</option>
-                          <option value="NOMINA">Nómina / Colaboradores</option>
-                          <option value="SERVICIOS">Servicios (Luz, Agua, Gas, Renta)</option>
-                          <option value="OTROS">Otros Gastos</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Descripción</label>
-                        <input type="text" value={newExpenseDesc} onChange={e => setNewExpenseDesc(e.target.value)} placeholder="Ej. Pago de gas" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white outline-none focus:border-red-400" />
-                      </div>
-                      <button onClick={handleAddExpense} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-lg mt-4 transition-all active:scale-95">Guardar Gasto</button>
-                    </div>
-                  </div>
-
-                  <div className="lg:col-span-2 bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl">
-                    <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-4">Detalle Histórico de Egresos</h3>
-                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                      {data.expenses?.length === 0 ? <p className="text-zinc-500 italic">No hay gastos registrados en este rango de fechas.</p> : 
-                        data.expenses?.map((e: any) => (
-                          <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="bg-zinc-800 text-zinc-400 px-2 py-1 rounded text-xs font-bold uppercase">{e.category}</span>
-                                <span className="text-sm text-zinc-500">{new Date(e.date).toLocaleDateString()}</span>
-                              </div>
-                              <p className="font-bold text-white text-lg">{e.description}</p>
-                            </div>
-                            <div className="flex items-center gap-4 w-full md:w-auto justify-end">
-                              <p className="font-black text-2xl text-red-400">-${e.amount.toFixed(2)}</p>
-                              <button onClick={() => deleteExpense(e.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg font-black transition-colors">🗑️</button>
-                            </div>
-                          </div>
-                        ))
-                      }
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            )}
-
-            {/* ======================================================== */}
             {/* PESTAÑA: VENTAS (CON DETALLE DE MERCADOPAGO)             */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
@@ -1390,7 +1395,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑAS RESTANTES: CLIENTES, MARKETING, AUDITORIA, ETC. */}
+            {/* PESTAÑAS RESTANTES: CLIENTES, INVENTARIO, PANICO ETC.    */}
             {/* ======================================================== */}
             {activeTab === 'CLIENTES' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
@@ -1506,9 +1511,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================================================== */}
-            {/* PESTAÑA: AUDITORIA Y LOGS                                */}
-            {/* ======================================================== */}
             {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
@@ -1533,9 +1535,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================================================== */}
-            {/* PESTAÑA: INVENTARIO FÍSICO                               */}
-            {/* ======================================================== */}
             {activeTab === 'INVENTARIO' && (
                 <div className="space-y-12 animate-in fade-in duration-300">
                   <section className="bg-zinc-900/50 p-8 rounded-[2rem] border border-zinc-800">
@@ -1566,9 +1565,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                 </div>
             )}
 
-            {/* ======================================================== */}
-            {/* PESTAÑA: PÁNICO (APAGAR/PRENDER)                         */}
-            {/* ======================================================== */}
             {activeTab === 'PANICO' && role === 'ADMIN' && (
                 <div className="space-y-8 animate-in fade-in duration-300">
                   <div className="bg-red-950/10 border border-red-900/50 p-8 rounded-[2rem]">
