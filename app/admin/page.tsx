@@ -31,12 +31,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [startDate, setStartDate] = useState(lastWeek.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(todayStr);
   
-  // 🌟 ESTADOS AMPLIADOS PARA GASTOS
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
   const [newExpenseCategory, setNewExpenseCategory] = useState('INSUMOS');
   const [newExpenseSubCategory, setNewExpenseSubCategory] = useState('Central de Abastos');
   const [newExpenseDesc, setNewExpenseDesc] = useState('');
-  const [newExpenseReceipt, setNewExpenseReceipt] = useState<string | null>(null); // Foto del ticket
+  
+  // 🌟 MEJORA: Estado para manejar Archivos, PDFs, XML e Imágenes
+  const [expenseFileInfo, setExpenseFileInfo] = useState<{name: string, type: string, base64: string} | null>(null);
 
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponDiscount, setNewCouponDiscount] = useState('');
@@ -47,7 +48,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
   const MP_RATE = 0.0406; 
 
-  // Opciones preestablecidas de gastos
   const subcategoriesMap: Record<string, string[]> = {
       'INSUMOS': ['Central de Abastos', 'Verdulería', 'Súper (Walmart/HEB/Sams)', 'Maíz / Elote', 'Desechables / Empaques', 'Bebidas'],
       'NOMINA': ['Sueldo Base', 'Bono / Comisión', 'Adelanto de Sueldo', 'Liquidación'],
@@ -56,7 +56,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   useEffect(() => {
-      // Si cambia la categoría principal, auto-seleccionar la primera subcategoría
       setNewExpenseSubCategory(subcategoriesMap[newExpenseCategory][0]);
   }, [newExpenseCategory]);
 
@@ -143,19 +142,24 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     await fetch(`/api/admin?id=${id}&type=coupon&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
+  // 🌟 MEJORA: Lector de Archivos Universal (Imágenes, PDF, XML)
   const handleReceiptUpload = (e: any) => {
       const file = e.target.files[0];
       if (file) {
           const reader = new FileReader();
-          reader.onloadend = () => setNewExpenseReceipt(reader.result as string);
+          reader.onloadend = () => {
+              setExpenseFileInfo({
+                  name: file.name,
+                  type: file.type,
+                  base64: reader.result as string
+              });
+          };
           reader.readAsDataURL(file);
       }
   };
 
   const handleAddExpense = async () => {
-    if (!newExpenseAmount || !newExpenseDesc) return alert('Por favor llena el Monto y la Descripción del gasto.');
-    
-    // Armamos la descripción final incluyendo la subcategoría
+    if (!newExpenseAmount || !newExpenseDesc) return alert('Por favor llena el Monto y la Descripción.');
     const finalDescription = `[${newExpenseSubCategory}] ${newExpenseDesc}`;
 
     const payload = { 
@@ -163,7 +167,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         amount: newExpenseAmount, 
         category: newExpenseCategory, 
         description: finalDescription, 
-        receiptImage: newExpenseReceipt, // Guardamos el Base64 de la foto
+        receiptImage: expenseFileInfo ? expenseFileInfo.base64 : null, // Manda el Base64 (Ojo: Para PDFs es pesado)
         author: getAuthorName() 
     };
 
@@ -172,7 +176,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     if (json.success) { 
         setNewExpenseAmount(''); 
         setNewExpenseDesc(''); 
-        setNewExpenseReceipt(null);
+        setExpenseFileInfo(null);
         fetchData(); 
     } 
     else { alert('Error al registrar gasto'); }
@@ -358,35 +362,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // 🌟 AUDITORÍA TRADUCTOR DE LOGS
-  // ==========================================
-  const formatLogAction = (action: string) => {
-      const map: any = {
-          'product': '🍔 Menú Principal',
-          'modifier': '🧂 Opciones/Toppings',
-          'inventory_toggle': '📦 Inv. Pánico',
-          'update_stock': '📊 Ajuste Físico',
-          'add_stock': '📥 Entrada Insumos',
-          'expense': '💸 Gasto Físico',
-          'coupon': '🏷️ Promociones',
-          'ORDEN_CANCELADA': '🛑 Cancelación',
-          'init_inventory': '⚠️ Reset Sistema'
-      };
-      return map[action] || action;
-  };
-
-  const formatLogDetails = (details: string) => {
-      if (!details) return 'Sin detalles de operación';
-      return details
-          .replace(/ID: /g, '')
-          .replace(/ TRUE/g, ' 🟢 Activado')
-          .replace(/ FALSE/g, ' 🔴 Desactivado')
-          .replace(/_/g, ' '); // Quita los guiones bajos
-  };
-
-
-  // ==========================================
-  // AUDITORÍA DE CAJA Y NÓMINA 
+  // AUDITORÍA DE CAJA Y NÓMINA
   // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
@@ -744,7 +720,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         columnStyles: { 5: { fontStyle: 'bold', textColor: primary } }
     });
 
-    doc.save(`Maiztros_Ejecutivo_${startDate}.pdf`);
+    doc.save(`Maiztros_Resultados_${startDate}.pdf`);
   };
 
   const sendEmailReport = async () => {
@@ -752,8 +728,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       try {
           const vipPct = ventasNetas > 0 ? ((ventasVIP / ventasNetas) * 100).toFixed(1) : "0.0";
           const prepTime = data.biExtraStats ? data.biExtraStats.avgPrepTime.toFixed(1) : "0";
-          
-          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad bruta operativa se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden. El costo laboral se mantuvo en ${laborCostPct.toFixed(1)}%.`;
+          const storyForEmail = `Durante este periodo, Maiztros procesó exitosamente ${totalOrders} órdenes, logrando un ticket promedio de $${ticketPromedio.toFixed(2)}. El margen de utilidad neta se situó en un ${margenGanancia.toFixed(1)}%. Se captaron ${vipPct}% de ventas a través de clientes VIP recurrentes, y la cocina mantuvo un tiempo de preparación promedio de ${prepTime} minutos por orden.`;
 
           const lowStockItems = data.inventoryItems?.filter((i:any) => i.stock <= 5) || [];
 
@@ -785,6 +760,39 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       }
       setEmailSending(false);
   };
+
+  // ==========================================
+  // 🌟 TRADUCTOR DE LOGS (NUEVO)
+  // ==========================================
+  const formatLogAction = (action: string) => {
+      const map: any = {
+          'product': '🍔 Menú Principal',
+          'modifier': '🧂 Opciones/Toppings',
+          'inventory_toggle': '📦 Inv. Pánico',
+          'update_stock': '📊 Ajuste Físico',
+          'add_stock': '📥 Entrada Insumos',
+          'expense': '💸 Gasto Físico',
+          'coupon': '🏷️ Promociones',
+          'ORDEN_CANCELADA': '🛑 Cancelación',
+          'init_inventory': '⚠️ Reset Sistema',
+          'CAMBIO_PANICO_PRODUCTO': '🍔 Pánico (Producto)',
+          'CAMBIO_PANICO_MODIFICADOR': '🧂 Pánico (Topping)',
+          'CAMBIO_PANICO_INVENTARIO': '📦 Pánico (Inventario)'
+      };
+      return map[action] || action;
+  };
+
+  const formatLogDetails = (details: string) => {
+      if (!details) return 'Sin detalles de operación';
+      return details
+          .replace(/ID: /g, '')
+          .replace(/ set true/ig, ' 🟢 (Activado)')
+          .replace(/ set false/ig, ' 🔴 (Desactivado)')
+          .replace(/_/g, ' ')
+          .replace(/p beb ag/ig, 'Agua Natural') // Traducción rápida si las nombras así
+          .toUpperCase(); 
+  };
+
 
   const renderInventoryGroup = (category: string, title: string, isManual: boolean = false) => {
     const items = data.inventoryItems?.filter((i: any) => i.category === category) || [];
@@ -868,7 +876,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="flex flex-wrap bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 w-full xl:w-auto gap-1">
             {allowedTabs.map((tab: any) => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === tab ? 'bg-yellow-400 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:text-white'}`}>
-                  {tab === 'CLIENTES' ? '👥 Clientes VIP' : tab === 'BI' ? '📊 BI & MENÚ' : tab}
+                  {tab === 'CLIENTES' ? '👥 Clientes VIP' : tab === 'BI' ? '📊 BI' : tab}
               </button>
             ))}
           </div>
@@ -928,7 +936,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="animate-in fade-in duration-500">
             
             {/* ======================================================== */}
-            {/* 💰 PESTAÑA: FINANZAS (RESTAURADO EL DISEÑO DE 3 TARJETAS) */}
+            {/* 💰 PESTAÑA: FINANZAS (DISEÑO 3 TARJETAS ORIGINALES)      */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
@@ -940,7 +948,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     <p className="text-5xl font-black text-white relative z-10">${ventasNetas.toFixed(2)}</p>
                   </div>
                   
-                  {/* GASTOS OPERATIVOS CON EL DESGLOSE FÍSICO/MP DENTRO */}
                   <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl relative overflow-hidden flex flex-col justify-between">
                     <div className="absolute -right-4 -top-4 text-8xl opacity-10">💸</div>
                     <div>
@@ -1181,11 +1188,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <div>
                           <label className="text-zinc-500 text-xs font-bold uppercase mb-1 block">Foto del Ticket / Recibo</label>
                           <div className="w-full bg-zinc-950 border border-zinc-700 rounded-xl overflow-hidden flex items-center justify-center relative p-4 focus-within:border-red-400 cursor-pointer hover:bg-zinc-900 transition-colors">
-                              <input type="file" accept="image/*" onChange={handleReceiptUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                              {newExpenseReceipt ? (
-                                  <span className="text-sm font-bold text-green-400">✅ Ticket Adjuntado (Click para cambiar)</span>
+                              <input type="file" accept="image/*,.pdf,.xml,application/pdf,text/xml" onChange={handleReceiptUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                              {expenseFileInfo ? (
+                                  <span className="text-sm font-bold text-green-400">✅ Archivo Adjunto ({expenseFileInfo.name})</span>
                               ) : (
-                                  <span className="text-sm font-bold text-zinc-400">📸 Toca para tomar foto o elegir archivo</span>
+                                  <span className="text-sm font-bold text-zinc-400">📸 Toca para subir foto o archivo</span>
                               )}
                           </div>
                       </div>
@@ -1201,11 +1208,15 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                           <div key={e.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center border bg-zinc-950 border-zinc-800 gap-4 hover:border-red-900/50 transition-colors">
                             <div className="flex gap-4 items-center">
                                 {e.receiptImage ? (
-                                    <div className="w-16 h-16 bg-zinc-900 border border-zinc-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => window.open(e.receiptImage, '_blank')} title="Ver Ticket">
-                                        <img src={e.receiptImage} alt="Ticket" className="w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" />
+                                    <div className="w-16 h-16 bg-zinc-900 border border-zinc-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => window.open(e.receiptImage, '_blank')} title="Ver Comprobante">
+                                        {e.receiptImage.includes('data:image') ? (
+                                            <img src={e.receiptImage} alt="Ticket" className="w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" />
+                                        ) : (
+                                            <span className="text-2xl">📄</span>
+                                        )}
                                     </div>
                                 ) : (
-                                    <div className="w-16 h-16 bg-zinc-900 border border-zinc-700 rounded-xl flex items-center justify-center text-2xl" title="Sin Ticket">📄</div>
+                                    <div className="w-16 h-16 bg-zinc-900 border border-zinc-700 rounded-xl flex items-center justify-center text-2xl opacity-20" title="Sin Ticket">📄</div>
                                 )}
                                 <div>
                                   <div className="flex items-center gap-2 mb-1">
@@ -1230,7 +1241,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* 📊 PESTAÑA: BUSINESS INTELLIGENCE                         */}
+            {/* 📊 PESTAÑA: BUSINESS INTELLIGENCE Y ESTRATEGIA            */}
             {/* ======================================================== */}
             {activeTab === 'BI' && role === 'ADMIN' && (
                 <div className="space-y-8">
@@ -1376,7 +1387,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6 flex justify-between items-end">
                                 <div>
-                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Extras (Con Costo)</h3>
+                                    <h3 className="text-xl font-black text-orange-400">🧀 Top Toppings (Con Costo)</h3>
                                     <p className="text-xs text-zinc-500 font-bold mt-1">Aderezos, Quesos, Polvos.</p>
                                 </div>
                             </div>
@@ -1401,7 +1412,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                             <div className="mb-6 flex justify-between items-end">
                                 <div>
-                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Extras (Gratis / Barra)</h3>
+                                    <h3 className="text-xl font-black text-blue-400">🌶️ Top Toppings (Gratis / Barra)</h3>
                                     <p className="text-xs text-zinc-500 font-bold mt-1">Chiles y Restricciones (Sin...)</p>
                                 </div>
                             </div>
@@ -1427,7 +1438,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: VENTAS (CON DETALLE DE MERCADOPAGO)             */}
+            {/* PESTAÑA: VENTAS                                          */}
             {/* ======================================================== */}
             {activeTab === 'VENTAS' && (
                 <div className="space-y-8">
@@ -1507,19 +1518,18 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: AUDITORIA Y LOGS TRADUCIDOS                     */}
+            {/* PESTAÑA: AUDITORIA Y LOGS (TRADUCIDOS)                   */}
             {/* ======================================================== */}
             {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800">
                         <div className="mb-6">
                           <h3 className="text-2xl font-black">🛡️ Registro de Seguridad (Logs)</h3>
-                          <p className="text-zinc-500 text-sm font-bold mt-1">Historial inmutable de acciones críticas en el sistema (Traducido para lectura fácil).</p>
+                          <p className="text-zinc-500 text-sm font-bold mt-1">Historial inmutable de acciones críticas en el sistema (Traducido).</p>
                         </div>
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                             {data.auditLogs?.length === 0 ? <p className="text-zinc-500 italic">No hay registros de seguridad recientes.</p> : 
                               data.auditLogs?.map((log: any) => {
-                                  // 🌟 Traductor de Logs
                                   const formatLogAction = (action: string) => {
                                       const map: any = {
                                           'product': '🍔 Menú Principal',
@@ -1530,7 +1540,10 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                           'expense': '💸 Gasto Físico',
                                           'coupon': '🏷️ Promociones',
                                           'ORDEN_CANCELADA': '🛑 Cancelación',
-                                          'init_inventory': '⚠️ Reset Sistema'
+                                          'init_inventory': '⚠️ Reset Sistema',
+                                          'CAMBIO_PANICO_PRODUCTO': '🍔 Pánico (Producto)',
+                                          'CAMBIO_PANICO_MODIFICADOR': '🧂 Pánico (Topping)',
+                                          'CAMBIO_PANICO_INVENTARIO': '📦 Pánico (Inventario)'
                                       };
                                       return map[action] || action;
                                   };
@@ -1539,18 +1552,18 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                       if (!details) return 'Sin detalles de operación';
                                       return details
                                           .replace(/ID: /g, '')
-                                          .replace(/ TRUE/g, ' 🟢 Activado')
-                                          .replace(/ FALSE/g, ' 🔴 Desactivado')
-                                          .replace(/_/g, ' '); 
+                                          .replace(/ set true/ig, ' 🟢 (Activado)')
+                                          .replace(/ set false/ig, ' 🔴 (Desactivado)')
+                                          .replace(/_/g, ' ')
+                                          .replace(/p beb ag/ig, 'Agua Natural')
+                                          .toUpperCase(); 
                                   };
 
                                   return (
                                     <div key={log.id} className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex flex-col md:flex-row md:justify-between md:items-center gap-3 text-xs hover:border-zinc-700 transition-colors">
                                         <div className="flex flex-col md:flex-row gap-2 md:gap-4 md:items-center">
                                             <span className="text-zinc-600 font-bold whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</span>
-                                            <span className="bg-zinc-900 px-3 py-1.5 rounded-lg text-blue-400 font-black uppercase text-[10px] tracking-widest border border-zinc-800 self-start md:self-auto">
-                                                {formatLogAction(log.action)}
-                                            </span>
+                                            <span className="bg-zinc-900 px-3 py-1.5 rounded-lg text-blue-400 font-black uppercase text-[10px] tracking-widest border border-zinc-800 self-start md:self-auto">{formatLogAction(log.action)}</span>
                                             <p className="font-bold text-zinc-300 text-sm capitalize">{formatLogDetails(log.details)}</p>
                                         </div>
                                         <span className="text-zinc-500 font-black uppercase italic whitespace-nowrap">👤 {log.author}</span>
@@ -1564,7 +1577,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑAS RESTANTES: CLIENTES Y PANICO                    */}
+            {/* PESTAÑAS RESTANTES: CLIENTES, MARKETING, INVENTARIO ETC. */}
             {/* ======================================================== */}
             {activeTab === 'CLIENTES' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
@@ -1622,6 +1635,91 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                             ))}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {activeTab === 'MARKETING' && role === 'ADMIN' && (
+                <div className="space-y-8 animate-in fade-in duration-300">
+                  <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 p-8 rounded-[2rem] shadow-2xl">
+                    <h2 className="text-2xl font-black mb-6 text-white">Crear Nuevo Cupón Promocional</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Código</label><input type="text" value={newCouponCode} onChange={e => setNewCouponCode(e.target.value.toUpperCase())} placeholder="MAIZTROS10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black uppercase outline-none focus:border-yellow-400" /></div>
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Descuento</label><input type="number" value={newCouponDiscount} onChange={e => setNewCouponDiscount(e.target.value)} placeholder="Ej. 10" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" /></div>
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Tipo</label><select value={newCouponType} onChange={e => setNewCouponType(e.target.value as 'FIXED'|'PERCENTAGE')} className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400"><option value="FIXED">Pesos MXN ($)</option><option value="PERCENTAGE">Porcentaje (%)</option></select></div>
+                      <div><label className="text-purple-300 text-xs font-bold uppercase mb-1 block">Mínimo Compra</label><input type="number" value={newCouponMinAmount} onChange={e => setNewCouponMinAmount(e.target.value)} placeholder="Ej. 250" className="w-full bg-zinc-950 border border-purple-500/50 p-4 rounded-xl text-white font-black outline-none focus:border-yellow-400" title="¿Cuánto deben gastar para usarlo?" /></div>
+                    </div>
+                    <button onClick={handleCreateCoupon} className="mt-6 w-full md:w-auto bg-purple-500 hover:bg-purple-400 text-white font-black px-8 py-4 rounded-xl shadow-lg transition-all active:scale-95">Crear Cupón</button>
+                  </div>
+
+                  <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-xl mt-8">
+                    <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">Rendimiento de Cupones Activos</h3>
+                    <div className="space-y-4">
+                      {data.coupons.map((c: any) => {
+                        const usosDelCupon = validOrders.filter((o:any) => o.couponCode === c.code);
+                        const revenueGenerado = usosDelCupon.reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+
+                        return (
+                            <div key={c.id} className={`p-6 rounded-2xl flex flex-col lg:flex-row justify-between items-start lg:items-center border gap-6 ${c.isActive ? 'bg-zinc-950 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'bg-zinc-950/50 border-zinc-800 opacity-60'}`}>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-1">
+                                        <p className="font-black text-3xl text-yellow-400 tracking-widest">{c.code}</p>
+                                        {!c.isActive && <span className="bg-zinc-800 text-zinc-500 text-[10px] px-2 py-1 rounded font-black uppercase tracking-widest">Inactivo</span>}
+                                    </div>
+                                    <p className="text-sm font-bold text-zinc-300 mt-1">Descuenta {c.discountType === 'FIXED' ? `$${c.discount} pesos` : `${c.discount}% del total`}</p>
+                                    {c.minAmount > 0 && <p className="text-xs font-bold text-purple-400 mt-2 bg-purple-500/10 inline-block px-3 py-1 rounded-full border border-purple-500/30">Compra mínima: ${c.minAmount}</p>}
+                                </div>
+                                
+                                <div className="bg-zinc-900 px-6 py-4 rounded-xl border border-zinc-800 flex gap-6 items-center w-full lg:w-auto">
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-1">Usos</p>
+                                        <p className="font-black text-xl text-white">{usosDelCupon.length}</p>
+                                    </div>
+                                    <div className="w-px h-8 bg-zinc-800"></div>
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-green-500 font-black uppercase tracking-widest mb-1">Ventas (ROI)</p>
+                                        <p className="font-black text-xl text-green-400">${revenueGenerado.toFixed(2)}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 w-full lg:w-auto border-t lg:border-t-0 border-zinc-800 pt-4 lg:pt-0">
+                                    <button onClick={() => toggleStatus(c.id, 'coupon', c.isActive)} className={`flex-1 lg:flex-none px-6 py-3 rounded-xl font-black text-sm uppercase ${c.isActive ? 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500 hover:text-zinc-900' : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'}`}>{c.isActive ? 'Apagar' : 'Prender'}</button>
+                                    <button onClick={() => deleteCoupon(c.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-black transition-colors" title="Eliminar Cupón">🗑️</button>
+                                </div>
+                            </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+            )}
+
+            {activeTab === 'INVENTARIO' && (
+                <div className="space-y-12 animate-in fade-in duration-300">
+                  <section className="bg-zinc-900/50 p-8 rounded-[2rem] border border-zinc-800">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-zinc-800 pb-4 gap-4">
+                      <div>
+                        <h2 className="text-3xl font-black text-white">📦 Stock Físico</h2>
+                        <p className="text-zinc-500 font-bold text-sm">Gestiona tus entradas y salidas de producto.</p>
+                      </div>
+                      {data.inventoryItems?.length === 0 && role === 'ADMIN' && (
+                        <button onClick={initInventory} className="bg-red-600 hover:bg-red-500 text-white font-black px-4 py-2 rounded-xl text-sm animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.5)]">
+                          ⚠️ Cargar Datos Iniciales
+                        </button>
+                      )}
+                    </div>
+                    {data.inventoryItems?.length > 0 && (
+                      <>
+                        {renderInventoryGroup('INSUMO', '🌽 Producción de Elote (Control por Lotes)', true)}
+                        <div className="mt-8 border-t border-zinc-800 pt-8">
+                          <h3 className="text-2xl font-black text-white mb-6">Descuento Automático en Caja</h3>
+                          {renderInventoryGroup('PAPAS', '🔥 Bolsas de Papas')}
+                          {renderInventoryGroup('MARUCHAN', '🍜 Maruchans')}
+                          {renderInventoryGroup('EMPAQUE', '🥤 Empaques y Cubiertos')}
+                          {renderInventoryGroup('BEBIDA', '🧊 Bebidas')}
+                        </div>
+                      </>
+                    )}
+                  </section>
                 </div>
             )}
 
