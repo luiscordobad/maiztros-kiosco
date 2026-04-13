@@ -13,6 +13,8 @@ const OPCIONES = {
   BOING: ['Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa'],
   REFRESCO: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral'],
   BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
+  // 🌟 AÑADIDO: Faltaba esta lista para que los combos grandes funcionaran
+  BEBIDA_ALL_MULTIPLE: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
   ESPECIALIDAD_CHOICE: ['Construpapas', 'Obra Maestra'],
   PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
 };
@@ -23,34 +25,32 @@ const REWARDS = [
   { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN' }
 ];
 
-export default function PedirClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
+export default function PedirClient({ products = [], modifiers = [] }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
   useEffect(() => {
       fetch('/api/admin?action=kiosco_sync')
         .then(res => res.json())
-        .then(data => { if(data.success) setInventoryItems(data.inventoryItems || []); })
+        .then(data => { if(data?.success) setInventoryItems(data.inventoryItems || []); })
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  const visibleProducts = products
-    .filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
-    .sort((a, b) => a.basePrice - b.basePrice);
+  const visibleProducts = (products || [])
+    .filter(p => p?.name && !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
+    .sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
 
-  const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
-  const aderezos = modifiers.filter(m => m.type === 'ADEREZO' && m.isAvailable);
-  const quesos = modifiers.filter(m => m.type === 'QUESO' && m.isAvailable);
-  const restricciones = modifiers.filter(m => m.type === 'RESTRICCION' && m.isAvailable);
-  const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
+  const polvos = (modifiers || []).filter(m => m?.type === 'POLVO' && m?.isAvailable);
+  const aderezos = (modifiers || []).filter(m => m?.type === 'ADEREZO' && m?.isAvailable);
+  const quesos = (modifiers || []).filter(m => m?.type === 'QUESO' && m?.isAvailable);
+  const restricciones = (modifiers || []).filter(m => m?.type === 'RESTRICCION' && m?.isAvailable);
+  const chiles = (modifiers || []).filter(m => m?.type === 'CHILE' && m?.isAvailable);
 
   const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
-  
-  // 🌟 AÑADIDO: Estado para saber qué producto estamos editando
   const [editingCartId, setEditingCartId] = useState<string | null>(null);
 
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
@@ -69,8 +69,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [regData, setRegData] = useState({ acceptedTerms: false });
-  
-  // 🌟 AÑADIDO: Estado para mostrar el modal de Privacidad
   const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [couponCode, setCouponCode] = useState('');
@@ -114,14 +112,17 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
       fetch(`/api/customer?phone=${customerPhone}`)
         .then(res => res.json())
         .then(data => {
-          if (data.success) {
-            setLoyaltyPoints(data.points);
+          if (data?.success) {
+            setLoyaltyPoints(data.points || 0);
             if(data.name && !customerName) setCustomerName(data.name); 
             if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else { setLoyaltyPoints(0); setIsNewCustomer(true); }
           setIsCheckingPoints(false);
-        });
+        }).catch(() => setIsCheckingPoints(false));
+    } else {
+      setLoyaltyPoints(0);
+      setIsNewCustomer(true);
     }
   }, [customerPhone]);
 
@@ -135,6 +136,12 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
       setAppState('SUCCESS');
       window.history.replaceState(null, '', window.location.pathname);
       
+      fetch('/api/orders', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, newStatus: 'PAID' })
+      }).catch(() => {});
+
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
       fetch('/api/send-ticket', {
           method: 'POST',
@@ -147,16 +154,17 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   const subtotal = getTotal();
 
   const getProductEmoji = (name: string, category: string) => {
+      const n = name?.toLowerCase() || '';
       if (category === 'COMBO') return '📦';
       if (category === 'ESQUITE') return '🌽';
       if (category === 'BEBIDA') return '🥤';
-      if (name.toLowerCase().includes('maruchan') || name.toLowerCase().includes('obra maestra')) return '🍜';
-      if (name.toLowerCase().includes('papa') || name.toLowerCase().includes('dorito') || name.toLowerCase().includes('tostito')) return '🔥';
+      if (n.includes('maruchan') || n.includes('obra maestra')) return '🍜';
+      if (n.includes('papa') || n.includes('dorito') || n.includes('tostito') || n.includes('runner') || n.includes('taki') || n.includes('cheeto')) return '🔥';
       return '🍬';
   }
 
   const getProductDesc = (name: string) => {
-    const n = name.toLowerCase();
+    const n = name?.toLowerCase() || '';
     if(n.includes('solitario') || n.includes('individual')) return "1 Esq. Mediano + 1 Bebida Fría";
     if(n.includes('dúo') || n.includes('pareja')) return "2 Esq. Medianos + 2 Bebidas (1er Topping Gratis)";
     if(n.includes('tribu') || n.includes('familiar')) return "2 Gdes + 2 Chicos + 4 Bebidas (1er Topping Gratis)";
@@ -168,7 +176,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   };
 
   const getProductSteps = (p: any) => {
+    if (!p || !p.name) return [];
     const n = p.name.toLowerCase();
+    
     if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebidas (Elige 2)', type: 'BEBIDA_ALL_MULTIPLE', max: 2}];
     if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esquites Grandes (2)', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquites Chicos (2)', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebidas (Elige 4)', type: 'BEBIDA_ALL_MULTIPLE', max: 4}];
@@ -181,17 +191,17 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}];
     if(n.includes('obra maestra')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}, {t: 'Preparación', type: 'TOPPINGS'}];
     if(p.category === 'ANTOJO' || n === 'agua natural') return [];
+    
     return [{t: 'Personaliza', type: 'TOPPINGS'}];
   };
 
   const handleProductClick = (product: any) => {
+    if (!product) return;
     const steps = getProductSteps(product);
     if (steps.length === 0) { addToCart(product, 0, product.name); return; }
-    setActiveProduct(product); setWizardStep(0); setWizardData({}); 
-    setEditingCartId(null);
+    setActiveProduct(product); setWizardStep(0); setWizardData({}); setEditingCartId(null);
   };
 
-  // 🌟 AÑADIDO: Lógica para abrir el editor con la info del producto guardado
   const handleEditCartItem = (item: any) => {
     setEditingCartId(item.cartId);
     setActiveProduct(item.product);
@@ -201,21 +211,32 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   };
 
   const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
+    if (!mod) return;
     const currentSelections = wizardData[wizardStep] || [];
     if (!isMultiple) { setWizardData({...wizardData, [wizardStep]: [mod]}); return; }
-    const isSelected = currentSelections.find((m: any) => m.id === mod.id);
+    
+    const isSelected = currentSelections.find((m: any) => m?.id === mod.id);
     let newSelections = [];
-    if (isSelected) { newSelections = currentSelections.filter((m: any) => m.id !== mod.id); } 
-    else {
+    
+    if (isSelected) { 
+        newSelections = currentSelections.filter((m: any) => m?.id !== mod.id); 
+    } else {
         if (currentSelections.length >= maxLimit) return; 
         newSelections = [...currentSelections, mod];
-        if (mod.type === 'CHILE') newSelections = newSelections.filter((m: any) => !m.name.toLowerCase().includes('sin chilito') && !m.name.toLowerCase().includes('sin chile'));
-        if (mod.name.toLowerCase().includes('sin chilito') || mod.name.toLowerCase().includes('sin chile')) newSelections = newSelections.filter((m: any) => m.type !== 'CHILE');
+        
+        const modName = mod?.name?.toLowerCase() || '';
+        if (mod.type === 'CHILE') {
+            newSelections = newSelections.filter((m: any) => !m?.name?.toLowerCase().includes('sin chilito') && !m?.name?.toLowerCase().includes('sin chile'));
+        }
+        if (modName.includes('sin chilito') || modName.includes('sin chile')) {
+            newSelections = newSelections.filter((m: any) => m?.type !== 'CHILE');
+        }
     }
     setWizardData({...wizardData, [wizardStep]: newSelections});
   };
 
   const handleNextOrFinish = () => {
+    if (!activeProduct) return;
     const activeSteps = getProductSteps(activeProduct);
     const isLastStep = wizardStep === activeSteps.length - 1;
     if (!isLastStep) { setWizardStep(prev => prev + 1); return; }
@@ -224,8 +245,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     activeSteps.forEach((step: any, index: number) => {
       const selections = wizardData[index] || [];
       if (selections.length === 0) return;
+      
       if (step.type === 'TOPPINGS') {
-        const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
+        const paidCount = selections.filter((s:any) => s?.type === 'QUESO' || s?.type === 'ADEREZO' || s?.type === 'POLVO').length;
         let baseCount = paidCount;
         if (step.firstToppingFree && baseCount > 0) baseCount -= 1;
         if (!step.isFree) {
@@ -233,23 +255,23 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           if (baseCount === 2) totalExtra += 25;
           if (baseCount >= 3) totalExtra += 35;
         }
-        notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
+        notesLines.push(`${step.t}: ${selections.map((s:any) => s?.name || '').join(', ')}`);
       } else if (step.type === 'BEBIDA_ALL_MULTIPLE') {
         notesLines.push(`${step.t}: ${selections.map((s:any) => s).join(', ')}`);
-      } else { notesLines.push(`${step.t}: ${selections[0]}`); }
+      } else { 
+        notesLines.push(`${step.t}: ${selections[0]}`); 
+      }
     });
-
-    // 🌟 AÑADIDO: Si estamos editando, eliminamos el viejo antes de guardar el nuevo
+    
     if (editingCartId) {
         removeFromCart(editingCartId);
         setEditingCartId(null);
     }
-
+    
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
     setActiveProduct(null);
   };
 
-  // 🌟 AÑADIDO: Regresar al menú si el carrito se queda vacío
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null); setCouponError(`Mínimo de compra de $${activeCoupon.minAmount}`);
@@ -287,19 +309,21 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     if (!couponCode) return;
     if (customerPhone.length !== 10) return setCouponError('⚠️ Ingresa tu celular para validar.');
 
-    const res = await fetch(`/api/customer?phone=${customerPhone}`);
-    const data = await res.json();
-    if (data.success && data.activeCoupons) { 
-      const coupon = data.activeCoupons.find((c:any) => c.code === couponCode.toUpperCase());
-      if (!coupon) return setCouponError('❌ Cupón inválido.');
-      const alreadyUsed = data.history.some((o:any) => o.couponCode === coupon.code);
-      if (alreadyUsed && coupon.code !== 'MAIZTROVIP') return setCouponError('⚠️ Ya utilizaste este cupón.');
-      if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
-        setCouponError(`⚠️ Compra mínima $${coupon.minAmount}.`); setActiveCoupon(null);
-      } else {
-        setActiveCoupon(coupon); setSelectedReward(null); setPreferenceId(null); 
-      }
-    } else { setCouponError('❌ Necesitas estar registrado para usar cupones.'); }
+    try {
+        const res = await fetch(`/api/customer?phone=${customerPhone}`);
+        const data = await res.json();
+        if (data.success && data.activeCoupons) { 
+          const coupon = data.activeCoupons.find((c:any) => c?.code === couponCode.toUpperCase());
+          if (!coupon) return setCouponError('❌ Cupón inválido.');
+          const alreadyUsed = data.history.some((o:any) => o?.couponCode === coupon.code);
+          if (alreadyUsed && coupon.code !== 'MAIZTROVIP') return setCouponError('⚠️ Ya utilizaste este cupón.');
+          if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
+            setCouponError(`⚠️ Compra mínima $${coupon.minAmount}.`); setActiveCoupon(null);
+          } else {
+            setActiveCoupon(coupon); setSelectedReward(null); setPreferenceId(null); 
+          }
+        } else { setCouponError('❌ Necesitas estar registrado para usar cupones.'); }
+    } catch(e) { setCouponError('Error de conexión.'); }
   };
 
   let totalAfterCoupon = subtotal;
@@ -307,12 +331,12 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     if (activeCoupon.discountType === 'FIXED') totalAfterCoupon = Math.max(0, subtotal - activeCoupon.discount);
     if (activeCoupon.discountType === 'PERCENTAGE') totalAfterCoupon = subtotal - (subtotal * (activeCoupon.discount / 100));
   }
-  const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward.discount, totalAfterCoupon) : 0;
+  const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward?.discount || 0, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
 
   const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
-        return window.alert("¡Casi listo! Por favor, llena todos los campos de 'Tus Datos' correctamente.");
+        return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y Correo para enviarte tu recibo.");
     }
     setIsLoadingPayment(true);
     try {
@@ -329,14 +353,15 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
       const data = await response.json();
       if (response.ok && data.preferenceId) { setPreferenceId(data.preferenceId); }
       else { alert("Problema con el pago: " + (data.error || "Desconocido")); }
-    } catch (error) { alert("Error de red"); }
+    } catch (error) { alert("Error de red al procesar el pago."); }
     setIsLoadingPayment(false);
   };
 
   const isOptionAvailable = (optName: string) => {
-    const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
+    if (!optName) return false;
+    const invItem = inventoryItems.find(i => i?.name?.toLowerCase() === optName.toLowerCase());
     if (invItem) return invItem.isAvailable && invItem.stock > 0;
-    const prodItem = products.find(p => p.name.toLowerCase() === optName.toLowerCase());
+    const prodItem = products.find(p => p?.name?.toLowerCase() === optName.toLowerCase());
     if (prodItem) return prodItem.isAvailable;
     return true; 
   };
@@ -360,7 +385,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     );
   }
 
-  // VISTA ÉXITO
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
@@ -376,7 +400,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     );
   }
 
-  // VISTA CHECKOUT
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -389,36 +412,34 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
                 {cart.map((item) => (
-                    // 🌟 CORRECCIÓN: cartId para el botón de eliminar y los botones completos
                     <div key={item.cartId} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
                         <div className="flex-1 pr-4">
-                            <p className="font-bold text-sm">{item.product.name}</p>
+                            <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
                             {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
                             <div className="flex gap-3 mt-2">
                                 <button onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
                                 <button onClick={() => removeFromCart(item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
                             </div>
                         </div>
-                        <p className="font-black">${item.totalPrice.toFixed(2)}</p>
+                        <p className="font-black">${(item.totalPrice || 0).toFixed(2)}</p>
                     </div>
                 ))}
             </div>
 
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border space-y-3">
                 <h2 className="font-black text-lg mb-2">Tus Datos</h2>
-                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border p-3 rounded-xl focus:border-yellow-500 outline-none font-bold disabled:opacity-60"/>
+                <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
                 <div className="relative">
-                    <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp *" className="w-full bg-zinc-50 border p-3 rounded-xl focus:border-yellow-500 outline-none font-bold"/>
+                    <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
                     {isCheckingPoints && <span className="absolute right-3 top-3 text-yellow-500 animate-spin">⏳</span>}
                 </div>
-                <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Correo *" className="w-full bg-zinc-50 border p-3 rounded-xl focus:border-yellow-500 outline-none font-bold"/>
-                
+                <input type="email" value={customerEmail} onChange={e => {setCustomerEmail(e.target.value); setPreferenceId(null);}} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+
                 {customerPhone.length === 10 && isNewCustomer && (
                     <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2">
                         <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP:</p>
                         <div className="flex items-start gap-2 mb-3">
                             <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
-                            {/* 🌟 AÑADIDO: Enlace de Privacidad clickeable que activa el Modal */}
                             <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800 cursor-pointer" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
                         </div>
                         <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs hover:bg-yellow-300">
@@ -476,8 +497,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                 )}
             </div>
         </div>
-
-        {/* 🌟 AÑADIDO: Modal de Privacidad que se había perdido */}
+        
         {showPrivacy && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
@@ -494,7 +514,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                 </div>
             </div>
         )}
-
       </div>
     );
   }
@@ -532,7 +551,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                       <p className="text-zinc-500 text-xs font-medium mt-1 line-clamp-2">{getProductDesc(product.name)}</p>
                     </div>
                     <div className="flex justify-between items-center mt-2">
-                        <p className="font-black text-sm">${product.basePrice.toFixed(2)}</p>
+                        <p className="font-black text-sm">${(product.basePrice || 0).toFixed(2)}</p>
                         <span className="bg-zinc-900 text-white text-[10px] font-black px-3 py-1.5 rounded-lg">Agregar</span>
                     </div>
                 </div>
@@ -555,7 +574,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                       <p className="text-zinc-500 text-xs font-medium mt-1 line-clamp-2">{getProductDesc(product.name)}</p>
                     </div>
                     <div className="flex justify-between items-center mt-2">
-                        <p className="font-black text-sm">${product.basePrice.toFixed(2)}</p>
+                        <p className="font-black text-sm">${(product.basePrice || 0).toFixed(2)}</p>
                         <span className="bg-zinc-100 text-zinc-600 text-[10px] font-black px-3 py-1.5 rounded-lg">Agregar</span>
                     </div>
                 </div>
@@ -571,7 +590,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
               <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border rounded-[1.2rem] p-4 flex flex-col items-center text-center shadow-sm cursor-pointer">
                 <span className="text-4xl mb-2">🥤</span>
                 <h3 className="font-black text-xs line-clamp-1">{product.name}</h3>
-                <p className="text-zinc-500 font-black text-xs">${product.basePrice.toFixed(2)}</p>
+                <p className="text-zinc-500 font-black text-xs">${(product.basePrice || 0).toFixed(2)}</p>
               </div>
             ))}
           </div>
@@ -584,13 +603,14 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
               <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border rounded-[1.2rem] p-4 flex flex-col items-center text-center shadow-sm cursor-pointer">
                 <span className="text-4xl mb-2">{getProductEmoji(product.name, product.category)}</span>
                 <h3 className="font-black text-xs line-clamp-1">{product.name}</h3>
-                <p className="text-zinc-500 font-black text-xs">${product.basePrice.toFixed(2)}</p>
+                <p className="text-zinc-500 font-black text-xs">${(product.basePrice || 0).toFixed(2)}</p>
               </div>
             ))}
           </div>
         </section>
       </div>
 
+      {/* 🌟 100% CORREGIDO: MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -601,13 +621,13 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                 <p className="text-zinc-400 font-bold tracking-widest uppercase text-[10px] mb-1">
                   {editingCartId ? 'Modificando • ' : ''}Paso {wizardStep + 1} de {getProductSteps(activeProduct).length}
                 </p>
-                <h2 className="text-xl font-black text-zinc-900 leading-tight">{getProductSteps(activeProduct)[wizardStep].t}</h2>
+                <h2 className="text-xl font-black text-zinc-900 leading-tight">{getProductSteps(activeProduct)[wizardStep]?.t || ''}</h2>
               </div>
               <button onClick={() => { setActiveProduct(null); setEditingCartId(null); }} className="w-10 h-10 bg-zinc-100 text-zinc-500 rounded-full flex items-center justify-center font-bold">✕</button>
             </div>
             
             <div className="p-5 overflow-y-auto flex-1 bg-zinc-50 pb-24">
-              {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
+              {getProductSteps(activeProduct)[wizardStep]?.type === 'TOPPINGS' ? (
                 <div className="space-y-8">
                   {getProductSteps(activeProduct)[wizardStep].firstToppingFree && (
                       <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3">
@@ -625,9 +645,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                       <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest mb-3 flex items-center gap-2">{sec.icon} {sec.t}</h3>
                       <div className="grid grid-cols-2 gap-3">
                         {sec.m.map((mod:any) => {
-                            const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                            const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
                             return (
-                                <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900 shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-yellow-200'}`}>
+                                <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900 shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-yellow-200'}`}>
                                     <span className="line-clamp-2 pr-2">{mod.name}</span>
                                     {isSelected && <span>✓</span>}
                                 </button>
@@ -641,9 +661,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                     <h3 className="text-sm font-black text-green-600 uppercase tracking-widest mb-3">🔥 Barra Libre (Gratis)</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {chiles.map((mod:any) => {
-                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
                           return (
-                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-green-200'}`}>
+                              <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-green-200'}`}>
                                   <span className="line-clamp-2 pr-2">{mod.name}</span>
                                   {isSelected && <span>✓</span>}
                               </button>
@@ -656,9 +676,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                     <h3 className="text-sm font-black text-red-500 uppercase tracking-widest mb-3">🚫 Sin...</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {restricciones.map((mod:any) => {
-                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
                           return (
-                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-red-200'}`}>
+                              <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-red-200'}`}>
                                   <span className="line-clamp-2 pr-2">{mod.name}</span>
                                   {isSelected && <span>✓</span>}
                               </button>
@@ -669,18 +689,18 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
-                    .filter((opt: string) => {
-                       if (getProductSteps(activeProduct)[wizardStep].type === 'PAPAS_MARUCHAN') {
+                  {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep]?.type || '']
+                    ?.filter((opt: string) => {
+                       if (getProductSteps(activeProduct)[wizardStep]?.type === 'PAPAS_MARUCHAN') {
                           const baseChoice = wizardData[0]?.[0];
                           if (baseChoice === 'Construpapas') return OPCIONES.PAPAS.includes(opt) && isOptionAvailable(opt);
                           if (baseChoice === 'Obra Maestra') return OPCIONES.MARUCHAN.includes(opt) && isOptionAvailable(opt);
                        }
                        return isOptionAvailable(opt);
                     })
-                    .map((opt: string) => {
+                    ?.map((opt: string) => {
                         const stepDef = getProductSteps(activeProduct)[wizardStep];
-                        const isMultiple = stepDef.max && stepDef.max > 1;
+                        const isMultiple = stepDef?.max && stepDef.max > 1;
                         const isSelected = (wizardData[wizardStep] || []).includes(opt);
                         
                         return (
@@ -707,18 +727,19 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                   ←
                 </button>
               )}
-              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
+              {/* 🌟 LA LÍNEA DEL BUG CORREGIDA */}
+              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep]?.type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
-                    const stepDef = getProductSteps(activeProduct)[wizardStep];
+                    const currentStepDef = getProductSteps(activeProduct)[wizardStep];
                     let extraLabel = "";
                     
-                    if (stepDef && stepDef.type === 'TOPPINGS') {
+                    if (currentStepDef && currentStepDef.type === 'TOPPINGS') {
                         const currentSelections = wizardData[wizardStep] || [];
-                        const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
+                        const paidCount = currentSelections.filter((s:any) => s?.type === 'QUESO' || s?.type === 'ADEREZO' || s?.type === 'POLVO').length;
                         let baseCount = paidCount;
-                        if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
-                        if (!step.isFree) {
+                        if (currentStepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
+                        if (!currentStepDef.isFree) {
                           if (baseCount === 1) extraLabel = " (+$15)";
                           if (baseCount === 2) extraLabel = " (+$25)";
                           if (baseCount >= 3) extraLabel = " (+$35)";
@@ -745,11 +766,10 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
                             {cart.map(item => (
-                                // 🌟 CORRECCIÓN FINAL: Eliminar ya funciona usando cartId en todo el Bottom Sheet
                                 <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
-                                        <p className="font-black text-zinc-900 text-sm leading-tight">{item.product.name}</p>
-                                        <p className="font-black text-zinc-900 text-sm">${item.totalPrice.toFixed(2)}</p>
+                                        <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name || 'Producto'}</p>
+                                        <p className="font-black text-zinc-900 text-sm">${(item.totalPrice || 0).toFixed(2)}</p>
                                     </div>
                                     {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes.split(' | ').join(', ')}</p>}
                                     <div className="flex gap-3 mt-3">
