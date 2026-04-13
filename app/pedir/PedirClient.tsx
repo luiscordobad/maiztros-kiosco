@@ -13,7 +13,6 @@ const OPCIONES = {
   BOING: ['Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa'],
   REFRESCO: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral'],
   BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
-  // 🌟 AÑADIDO: Faltaba esta lista para que los combos grandes funcionaran
   BEBIDA_ALL_MULTIPLE: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
   ESPECIALIDAD_CHOICE: ['Construpapas', 'Obra Maestra'],
   PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
@@ -210,6 +209,12 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     if(isCartOpen) setIsCartOpen(false);
   };
 
+  // 🌟 AÑADIDO: Función envoltorio para manejar el clic y asegurar que se ejecute la eliminación
+  const handleRemoveFromCart = (e: React.MouseEvent, cartId: string) => {
+      e.stopPropagation(); // Evita que el evento se propague si el contenedor padre tiene onClick
+      removeFromCart(cartId);
+  };
+
   const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
     if (!mod) return;
     const currentSelections = wizardData[wizardStep] || [];
@@ -336,7 +341,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
 
   const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
-        return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y Correo para enviarte tu recibo.");
+        return window.alert("¡Casi listo! Por favor, llena todos los campos de 'Tus Datos' correctamente.");
     }
     setIsLoadingPayment(true);
     try {
@@ -417,8 +422,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
                             {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
                             <div className="flex gap-3 mt-2">
-                                <button onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                <button onClick={() => removeFromCart(item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
+                                <button type="button" onClick={(e) => handleRemoveFromCart(e, item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
                             </div>
                         </div>
                         <p className="font-black">${(item.totalPrice || 0).toFixed(2)}</p>
@@ -428,16 +433,16 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
 
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border space-y-3">
                 <h2 className="font-black text-lg mb-2">Tus Datos</h2>
-                <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
                 <div className="relative">
-                    <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
-                    {isCheckingPoints && <span className="absolute right-3 top-3 text-yellow-500 animate-spin">⏳</span>}
+                    <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl focus:border-yellow-500 outline-none text-base font-bold text-zinc-900"/>
+                    {isCheckingPoints && <span className="absolute right-4 top-4 text-yellow-500 animate-spin">⏳</span>}
                 </div>
+                <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
                 <input type="email" value={customerEmail} onChange={e => {setCustomerEmail(e.target.value); setPreferenceId(null);}} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
 
                 {customerPhone.length === 10 && isNewCustomer && (
                     <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2">
-                        <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP:</p>
+                        <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP (Opcional):</p>
                         <div className="flex items-start gap-2 mb-3">
                             <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
                             <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800 cursor-pointer" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
@@ -506,7 +511,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         <button onClick={() => setShowPrivacy(false)} className="text-zinc-400 hover:text-zinc-600 font-bold text-xl">✕</button>
                     </div>
                     <p className="text-sm text-zinc-600 mb-6 font-medium leading-relaxed">
-                        Tus datos personales se utilizan exclusivamente para enviarte el recibo de tu pedido y otorgarte puntos VIP. En Maiztros NO vendemos ni compartimos tu información.
+                        Tus datos personales (nombre, teléfono y correo) se utilizan exclusivamente para enviarte el recibo de tu pedido, contactarte si hay un problema con tu orden, y otorgarte puntos de lealtad en nuestro programa VIP. En Maiztros NO vendemos ni compartimos tu información.
                     </p>
                     <button onClick={() => setShowPrivacy(false)} className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-black py-4 rounded-xl transition-colors">
                         Entendido
@@ -518,7 +523,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // VISTA MENÚ PRINCIPAL
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
       <header className="bg-white/80 backdrop-blur-xl border-b sticky top-0 z-30 pt-safe">
@@ -610,7 +614,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* 🌟 100% CORREGIDO: MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -727,7 +730,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                   ←
                 </button>
               )}
-              {/* 🌟 LA LÍNEA DEL BUG CORREGIDA */}
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep]?.type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
@@ -753,7 +755,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -773,8 +774,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                                     </div>
                                     {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes.split(' | ').join(', ')}</p>}
                                     <div className="flex gap-3 mt-3">
-                                        <button onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                        <button onClick={() => removeFromCart(item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                        <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
+                                        <button type="button" onClick={(e) => handleRemoveFromCart(e, item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
                                     </div>
                                 </div>
                             ))}
