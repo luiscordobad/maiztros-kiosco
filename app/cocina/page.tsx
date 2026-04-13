@@ -23,6 +23,7 @@ export default function CocinaKDS() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
+        // Filtramos las órdenes que están pagadas o en preparación y que no hayamos despachado manualmente
         const visibleOrders = data.orders.filter((o: any) => 
             (o.status === 'PAID' || o.status === 'PREPARING') && !hiddenOrders.includes(o.id)
         );
@@ -87,17 +88,9 @@ export default function CocinaKDS() {
               const timeAgo = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
               const isLate = timeAgo >= 10; 
               
-              const isPickToGo = order.orderType === 'PICK_TO_GO';
-              
-              // 🌟 EXTRACCIÓN MAGICA DE LA HORA
-              let pickupTime = 'Pronto';
-              let displayNotes = order.orderNotes || '';
-              if (displayNotes.includes('⏰ PICK TO GO - PASA A LAS:')) {
-                  const parts = displayNotes.split(' | ');
-                  pickupTime = parts[0].replace('⏰ PICK TO GO - PASA A LAS:', '').trim();
-                  // Removemos la parte de la hora para que no se duplique abajo en las notas
-                  displayNotes = parts.slice(1).join(' | ').trim();
-              }
+              // 🌟 LÓGICA DE IDENTIFICACIÓN: Revisamos columna pickupTime o el tipo de orden
+              const isPickToGo = order.pickupTime !== null || order.orderType === 'PICK_TO_GO';
+              const pickupTime = order.pickupTime || 'Pronto';
 
               return (
                 <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isPickToGo ? 'border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.2)]' : isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-blue-500' : 'border-zinc-700'}`}>
@@ -141,10 +134,11 @@ export default function CocinaKDS() {
                       </div>
                     ))}
                     
-                    {displayNotes && (
+                    {/* 🌟 NOTAS GENERALES: Ahora se muestran limpias (sin la hora mezclada) */}
+                    {order.orderNotes && (
                       <div className="mt-4 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl">
                         <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota de Caja/App:</p>
-                        <p className="text-white font-medium">{displayNotes}</p>
+                        <p className="text-white font-medium">{order.orderNotes}</p>
                       </div>
                     )}
                   </div>
