@@ -3,9 +3,6 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useCartStore } from '@/store/cart';
-import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
-
-initMercadoPago('APP_USR-7d3162e4-fbb5-4810-b3dd-3de18d93fb8f', { locale: 'es-MX' });
 
 const OPCIONES = {
   PAPAS: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes'],
@@ -53,8 +50,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   const [editingCartId, setEditingCartId] = useState<string | null>(null);
 
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
-  const [preferenceId, setPreferenceId] = useState<string | null>(null); 
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
+  const [successEmail, setSuccessEmail] = useState<string>('');
   
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -125,30 +122,51 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     }
   }, [customerPhone]);
 
+  // 🌟 CORRECCIÓN DE LA VISTA DE ÉXITO Y TICKET
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const orderId = urlParams.get('order_id');
 
     if ((status === 'approved' || status === 'success') && orderId) {
-      setOrderSuccessId(orderId);
       setAppState('SUCCESS');
       window.history.replaceState(null, '', window.location.pathname);
+      useCartStore.setState({ cart: [] }); // Vaciamos el carrito automáticamente
       
+      // 1. Validamos en la Base de Datos que se pagó y extraemos sus datos REALES
       fetch('/api/orders', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId, newStatus: 'PAID' })
-      }).catch(() => {});
-
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
-      fetch('/api/send-ticket', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: customerEmail || 'maiztrosqro@gmail.com', orderUrl: `${baseUrl}/ticket/${orderId}`, turnNumber: orderId })
+      })
+      .then(res => res.json())
+      .then(data => {
+          if (data.success && data.order) {
+              setOrderSuccessId(data.order.turnNumber); // Ej. M123
+              
+              // Extraer correo de las notas empacadas
+              let realEmail = 'maiztrosqro@gmail.com';
+              if (data.order.orderNotes?.includes('📧 CORREO:')) {
+                  const parts = data.order.orderNotes.split(' | ');
+                  realEmail = parts.find(p => p.includes('📧 CORREO:'))?.replace('📧 CORREO: ', '') || realEmail;
+              }
+              setSuccessEmail(realEmail);
+              
+              // 2. Enviamos el ticket con la info 100% correcta
+              const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+              fetch('/api/send-ticket', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                      email: realEmail, 
+                      orderUrl: `${baseUrl}/ticket/${orderId}`, 
+                      turnNumber: data.order.turnNumber 
+                  })
+              }).catch(() => {});
+          }
       }).catch(() => {});
     }
-  }, [customerEmail]);
+  }, []);
 
   const subtotal = getTotal();
 
@@ -289,8 +307,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         setIsCartOpen(false);
         if (appState === 'CHECKOUT') setAppState('MENU');
     }
-    
-    setPreferenceId(null);
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
   const handleRegisterInWeb = async () => {
@@ -327,7 +343,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
           if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
             setCouponError(`⚠️ Compra mínima $${coupon.minAmount}.`); setActiveCoupon(null);
           } else {
-            setActiveCoupon(coupon); setSelectedReward(null); setPreferenceId(null); 
+            setActiveCoupon(coupon); setSelectedReward(null);
           }
         } else { setCouponError('❌ Necesitas estar registrado para usar cupones.'); }
     } catch(e) { setCouponError('Error de conexión.'); }
@@ -341,6 +357,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward?.discount || 0, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
 
+  // 🌟 CORRECCIÓN 1 CLIC: Redirección directa a Mercado Pago
   const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
         return window.alert("¡Casi listo! Por favor, llena todos los campos de 'Tus Datos' correctamente.");
@@ -354,14 +371,17 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
           cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, 
           pointsDeducted: selectedReward?.pts || 0, customerName, 
           customerEmail, customerPhone, isPickToGo: true, couponCode: activeCoupon?.code || null,
-          paymentMethod: 'MERCADO_PAGO', pickupTime: selectedTime, orderNotes // 🌟 MARCADO PARA LA CAJA
+          paymentMethod: 'MERCADO_PAGO', pickupTime: selectedTime, orderNotes 
         })
       });
       const data = await response.json();
-      if (response.ok && data.preferenceId) { setPreferenceId(data.preferenceId); }
-      else { alert("Problema con el pago: " + (data.error || "Desconocido")); }
-    } catch (error) { alert("Error de red al procesar el pago."); }
-    setIsLoadingPayment(false);
+      
+      // 🚀 REDIRECCIÓN INSTANTÁNEA
+      if (response.ok && data.initPoint) { 
+          window.location.href = data.initPoint; 
+      }
+      else { alert("Problema con el pago: " + (data.error || "Desconocido")); setIsLoadingPayment(false); }
+    } catch (error) { alert("Error de red al procesar el pago."); setIsLoadingPayment(false); }
   };
 
   const isOptionAvailable = (optName: string) => {
@@ -374,11 +394,10 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   };
 
   const finishOrderScreenManually = () => {
-      useCartStore.setState({ cart: [] });
       setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setOrderNotes('');
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ acceptedTerms: false });
-      setOrderSuccessId(null); setPreferenceId(null);
+      setOrderSuccessId(null);
       setAppState('MENU'); 
   };
 
@@ -392,21 +411,26 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
+  // 🌟 VISTA ÉXITO
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
         <h1 className="text-4xl font-black mb-2 tracking-tighter">¡ORDEN RECIBIDA! ⚡</h1>
-        <p className="text-lg font-bold mb-8">Pasa por ella a las <span className="bg-white text-green-600 px-2 py-1 rounded-lg">{selectedTime}</span></p>
+        <p className="text-lg font-bold mb-8">Pasa por ella a las <span className="bg-white text-green-600 px-2 py-1 rounded-lg">{selectedTime || 'pronto'}</span></p>
         <div className="bg-white text-zinc-900 p-8 rounded-[2rem] shadow-2xl w-full max-w-sm">
             <p className="text-xs uppercase tracking-[0.2em] font-bold text-zinc-400 mb-1">Tu Turno</p>
-            <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">#{String(orderSuccessId).slice(-4).toUpperCase()}</p>
-            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {customerEmail}</p>
+            {/* Si ya cargó el ID corto lo mostramos, si no mostramos cargando */}
+            <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">
+                {orderSuccessId ? `#${orderSuccessId}` : '...'}
+            </p>
+            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {successEmail || 'tu correo'}</p>
         </div>
-        <button onClick={finishOrderScreenManually} className="mt-8 bg-black/20 text-white px-8 py-4 rounded-full font-black text-sm">Volver al Menú</button>
+        <button onClick={finishOrderScreenManually} className="mt-8 bg-black/20 text-white px-8 py-4 rounded-full font-black text-sm hover:bg-black/30 transition-colors">Volver al Menú</button>
       </div>
     );
   }
 
+  // VISTA CHECKOUT
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -424,8 +448,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
                             {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
                             <div className="flex gap-3 mt-2">
-                                <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md hover:bg-blue-100 transition-colors">Editar</button>
+                                <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md hover:bg-red-100 transition-colors">Eliminar</button>
                             </div>
                         </div>
                         <p className="font-black">${(item.totalPrice || 0).toFixed(2)}</p>
@@ -436,20 +460,20 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border space-y-3">
                 <h2 className="font-black text-lg mb-2">Tus Datos</h2>
                 <div className="relative">
-                    <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl focus:border-yellow-500 outline-none text-base font-bold text-zinc-900"/>
+                    <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl focus:border-yellow-500 outline-none text-base font-bold text-zinc-900"/>
                     {isCheckingPoints && <span className="absolute right-4 top-4 text-yellow-500 animate-spin">⏳</span>}
                 </div>
-                <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
-                <input type="email" value={customerEmail} onChange={e => {setCustomerEmail(e.target.value); setPreferenceId(null);}} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
+                <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
 
                 {customerPhone.length === 10 && isNewCustomer && (
                     <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2">
                         <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP (Opcional):</p>
                         <div className="flex items-start gap-2 mb-3">
-                            <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
+                            <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500 cursor-pointer"/>
                             <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800 cursor-pointer" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
                         </div>
-                        <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs hover:bg-yellow-300">
+                        <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs hover:bg-yellow-300 transition-colors">
                             {isRegistering ? 'Creando...' : 'Crear Cuenta VIP'}
                         </button>
                     </div>
@@ -463,7 +487,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                                 const isAffordable = loyaltyPoints >= reward.pts && subtotal >= reward.minSpend && !activeCoupon;
                                 const isSelected = selectedReward?.id === reward.id;
                                 return (
-                                    <button key={reward.id} disabled={!isAffordable} onClick={() => {setSelectedReward(isSelected ? null : reward); setPreferenceId(null);}} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50' : isSelected ? 'bg-zinc-900 text-white font-black' : 'bg-white font-bold'}`}>
+                                    <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 cursor-not-allowed' : isSelected ? 'bg-zinc-900 text-white font-black' : 'bg-white font-bold hover:bg-zinc-50'}`}>
                                         <span>{reward.label} ({reward.pts} pts)</span>
                                         <span>{isSelected ? '✅' : !isAffordable ? '🔒' : 'Aplicar'}</span>
                                     </button>
@@ -476,14 +500,14 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
 
             <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100">
                 <h2 className="font-black text-lg mb-2 text-blue-900">🕒 ¿A qué hora pasas?</h2>
-                <select value={selectedTime} onChange={e => {setSelectedTime(e.target.value); setPreferenceId(null);}} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base">
+                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base cursor-pointer">
                     {availableTimes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
             </div>
             
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100 mb-8">
               <label className="text-zinc-800 font-black text-sm mb-2 block">Notas para la cocina</label>
-              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => {setOrderNotes(e.target.value); setPreferenceId(null);}} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
+              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
             </div>
         </div>
 
@@ -493,19 +517,32 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                     <span className="text-zinc-500 font-bold text-sm">Total</span>
                     <span className="text-3xl font-black">${totalNeto.toFixed(2)}</span>
                 </div>
-                {preferenceId ? (
-                    <div className="w-full bg-[#f5f5f5] p-3 rounded-2xl border border-zinc-200">
-                        <Wallet initialization={{ preferenceId: preferenceId, redirectMode: 'self' }} customization={{ texts: { action: 'pay', valueProp: 'security_details' } }} />
-                    </div>
-                ) : (
-                    <button onClick={generatePaymentLink} disabled={cart.length === 0 || isLoadingPayment} className="w-full bg-[#009ee3] text-white font-black py-4 rounded-xl shadow-md">
-                        {isLoadingPayment ? 'Conectando...' : 'Proceder al Pago'}
-                    </button>
-                )}
+                {/* 🌟 1 SOLO CLIC: Botón directo a pagar */}
+                <button onClick={generatePaymentLink} disabled={cart.length === 0 || isLoadingPayment} className="w-full bg-[#009ee3] hover:bg-[#008cc9] text-white font-black py-4 rounded-xl shadow-md transition-colors active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-400 disabled:cursor-not-allowed">
+                    {isLoadingPayment ? 'Conectando...' : 'Pagar Ahora'}
+                </button>
             </div>
         </div>
         
-        {/* 🌟 Modal del Wizard visible en la pantalla de Checkout */}
+        {/* Modal de Privacidad */}
+        {showPrivacy && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-black text-zinc-900">Privacidad</h3>
+                        <button onClick={() => setShowPrivacy(false)} className="text-zinc-400 hover:text-zinc-600 font-bold text-xl">✕</button>
+                    </div>
+                    <p className="text-sm text-zinc-600 mb-6 font-medium leading-relaxed">
+                        Tus datos personales (nombre, teléfono y correo) se utilizan exclusivamente para enviarte el recibo de tu pedido, contactarte si hay un problema con tu orden, y otorgarte puntos de lealtad en nuestro programa VIP. En Maiztros NO vendemos ni compartimos tu información.
+                    </p>
+                    <button onClick={() => setShowPrivacy(false)} className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-black py-4 rounded-xl transition-colors">
+                        Entendido
+                    </button>
+                </div>
+            </div>
+        )}
+        
+        {/* 🌟 WIZARD FLOTANTE PARA PODER EDITAR EN LA PANTALLA DE CHECKOUT */}
         {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
             <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
               <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -623,28 +660,11 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
               </div>
             </div>
         )}
-
-        {/* Modal de Privacidad */}
-        {showPrivacy && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
-                <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-black text-zinc-900">Privacidad</h3>
-                        <button onClick={() => setShowPrivacy(false)} className="text-zinc-400 hover:text-zinc-600 font-bold text-xl">✕</button>
-                    </div>
-                    <p className="text-sm text-zinc-600 mb-6 font-medium leading-relaxed">
-                        Tus datos personales (nombre, teléfono y correo) se utilizan exclusivamente para enviarte el recibo de tu pedido, contactarte si hay un problema con tu orden, y otorgarte puntos de lealtad en nuestro programa VIP. En Maiztros NO vendemos ni compartimos tu información.
-                    </p>
-                    <button onClick={() => setShowPrivacy(false)} className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-black py-4 rounded-xl transition-colors">
-                        Entendido
-                    </button>
-                </div>
-            </div>
-        )}
       </div>
     );
   }
 
+  // VISTA MENÚ PRINCIPAL
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
       <header className="bg-white/80 backdrop-blur-xl border-b sticky top-0 z-30 pt-safe">
@@ -736,7 +756,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* 🌟 MODAL PERSONALIZAR VISTA MENU */}
+      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -878,7 +898,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE VISTA MENU */}
+      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -898,8 +918,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                                     </div>
                                     {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes.split(' | ').join(', ')}</p>}
                                     <div className="flex gap-3 mt-3">
-                                        <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                        <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                        <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md hover:bg-blue-100 transition-colors">Editar</button>
+                                        <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md hover:bg-red-100 transition-colors">Eliminar</button>
                                     </div>
                                 </div>
                             ))}
@@ -931,6 +951,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             )}
         </>
       )}
+
     </div>
   );
 }
