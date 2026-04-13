@@ -9,17 +9,14 @@ export default function MonitorCaja() {
   const [shiftLoading, setShiftLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Apertura
   const [cashierName, setCashierName] = useState('');
   const [startingCash, setStartingCash] = useState('');
 
-  // Movimientos (Retiros)
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveAmount, setMoveAmount] = useState('');
   const [moveReason, setMoveReason] = useState('');
   const [moveAuthor, setMoveAuthor] = useState('LUIS (JEFE)');
 
-  // Cierre
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [reportedCash, setReportedCash] = useState('');
 
@@ -27,9 +24,6 @@ export default function MonitorCaja() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [receivedAmount, setReceivedAmount] = useState<string>('');
 
-  // ==========================================
-  // ESTADOS PARA LA TERMINAL FÍSICA
-  // ==========================================
   const [waitingTerminal, setWaitingTerminal] = useState(false);
   const [terminalIntentId, setTerminalIntentId] = useState<string | null>(null);
   const [terminalStatusMsg, setTerminalStatusMsg] = useState('Conectando con la terminal...');
@@ -54,11 +48,13 @@ export default function MonitorCaja() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-         // 🌟 ATENEMOS AWAITING_PAYMENT, TAKEOUT Y PICK_TO_GO
+         // 🌟 Mantenemos las órdenes en pantalla si están pendientes de pago, 
+         // O si son PICK TO GO ya pagadas pero que no han sido mandadas a cocina
          const validOrders = data.orders.filter((o: any) => 
             o.status === 'AWAITING_PAYMENT' || 
             (o.status === 'PENDING' && o.orderType === 'PICK_TO_GO') || 
-            (o.status === 'PENDING' && o.orderType === 'TAKEOUT')
+            (o.status === 'PENDING' && o.orderType === 'TAKEOUT') ||
+            (o.status === 'PAID' && o.orderNotes?.includes('⏰ RECOGE:'))
          );
          setPendingCash(validOrders);
       }
@@ -101,21 +97,10 @@ export default function MonitorCaja() {
     checkShift();
   };
 
-  // ==========================================
-  // 🌟 CIERRE DE TURNO Y REPORTE SILENCIOSO
-  // ==========================================
   const handleCloseShift = async () => {
     if (!reportedCash) return;
-    
-    // 1. Cerramos el turno en la Base de Datos
     await fetch('/api/shift', { method: 'PATCH', body: JSON.stringify({ shiftId: activeShift.id, reportedCash }) });
-    
-    // 2. Limpiamos la pantalla
-    setShowCloseModal(false); 
-    setReportedCash(''); 
-    checkShift();
-
-    // 3. Disparamos el correo automático a Luis de forma asíncrona (Silencioso)
+    setShowCloseModal(false); setReportedCash(''); checkShift();
     fetch('/api/send-report?type=daily').catch(() => {});
   };
 
@@ -143,7 +128,6 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
-  // 🌟 GATILLO PARA KDS DE LOS PICK TO GO (Evita cobrar otra vez)
   const sendToKDS = async (orderId: string) => {
       if (!window.confirm('¿Mandar este pedido a la pantalla de cocina (KDS) ahora?')) return;
       await fetch('/api/orders', { 
@@ -154,9 +138,6 @@ export default function MonitorCaja() {
       fetchCashOrders();
   };
 
-  // ==========================================
-  // LÓGICA DE EDICIÓN EN CAJA
-  // ==========================================
   const handleCobrarClick = (order: any) => {
     const editableItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
     setSelectedOrder({ ...order, items: editableItems });
@@ -188,6 +169,21 @@ export default function MonitorCaja() {
       setSelectedOrder({ ...selectedOrder, items: newItems });
   };
 
+  // 🌟 GUARDAR CAMBIOS SIN COBRAR (Para órdenes ya pagadas que solo se editaron)
+  const guardarCambiosEdicion = async () => {
+      await fetch('/api/orders', { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+              orderId: selectedOrder.id, 
+              updatedItems: selectedOrder.items, 
+              newTotal: selectedOrder.totalAmount 
+          }) 
+      });
+      setSelectedOrder(null);
+      fetchCashOrders();
+  };
+
   const finalizarCobroFisico = async () => {
     await fetch('/api/orders', { 
         method: 'PATCH', 
@@ -205,15 +201,11 @@ export default function MonitorCaja() {
 
   const cancelarOrdenTotal = async () => {
     if (!window.confirm('¿Estás seguro de que deseas CANCELAR esta orden por completo? Desaparecerá de la lista.')) return;
-    
     try {
         await fetch('/api/orders', { 
             method: 'PATCH', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                orderId: selectedOrder.id, 
-                newStatus: 'REFUNDED' 
-            }) 
+            body: JSON.stringify({ orderId: selectedOrder.id, newStatus: 'REFUNDED' }) 
         });
         setSelectedOrder(null);
         fetchCashOrders();
@@ -222,9 +214,6 @@ export default function MonitorCaja() {
     }
   };
 
-  // ==========================================
-  // LÓGICA PARA ACTIVAR Y ESCUCHAR LA TERMINAL
-  // ==========================================
   const checkTerminalStatus = async (intentId: string, order: any) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
@@ -235,18 +224,11 @@ export default function MonitorCaja() {
       if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago con el banco...');
       if (currentState === 'FINISHED') { 
         setTerminalStatusMsg('✅ ¡Pago aprobado!'); 
-        
         await fetch('/api/orders', { 
             method: 'PATCH', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                orderId: order.id, 
-                newStatus: 'PAID',
-                updatedItems: order.items,
-                newTotal: order.totalAmount
-            }) 
+            body: JSON.stringify({ orderId: order.id, newStatus: 'PAID', updatedItems: order.items, newTotal: order.totalAmount }) 
         });
-        
         setWaitingTerminal(false); 
         setTerminalIntentId(null); 
         setSelectedOrder(null);
@@ -269,7 +251,6 @@ export default function MonitorCaja() {
     try {
       setWaitingTerminal(true);
       setTerminalStatusMsg('Iniciando conexión con Terminal...');
-      
       const res = await fetch('/api/terminal', { 
           method: 'POST', 
           headers: { 'Content-Type': 'application/json' }, 
@@ -293,10 +274,7 @@ export default function MonitorCaja() {
     }
   };
   
-  const getQuickBills = (total: number) => {
-      const bills = [50, 100, 200, 500, 1000];
-      return bills.filter(b => b > total);
-  };
+  const getQuickBills = (total: number) => [50, 100, 200, 500, 1000].filter(b => b > total);
 
   if (shiftLoading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white"><div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div></div>;
 
@@ -346,12 +324,18 @@ export default function MonitorCaja() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {pendingCash.map(order => {
-                  const isPickToGo = order.orderType === 'PICK_TO_GO';
+                  const isPickToGo = order.orderNotes?.includes('⏰ RECOGE:');
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
-
-                  // 🌟 EXTRAEMOS LA HORA DIRECTAMENTE DE LA COLUMNA DE LA BD
-                  const pickupTime = order.pickupTime || 'Pronto';
                   
+                  // 🌟 CHEQUEAMOS EL ESTATUS REAL DEL PAGO
+                  const isPaidInAdvance = order.status === 'PAID' && isPickToGo;
+
+                  let pickupTime = 'Pronto';
+                  if (isPickToGo) {
+                      const parts = order.orderNotes.split(' | ');
+                      pickupTime = parts.find(p => p.includes('⏰ RECOGE:'))?.replace('⏰ RECOGE: ', '') || 'Pronto';
+                  }
+
                   return (
                     <div key={order.id} className={`bg-zinc-900 p-6 rounded-[2rem] border-2 shadow-xl flex flex-col justify-between h-auto min-h-[16rem] transition-colors ${
                         isPickToGo ? 'border-purple-500 shadow-[0_0_25px_rgba(168,85,247,0.3)] bg-purple-900/10' : 
@@ -374,7 +358,12 @@ export default function MonitorCaja() {
                         <div className="mt-4 pt-4 border-t border-zinc-800">
                             {isPickToGo ? (
                                 <>
-                                    <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
+                                    {isPaidInAdvance ? (
+                                        <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
+                                    ) : (
+                                        <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-1 animate-pulse">⏳ Cliente pagando en línea...</p>
+                                    )}
+                                    
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
                                     <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest">
                                         ⏰ RECOGE A LAS {pickupTime}
@@ -392,21 +381,28 @@ export default function MonitorCaja() {
                       
                       <div className="mt-6 flex flex-col gap-2">
                           {isPickToGo ? (
-                              <button onClick={() => sendToKDS(order.id)} className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
-                                  🍳 Mandar a Cocina
-                              </button>
+                              isPaidInAdvance ? (
+                                  <div className="flex gap-2">
+                                      <button onClick={() => handleCobrarClick(order)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold p-4 rounded-xl transition-all active:scale-95 border border-zinc-700" title="Editar Preparación">
+                                          ✏️
+                                      </button>
+                                      <button onClick={() => sendToKDS(order.id)} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
+                                          🍳 Mandar a Cocina
+                                      </button>
+                                  </div>
+                              ) : (
+                                  <button disabled className="w-full bg-zinc-800 text-zinc-500 py-4 rounded-xl font-black text-sm uppercase tracking-widest cursor-not-allowed">
+                                      Esperando Pago...
+                                  </button>
+                              )
                           ) : isWebOrder ? (
                               <button onClick={() => acceptWebOrder(order.id)} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-blue-500/20">
                                   ⏱️ Aceptar y dar Tiempo
                               </button>
                           ) : (
                               <div className="flex gap-2">
-                                  <button onClick={() => changePaymentMethod(order.id, order.paymentMethod)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold p-4 rounded-xl transition-all active:scale-95 border border-zinc-700" title="Cambiar Método de Pago">
-                                      🔄
-                                  </button>
-                                  <button onClick={() => handleCobrarClick(order)} className="flex-1 bg-green-500 hover:bg-green-400 text-zinc-950 py-4 rounded-xl font-black text-lg uppercase transition-all active:scale-95 shadow-lg shadow-green-500/20">
-                                      💰 Cobrar / Editar
-                                  </button>
+                                  <button onClick={() => changePaymentMethod(order.id, order.paymentMethod)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold p-4 rounded-xl transition-all active:scale-95 border border-zinc-700" title="Cambiar Método de Pago">🔄</button>
+                                  <button onClick={() => handleCobrarClick(order)} className="flex-1 bg-green-500 hover:bg-green-400 text-zinc-950 py-4 rounded-xl font-black text-lg uppercase transition-all active:scale-95 shadow-lg shadow-green-500/20">💰 Cobrar / Editar</button>
                               </div>
                           )}
                       </div>
@@ -424,22 +420,24 @@ export default function MonitorCaja() {
           </div>
 
           {/* ========================================== */}
-          {/* MODAL COBRO: EDITOR Y CALCULADORA          */}
+          {/* MODAL COBRO / EDICIÓN                       */}
           {/* ========================================== */}
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-[3rem] overflow-hidden flex flex-col shadow-2xl max-h-[90vh]">
-                  
                   <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
                       <div>
-                          <h2 className="text-3xl font-black text-white">Cobro e Inspección #{selectedOrder.turnNumber}</h2>
-                          <p className="text-zinc-500 font-bold text-sm mt-1">Modifica, cobra o cancela esta orden por completo.</p>
+                          <h2 className="text-3xl font-black text-white">
+                              {selectedOrder.status === 'PAID' ? `Modificando Orden #${selectedOrder.turnNumber}` : `Cobro e Inspección #${selectedOrder.turnNumber}`}
+                          </h2>
+                          <p className="text-zinc-500 font-bold text-sm mt-1">
+                              {selectedOrder.status === 'PAID' ? "Ajusta las notas o elimina productos si el cliente lo solicitó." : "Modifica, cobra o cancela esta orden por completo."}
+                          </p>
                       </div>
                       <button onClick={() => setSelectedOrder(null)} className="text-zinc-500 hover:text-white text-4xl font-light transition-colors">✕</button>
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* LADO IZQUIERDO: EDITOR DE ITEMS */}
                       <div className="space-y-4">
                           <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-4">Productos en la orden</h3>
                           {selectedOrder.items.map((item: any, idx: number) => (
@@ -448,15 +446,12 @@ export default function MonitorCaja() {
                                       <p className="font-black text-lg text-yellow-400">{item.product.name}</p>
                                       <p className="font-black text-xl text-white">${item.totalPrice.toFixed(2)}</p>
                                   </div>
-                                  
                                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                                      {/* Controles de Cantidad */}
                                       <div className="flex items-center bg-zinc-900 rounded-xl border border-zinc-700">
                                           <button onClick={() => updateItemQty(idx, -1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-red-500 transition-colors">-</button>
                                           <span className="px-4 font-black text-lg text-white">{item.quantity || 1}</span>
                                           <button onClick={() => updateItemQty(idx, 1)} className="px-4 py-2 font-black text-xl text-zinc-400 hover:text-green-500 transition-colors">+</button>
                                       </div>
-                                      {/* Editor de Notas */}
                                       <textarea 
                                           value={item.notes || ''} 
                                           onChange={(e) => updateItemNotes(idx, e.target.value)}
@@ -466,48 +461,38 @@ export default function MonitorCaja() {
                                   </div>
                               </div>
                           ))}
-                          {selectedOrder.items.length === 0 && (
-                              <div className="text-center py-10 bg-zinc-950 rounded-2xl border border-red-500/50 border-dashed">
-                                  <span className="text-4xl mb-2 block">🗑️</span>
-                                  <p className="text-red-400 font-bold text-lg">¡La orden quedó vacía!</p>
-                                  <p className="text-zinc-500 text-sm mt-1">Usa el botón rojo de abajo para cancelar esta orden definitivamente.</p>
-                              </div>
-                          )}
                       </div>
 
-                      {/* LADO DERECHO: PAGO Y CALCULADORA */}
                       <div className="bg-zinc-950 p-8 rounded-[2rem] border border-zinc-800 flex flex-col">
                           <div className="mb-8">
-                              <p className="text-zinc-500 font-black uppercase text-xs tracking-widest mb-2">Total Final a Cobrar</p>
+                              <p className="text-zinc-500 font-black uppercase text-xs tracking-widest mb-2">Total Final</p>
                               <p className="text-7xl font-black text-white">${(selectedOrder.totalAmount + selectedOrder.tipAmount).toFixed(2)}</p>
-                              <div className="flex gap-2 mt-3">
-                                  <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${selectedOrder.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}>
-                                      {selectedOrder.paymentMethod === 'TERMINAL' ? '💳 TARJETA' : '💵 EFECTIVO'}
-                                  </span>
-                                  {selectedOrder.tipAmount > 0 && <span className="text-[10px] font-black uppercase px-3 py-1 rounded-full bg-zinc-800 text-zinc-400">Incl. Propina</span>}
-                              </div>
                           </div>
 
-                          {selectedOrder.paymentMethod === 'EFECTIVO_CAJA' ? (
+                          {/* 🌟 SI YA ESTÁ PAGADA, NO MUESTRA CALCULADORA, SOLO INFO */}
+                          {selectedOrder.status === 'PAID' ? (
+                              <div className="bg-purple-900/10 border border-purple-500/30 p-8 rounded-2xl text-center flex-1 flex flex-col justify-center">
+                                  <span className="text-6xl mb-4 block">✅</span>
+                                  <p className="text-purple-400 font-black text-2xl mb-2">Orden Pagada en Línea</p>
+                                  <p className="text-zinc-400 text-sm font-bold leading-relaxed">Solo puedes editar las notas de los productos. Los cambios no alterarán el cobro original hecho en Mercado Pago.</p>
+                              </div>
+                          ) : selectedOrder.paymentMethod === 'EFECTIVO_CAJA' ? (
                               <div className="space-y-6">
-                                  {/* CALCULADORA RÁPIDA */}
                                   <div>
                                       <p className="text-zinc-500 font-bold text-xs uppercase tracking-widest mb-2">Calculadora Rápida</p>
                                       <div className="flex flex-wrap gap-2 mb-3">
                                           <button onClick={() => setReceivedAmount((selectedOrder.totalAmount + selectedOrder.tipAmount).toString())} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold px-4 py-2 rounded-xl text-sm transition-colors border border-zinc-700">Exacto</button>
                                           {getQuickBills(selectedOrder.totalAmount + selectedOrder.tipAmount).map(bill => (
-                                              <button key={bill} onClick={() => setReceivedAmount(bill.toString())} className="bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-zinc-900 border border-green-500/30 font-black px-4 py-2 rounded-xl text-sm transition-colors">${bill}</button>
+                                              <button key={bill} onClick={() => setReceivedAmount(bill.toString())} className="bg-green-500/10 hover:bg-green-500 text-green-500 border border-green-500/30 font-black px-4 py-2 rounded-xl text-sm transition-colors">${bill}</button>
                                           ))}
                                       </div>
                                       <input 
                                           type="number" 
                                           value={receivedAmount} 
                                           onChange={e => setReceivedAmount(e.target.value)} 
-                                          placeholder="Monto personalizado..."
                                           className="w-full bg-zinc-900 border border-zinc-700 p-4 rounded-xl text-2xl font-black text-white outline-none focus:border-green-500 transition-colors"
                                       />
                                   </div>
-                                  
                                   <div className="flex justify-between items-center p-6 bg-zinc-900 rounded-2xl border border-zinc-800">
                                       <span className="text-zinc-500 font-bold text-lg uppercase tracking-widest">Cambio:</span>
                                       <span className={`text-4xl font-black ${Math.max(0, (parseFloat(receivedAmount)||0) - (selectedOrder.totalAmount + selectedOrder.tipAmount)) > 0 ? 'text-green-400' : 'text-zinc-600'}`}>
@@ -519,18 +504,17 @@ export default function MonitorCaja() {
                               <div className="bg-blue-900/10 border border-blue-500/30 p-8 rounded-2xl text-center flex-1 flex flex-col justify-center">
                                   <span className="text-6xl mb-4 block">💳</span>
                                   <p className="text-blue-400 font-black text-2xl mb-2">Terminal Bancaria</p>
-                                  <p className="text-zinc-400 text-sm font-bold leading-relaxed">Al presionar el botón azul, el total se enviará automáticamente a la terminal física para cobrar.</p>
                               </div>
                           )}
 
                           <div className="mt-auto pt-8 flex gap-3 border-t border-zinc-800">
                               <button onClick={() => setSelectedOrder(null)} className="bg-zinc-800 hover:bg-zinc-700 px-6 py-6 rounded-2xl font-bold text-white transition-colors">Volver</button>
-                              
-                              <button onClick={cancelarOrdenTotal} className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-6 py-6 rounded-2xl font-black transition-colors border border-red-900/50 hover:border-red-500" title="Eliminar orden por completo">
-                                  🗑️ Cancelar
-                              </button>
+                              <button onClick={cancelarOrdenTotal} className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-6 py-6 rounded-2xl font-black transition-colors border border-red-900/50 hover:border-red-500">🗑️ Cancelar</button>
 
-                              {selectedOrder.paymentMethod === 'TERMINAL' ? (
+                              {/* 🌟 SI YA ESTÁ PAGADA, EL BOTÓN SOLO DICE "GUARDAR CAMBIOS" */}
+                              {selectedOrder.status === 'PAID' ? (
+                                  <button onClick={guardarCambiosEdicion} className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all">Guardar Edición ✅</button>
+                              ) : selectedOrder.paymentMethod === 'TERMINAL' ? (
                                   <button onClick={triggerTerminalPayment} disabled={selectedOrder.items.length === 0} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50">💳 Cobrar</button>
                               ) : (
                                   <button 
@@ -538,7 +522,7 @@ export default function MonitorCaja() {
                                     disabled={selectedOrder.items.length === 0 || (!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount))} 
                                     className="flex-1 bg-green-500 hover:bg-green-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:bg-zinc-700 disabled:text-zinc-500"
                                   >
-                                    {(!receivedAmount || parseFloat(receivedAmount) < (selectedOrder.totalAmount + selectedOrder.tipAmount)) && selectedOrder.items.length > 0 ? 'Falta Dinero ⚠️' : 'Confirmar ✅'}
+                                    Confirmar ✅
                                   </button>
                               )}
                           </div>
@@ -548,61 +532,15 @@ export default function MonitorCaja() {
             </div>
           )}
 
-          {/* OVERLAY DE ESPERA DE TERMINAL */}
           {waitingTerminal && (
             <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md flex flex-col justify-center items-center z-[70] text-center p-8 animate-in fade-in zoom-in-95 duration-200">
               <span className="text-[10rem] animate-pulse mb-8">💳</span>
               <h2 className="text-6xl font-black text-yellow-400 mb-6">Terminal Activada</h2>
               <p className="text-3xl text-zinc-300 font-medium bg-zinc-900 px-8 py-4 rounded-full border border-zinc-700 shadow-xl">{terminalStatusMsg}</p>
               <div className="mt-16 w-32 h-32 border-8 border-zinc-800 border-t-yellow-400 rounded-full animate-spin"></div>
-              
-              <button onClick={() => { setWaitingTerminal(false); setTerminalIntentId(null); }} className="mt-16 text-zinc-500 hover:text-white underline font-bold uppercase tracking-widest text-xs">
-                Cancelar operación en sistema
-              </button>
+              <button onClick={() => { setWaitingTerminal(false); setTerminalIntentId(null); }} className="mt-16 text-zinc-500 hover:text-white underline font-bold uppercase tracking-widest text-xs">Cancelar operación</button>
             </div>
           )}
-
-          {/* MODAL RETIRO / GASTO */}
-          {showMoveModal && (
-            <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-[60] backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-              <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-                <h2 className="text-2xl font-black text-white mb-6">Registrar Retiro de Efectivo</h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1 block">¿Quién autoriza / retira?</label>
-                    <select value={moveAuthor} onChange={e => setMoveAuthor(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 transition-colors">
-                      <option value="LUIS (JEFE)">Luis (Jefe)</option>
-                      <option value="COLABORADOR">Colaborador en Turno</option>
-                    </select>
-                  </div>
-                  <input type="number" value={moveAmount} onChange={e => setMoveAmount(e.target.value)} placeholder="Monto ($)" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white text-2xl font-black outline-none focus:border-red-500 transition-colors"/>
-                  <input type="text" value={moveReason} onChange={e => setMoveReason(e.target.value)} placeholder="Motivo (Ej. Pago hielo, Gasolina)" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 transition-colors"/>
-                  
-                  <div className="flex gap-3 pt-4">
-                    <button onClick={() => setShowMoveModal(false)} className="flex-1 bg-zinc-800 py-4 rounded-xl font-bold hover:bg-zinc-700 transition-colors text-white">Cancelar</button>
-                    <button onClick={handleCashMovement} className="flex-[2] bg-red-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-red-500 transition-colors active:scale-95">Confirmar Retiro</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* MODAL FINALIZAR JORNADA */}
-          {showCloseModal && (
-            <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
-              <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[3rem] p-10 text-center shadow-2xl">
-                <span className="text-6xl mb-4 block">💰</span>
-                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja (Ciego)</h2>
-                <p className="text-zinc-500 text-sm mb-8 font-bold">Cuenta todo el efectivo físico en caja (incluyendo morralla y fondo) e ingresa el monto total exacto.</p>
-                <input type="number" value={reportedCash} onChange={e => setReportedCash(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-6 rounded-2xl text-4xl font-black text-white outline-none mb-8 text-center focus:border-yellow-400 transition-colors"/>
-                <div className="flex gap-4">
-                  <button onClick={() => setShowCloseModal(false)} className="flex-1 bg-zinc-800 py-4 rounded-xl font-bold text-white hover:bg-zinc-700 transition-colors">Volver</button>
-                  <button onClick={handleCloseShift} className="flex-[2] bg-red-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-red-500 active:scale-95 transition-all">Cerrar Turno 🔒</button>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
       )}
     </ProtectedRoute>
