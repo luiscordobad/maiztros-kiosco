@@ -36,7 +36,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const [newExpenseSubCategory, setNewExpenseSubCategory] = useState('Central de Abastos');
   const [newExpenseDesc, setNewExpenseDesc] = useState('');
   
-  // 🌟 MEJORA: Estado para manejar Archivos, PDFs, XML e Imágenes
   const [expenseFileInfo, setExpenseFileInfo] = useState<{name: string, type: string, base64: string} | null>(null);
 
   const [newCouponCode, setNewCouponCode] = useState('');
@@ -142,7 +141,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     await fetch(`/api/admin?id=${id}&type=coupon&author=${getAuthorName()}`, { method: 'DELETE' });
   };
 
-  // 🌟 MEJORA: Lector de Archivos Universal (Imágenes, PDF, XML)
   const handleReceiptUpload = (e: any) => {
       const file = e.target.files[0];
       if (file) {
@@ -167,7 +165,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
         amount: newExpenseAmount, 
         category: newExpenseCategory, 
         description: finalDescription, 
-        receiptImage: expenseFileInfo ? expenseFileInfo.base64 : null, // Manda el Base64 (Ojo: Para PDFs es pesado)
+        receiptImage: expenseFileInfo ? expenseFileInfo.base64 : null,
         author: getAuthorName() 
     };
 
@@ -231,7 +229,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   };
 
   // ==========================================
-  // CÁLCULOS FINANCIEROS Y DE BI 
+  // 🌟 CÁLCULOS FINANCIEROS (3 MÉTODOS DE PAGO)
   // ==========================================
   const validOrders = data.orders ? data.orders.filter((o:any) => o.status !== 'REFUNDED') : []; 
   const totalOrders = validOrders.length;
@@ -239,44 +237,41 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const ventasNetas = validOrders.reduce((acc: number, o: any) => acc + o.totalAmount, 0);
   const totalDescuentos = validOrders.reduce((acc: number, o: any) => acc + (o.pointsDiscount || 0), 0);
   
+  // 🌟 Separación Estricta de las 3 Canastas
   const ventasEfectivo = validOrders.filter((o:any) => o.paymentMethod === 'EFECTIVO_CAJA').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
   const ventasTarjeta = validOrders.filter((o:any) => o.paymentMethod === 'TERMINAL').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
+  const ventasMercadoPago = validOrders.filter((o:any) => o.paymentMethod === 'MERCADO_PAGO').reduce((acc:number, o:any) => acc + o.totalAmount, 0);
 
   let comisionesTerminal = 0;
+  let comisionesMercadoPago = 0;
   let propinasTarjetaBrutas = 0;
+  let propinasMercadoPagoBrutas = 0;
   
   validOrders.forEach((o:any) => {
+      const tip = o.tipAmount || 0;
       if (o.paymentMethod === 'TERMINAL') {
-          const tip = o.tipAmount || 0;
           propinasTarjetaBrutas += tip;
-          const cobroTotal = o.totalAmount + tip;
-          comisionesTerminal += (cobroTotal * MP_RATE);
+          comisionesTerminal += ((o.totalAmount + tip) * MP_RATE);
+      } else if (o.paymentMethod === 'MERCADO_PAGO') {
+          propinasMercadoPagoBrutas += tip;
+          comisionesMercadoPago += ((o.totalAmount + tip) * MP_RATE);
       }
   });
 
+  const totalComisionesBancarias = comisionesTerminal + comisionesMercadoPago;
   const gastosFisicos = data.expenses ? data.expenses.reduce((acc: number, e: any) => acc + e.amount, 0) : 0;
-  const gastosTotales = gastosFisicos + comisionesTerminal; 
   
+  const gastosTotales = gastosFisicos + totalComisionesBancarias; 
   const utilidadNeta = ventasNetas - gastosTotales;
   const margenGanancia = ventasNetas > 0 ? (utilidadNeta / ventasNetas) * 100 : 0;
   const ticketPromedio = totalOrders > 0 ? (ventasNetas / totalOrders) : 0;
 
   const ventasVIP = validOrders.filter((o:any) => o.customerPhone || o.pointsDiscount > 0 || o.couponCode).reduce((acc:number, o:any) => acc + o.totalAmount, 0);
-  const ventasGeneral = ventasNetas - ventasVIP;
-
-  const paymentData = [
-    { name: 'Efectivo', value: ventasEfectivo, color: '#4ade80' },
-    { name: 'Tarjeta', value: ventasTarjeta, color: '#60a5fa' }
-  ];
   
   const retencionStats = data.biExtraStats?.retention || { new: 0, returning: 0, general: 0 };
   const totalVipOrders = retencionStats.new + retencionStats.returning;
   const returningPct = totalVipOrders > 0 ? (retencionStats.returning / totalVipOrders) * 100 : 0;
-  const retentionData = [
-      { name: 'VIP Recurrentes', value: retencionStats.returning, color: '#4ade80' }, 
-      { name: 'VIP Nuevos', value: retencionStats.new, color: '#facc15' } 
-  ];
-
+  
   const totalPuntosEmitidos = data.customers?.reduce((acc: number, c: any) => acc + c.points, 0) || 0;
   const deudaLealtad = totalPuntosEmitidos * 0.08; 
 
@@ -361,9 +356,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       'Esquites': '#eab308', 'Construpapas': '#ef4444', 'Obra Maestra': '#3b82f6', 'Don Maiztro': '#a855f7', 'Bebidas': '#0ea5e9', 'Extras/Upgrades': '#22c55e', 'Otros': '#71717a'
   };
 
-  // ==========================================
-  // AUDITORÍA DE CAJA Y NÓMINA
-  // ==========================================
   const auditMap: Record<string, any> = {};
   const getStrictDate = (isoString: string) => {
       try {
@@ -433,6 +425,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
               const tip = o.tipAmount || 0;
               if (o.paymentMethod === 'TERMINAL') {
                   propinasTurnoTarjetaNetas += tip * (1 - MP_RATE);
+              } else if (o.paymentMethod === 'MERCADO_PAGO') {
+                  propinasTurnoTarjetaNetas += tip * (1 - MP_RATE); // Mercado Pago tips behave like terminal
               } else {
                   propinasTurnoEfectivo += tip;
               }
@@ -465,7 +459,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
   const laborCostPct = ventasNetas > 0 ? (totalNominaEmpresa / ventasNetas) * 100 : 0;
 
   // ==========================================
-  // 🌟 PDF EJECUTIVO
+  // 🌟 PDF EJECUTIVO CON 3 MÉTODOS DE PAGO
   // ==========================================
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -510,8 +504,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
 
     (doc as any).autoTable({
         startY: y,
-        head: [['Ingresos Brutos', 'Gastos Físicos', 'Comisiones MP', 'Utilidad Neta P&L']],
-        body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosFisicos.toFixed(2)}`, `-$${comisionesTerminal.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
+        head: [['Ingresos Brutos', 'Gastos Físicos', 'Comisiones MP/Banco', 'Utilidad Neta P&L']],
+        body: [[`$${ventasNetas.toFixed(2)}`, `-$${gastosFisicos.toFixed(2)}`, `-$${totalComisionesBancarias.toFixed(2)}`, `$${utilidadNeta.toFixed(2)}`]],
         theme: 'grid',
         headStyles: { fillColor: [244, 244, 245], textColor: textDark, fontStyle: 'bold', halign: 'center' },
         bodyStyles: { halign: 'center', fontSize: 13, fontStyle: 'bold' },
@@ -525,12 +519,13 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
     });
     y = (doc as any).lastAutoTable.finalY + 10;
 
+    // 🌟 AÑADIMOS MERCADO PAGO AL PDF
     (doc as any).autoTable({
         startY: y,
-        head: [['Efectivo (Caja)', 'Tarjeta (Banco)', 'Descuentos (Costo VIP)']],
-        body: [[`$${ventasEfectivo.toFixed(2)}`, `$${ventasTarjeta.toFixed(2)}`, `-$${totalDescuentos.toFixed(2)}`]],
+        head: [['Efectivo (Caja)', 'Tarjeta (Terminal)', 'Mercado Pago (App)', 'Descuentos (VIP)']],
+        body: [[`$${ventasEfectivo.toFixed(2)}`, `$${ventasTarjeta.toFixed(2)}`, `$${ventasMercadoPago.toFixed(2)}`, `-$${totalDescuentos.toFixed(2)}`]],
         theme: 'plain',
-        headStyles: { textColor: textGray, fontStyle: 'bold', halign: 'center' },
+        headStyles: { textColor: textGray, fontStyle: 'bold', halign: 'center', fontSize: 10 },
         bodyStyles: { halign: 'center', fontSize: 12, textColor: textDark }
     });
 
@@ -735,8 +730,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           const payload = {
               startDate, endDate,
               story: storyForEmail,
-              ventasNetas, gastosFisicos, comisionesTerminal, utilidadNeta,
-              ventasEfectivo, ventasTarjeta, totalDescuentos, laborCostPct,
+              ventasNetas, gastosFisicos, comisionesTerminal: totalComisionesBancarias, utilidadNeta,
+              ventasEfectivo, ventasTarjeta, ventasMercadoPago, totalDescuentos, laborCostPct, // 🌟 AÑADIDO PARA EMAIL
               topProducts: topProductsData.slice(0, 10),
               topToppingsPaid: topToppingsPaidData.slice(0, 10),
               audit: dailyAuditArray, 
@@ -761,9 +756,6 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
       setEmailSending(false);
   };
 
-  // ==========================================
-  // 🌟 TRADUCTOR DE LOGS (NUEVO)
-  // ==========================================
   const formatLogAction = (action: string) => {
       const map: any = {
           'product': '🍔 Menú Principal',
@@ -789,7 +781,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           .replace(/ set true/ig, ' 🟢 (Activado)')
           .replace(/ set false/ig, ' 🔴 (Desactivado)')
           .replace(/_/g, ' ')
-          .replace(/p beb ag/ig, 'Agua Natural') // Traducción rápida si las nombras así
+          .replace(/p beb ag/ig, 'Agua Natural') 
           .toUpperCase(); 
   };
 
@@ -936,7 +928,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
           <div className="animate-in fade-in duration-500">
             
             {/* ======================================================== */}
-            {/* 💰 PESTAÑA: FINANZAS (DISEÑO 3 TARJETAS ORIGINALES)      */}
+            {/* 💰 PESTAÑA: FINANZAS                                     */}
             {/* ======================================================== */}
             {activeTab === 'FINANZAS' && role === 'ADMIN' && (
               <div className="space-y-8">
@@ -961,8 +953,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                         <div className="w-px bg-zinc-800"></div>
                         <div className="flex flex-col">
-                            <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Comisiones MP</span>
-                            <span className="text-sm font-black text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
+                            <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Comis. Tarjeta/MP</span>
+                            <span className="text-sm font-black text-orange-400">-${totalComisionesBancarias.toFixed(2)}</span>
                         </div>
                     </div>
                   </div>
@@ -979,7 +971,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                     <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 shadow-xl">
                         <h3 className="text-xl font-black mb-6 text-white border-b border-zinc-800 pb-4">🌊 Flujo de Efectivo (Liquidez)</h3>
                         <div className="space-y-4">
-                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                            {/* CAJA FÍSICA EFECTIVO */}
+                            <div className="flex justify-between items-center bg-zinc-950 p-4 rounded-xl border border-zinc-800 mb-4">
                                 <div>
                                     <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Efectivo (Caja Física)</p>
                                     <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Dinero disponible hoy</p>
@@ -987,21 +980,43 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                 <span className="font-black text-3xl text-green-400">${ventasEfectivo.toFixed(2)}</span>
                             </div>
                             
-                            <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                                <div className="flex justify-between items-center mb-3 pb-3 border-b border-zinc-800">
-                                    <div>
-                                        <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal Bruto)</p>
-                                        <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Cobrado en terminal (Inc. Props)</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* TARJETA TERMINAL */}
+                                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                    <div className="flex justify-between items-center mb-3 pb-3 border-b border-zinc-800">
+                                        <div>
+                                            <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Tarjeta (Terminal)</p>
+                                            <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Cobrado físico (Inc. Props)</p>
+                                        </div>
+                                        <span className="font-black text-2xl text-blue-400">${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</span>
                                     </div>
-                                    <span className="font-black text-3xl text-blue-400">${(ventasTarjeta + propinasTarjetaBrutas).toFixed(2)}</span>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <p className="text-[10px] text-orange-400 uppercase font-black">Comisión Retenida</p>
+                                        <span className="font-black text-sm text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-[10px] text-green-400 uppercase font-black">Depósito a Banco</p>
+                                        <span className="font-black text-lg text-green-400">${((ventasTarjeta + propinasTarjetaBrutas) - comisionesTerminal).toFixed(2)}</span>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <p className="text-[10px] text-orange-400 uppercase font-black">Comisiones MP Retenidas</p>
-                                    <span className="font-black text-sm text-orange-400">-${comisionesTerminal.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <p className="text-[10px] text-green-400 uppercase font-black">Depósito Neto a Banco</p>
-                                    <span className="font-black text-lg text-green-400">${((ventasTarjeta + propinasTarjetaBrutas) - comisionesTerminal).toFixed(2)}</span>
+
+                                {/* MERCADO PAGO (APP) */}
+                                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                    <div className="flex justify-between items-center mb-3 pb-3 border-b border-zinc-800">
+                                        <div>
+                                            <p className="text-sm font-bold text-zinc-300 flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-purple-500"></span> Mercado Pago (App)</p>
+                                            <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">Pagos en Línea (Inc. Props)</p>
+                                        </div>
+                                        <span className="font-black text-2xl text-purple-400">${(ventasMercadoPago + propinasMercadoPagoBrutas).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <p className="text-[10px] text-orange-400 uppercase font-black">Comisión Retenida</p>
+                                        <span className="font-black text-sm text-orange-400">-${comisionesMercadoPago.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-[10px] text-green-400 uppercase font-black">Depósito a Banco</p>
+                                        <span className="font-black text-lg text-green-400">${((ventasMercadoPago + propinasMercadoPagoBrutas) - comisionesMercadoPago).toFixed(2)}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1125,11 +1140,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                       <div className="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 flex flex-col justify-center">
                                           <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-1" title="Tardanzas o Bonos">Ajuste (+/-)</p>
                                           <input 
-                                            type="number" 
-                                            placeholder="0"
-                                            value={nominaAdjustments[nomina.cajero] || ''}
-                                            onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
-                                            className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
+                                              type="number" 
+                                              placeholder="0"
+                                              value={nominaAdjustments[nomina.cajero] || ''}
+                                              onChange={(e) => handleAjusteNomina(nomina.cajero, e.target.value)}
+                                              className="w-full bg-transparent text-white font-black outline-none border-b border-blue-500/50 focus:border-blue-400 text-sm"
                                           />
                                       </div>
                                   </div>
@@ -1144,7 +1159,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                                       <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px]">{t.entrada} a {t.salida}</span>
                                                   </div>
                                                   <div className="text-right">
-                                                    <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
+                                                      <span className="text-pink-400 text-[10px] block">Prop: +${t.propinas.toFixed(2)}</span>
                                                   </div>
                                               </div>
                                           ))}
@@ -1458,8 +1473,11 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                           {data.orders.slice().reverse().map((o: any) => {
                               const isTerminal = o.paymentMethod === 'TERMINAL';
+                              // 🌟 CORRECCIÓN: Separación visual estricta en el historial
+                              const isMP = o.paymentMethod === 'MERCADO_PAGO';
+
                               const cobroBruto = o.totalAmount + (o.tipAmount || 0);
-                              const comisionMP = isTerminal ? (cobroBruto * MP_RATE) : 0;
+                              const comisionMP = isTerminal || isMP ? (cobroBruto * MP_RATE) : 0;
                               const depositoNeto = cobroBruto - comisionMP;
 
                               return (
@@ -1475,7 +1493,14 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </div>
                                             <p className="text-[10px] text-zinc-500 uppercase font-black mt-1">{new Date(o.createdAt).toLocaleString()}</p>
                                             <div className="mt-1">
-                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${o.paymentMethod === 'TERMINAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>{o.paymentMethod === 'TERMINAL' ? '💳 Tarjeta' : '💵 Efectivo'}</span>
+                                                {/* 🌟 AQUÍ ESTÁ EL CAMBIO PARA LOS 3 MÉTODOS */}
+                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                                                    isMP ? 'bg-purple-500/20 text-purple-400' 
+                                                    : isTerminal ? 'bg-blue-500/20 text-blue-400' 
+                                                    : 'bg-green-500/20 text-green-400'
+                                                }`}>
+                                                    {isMP ? '📱 Mercado Pago' : isTerminal ? '💳 Tarjeta' : '💵 Efectivo'}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -1486,9 +1511,9 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                             </p>
                                             {o.tipAmount > 0 && <p className="text-[10px] font-bold text-zinc-500">Incl. ${o.tipAmount} propina</p>}
                                             
-                                            {isTerminal && o.status !== 'REFUNDED' && (
+                                            {(isTerminal || isMP) && o.status !== 'REFUNDED' && (
                                                 <div className="mt-1 border-t border-zinc-800 pt-1">
-                                                    <p className="text-[9px] text-orange-400 font-bold">- Comisión MP: $${comisionMP.toFixed(2)}</p>
+                                                    <p className="text-[9px] text-orange-400 font-bold">- Comisión Retenida: $${comisionMP.toFixed(2)}</p>
                                                     <p className="text-[10px] text-green-400 font-black">Depósito Real: $${depositoNeto.toFixed(2)}</p>
                                                 </div>
                                             )}
@@ -1518,7 +1543,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
             )}
 
             {/* ======================================================== */}
-            {/* PESTAÑA: AUDITORIA Y LOGS (TRADUCIDOS)                   */}
+            {/* PESTAÑA: AUDITORIA Y LOGS                                */}
             {/* ======================================================== */}
             {activeTab === 'AUDITORIA' && role === 'ADMIN' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
@@ -1529,37 +1554,7 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                         </div>
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                             {data.auditLogs?.length === 0 ? <p className="text-zinc-500 italic">No hay registros de seguridad recientes.</p> : 
-                              data.auditLogs?.map((log: any) => {
-                                  const formatLogAction = (action: string) => {
-                                      const map: any = {
-                                          'product': '🍔 Menú Principal',
-                                          'modifier': '🧂 Opciones/Toppings',
-                                          'inventory_toggle': '📦 Inv. Pánico',
-                                          'update_stock': '📊 Ajuste Físico',
-                                          'add_stock': '📥 Entrada Insumos',
-                                          'expense': '💸 Gasto Físico',
-                                          'coupon': '🏷️ Promociones',
-                                          'ORDEN_CANCELADA': '🛑 Cancelación',
-                                          'init_inventory': '⚠️ Reset Sistema',
-                                          'CAMBIO_PANICO_PRODUCTO': '🍔 Pánico (Producto)',
-                                          'CAMBIO_PANICO_MODIFICADOR': '🧂 Pánico (Topping)',
-                                          'CAMBIO_PANICO_INVENTARIO': '📦 Pánico (Inventario)'
-                                      };
-                                      return map[action] || action;
-                                  };
-                                  
-                                  const formatLogDetails = (details: string) => {
-                                      if (!details) return 'Sin detalles de operación';
-                                      return details
-                                          .replace(/ID: /g, '')
-                                          .replace(/ set true/ig, ' 🟢 (Activado)')
-                                          .replace(/ set false/ig, ' 🔴 (Desactivado)')
-                                          .replace(/_/g, ' ')
-                                          .replace(/p beb ag/ig, 'Agua Natural')
-                                          .toUpperCase(); 
-                                  };
-
-                                  return (
+                              data.auditLogs?.map((log: any) => (
                                     <div key={log.id} className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex flex-col md:flex-row md:justify-between md:items-center gap-3 text-xs hover:border-zinc-700 transition-colors">
                                         <div className="flex flex-col md:flex-row gap-2 md:gap-4 md:items-center">
                                             <span className="text-zinc-600 font-bold whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</span>
@@ -1568,8 +1563,8 @@ function AdminDashboard({ role }: { role: 'ADMIN' | 'CAJERO' | 'KDS' }) {
                                         </div>
                                         <span className="text-zinc-500 font-black uppercase italic whitespace-nowrap">👤 {log.author}</span>
                                     </div>
-                                  );
-                              })
+                                  )
+                              )
                             }
                         </div>
                     </div>
