@@ -29,7 +29,7 @@ export async function POST(request: Request) {
           customerName: data.customerName || 'Cliente',
           customerPhone: data.customerPhone || null,
           orderType: safeOrderType,
-          paymentMethod: data.paymentMethod, // 🌟 Ahora dirá MERCADO_PAGO
+          paymentMethod: data.paymentMethod,
           items: JSON.stringify(data.cart || []), 
           orderNotes: extraInfo, 
           totalAmount: data.totalAmount, 
@@ -92,8 +92,6 @@ export async function POST(request: Request) {
     if (data.isPickToGo) {
         if (!process.env.MP_ACCESS_TOKEN) throw new Error("Falta el Token");
         const preference = new Preference(client);
-        
-        // 🌟 CORRECCIÓN 404: Leemos el dominio real desde la petición de forma dinámica
         const url = new URL(request.url);
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${url.protocol}//${url.host}`;
         
@@ -117,7 +115,9 @@ export async function POST(request: Request) {
                 external_reference: order.id, 
             }
         });
-        return NextResponse.json({ success: true, turnNumber: order.turnNumber, preferenceId: result.id });
+        
+        // 🌟 RETORNAMOS initPoint PARA REDIRECCIÓN INMEDIATA
+        return NextResponse.json({ success: true, turnNumber: order.turnNumber, preferenceId: result.id, initPoint: result.init_point });
     }
     return NextResponse.json({ success: true, turnNumber: order.turnNumber });
   } catch (error: any) {
