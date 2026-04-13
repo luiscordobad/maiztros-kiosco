@@ -14,6 +14,14 @@ export async function POST(request: Request) {
     const safeOrderType = data.isPickToGo ? 'TAKEOUT' : (data.orderType || 'DINE_IN');
     const initialStatus = data.isPickToGo ? 'AWAITING_PAYMENT' : (data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT');
 
+    // 🌟 TRUCO MAESTRO: Guardamos la hora y el correo en las notas para no alterar la Base de Datos
+    const pickupStr = data.pickupTime ? `⏰ PICK TO GO - PASA A LAS: ${data.pickupTime}` : '';
+    const emailStr = data.customerEmail ? `📧 Correo: ${data.customerEmail}` : '';
+    const userNotes = data.orderNotes || '';
+    
+    // Unimos todo
+    const finalOrderNotes = [pickupStr, emailStr, userNotes].filter(Boolean).join(' | ');
+
     const order = await prisma.$transaction(async (tx) => {
       const activeShift = await tx.shift.findFirst({ where: { status: 'OPEN' } });
       
@@ -22,16 +30,14 @@ export async function POST(request: Request) {
           turnNumber,
           customerName: data.customerName || 'Cliente',
           customerPhone: data.customerPhone || null,
-          customerEmail: data.customerEmail || null, 
           orderType: safeOrderType,
           paymentMethod: data.paymentMethod,
           items: JSON.stringify(data.cart || []), 
-          orderNotes: data.orderNotes || '', // 🌟 Limpio, solo notas
+          orderNotes: finalOrderNotes, // <--- Todo viaja seguro aquí adentro
           totalAmount: data.totalAmount, 
           pointsDiscount: data.pointsDiscount || 0, 
           couponCode: data.couponCode || null,
           tipAmount: data.tipAmount || 0,
-          pickupTime: data.pickupTime || null, // 🌟 Directo a la BD
           status: initialStatus,
           shiftId: activeShift?.id || null 
         }
@@ -43,17 +49,8 @@ export async function POST(request: Request) {
          
          await tx.customer.upsert({
            where: { phone: data.customerPhone },
-           update: { 
-               name: data.customerName, 
-               points: { increment: earnedPoints - pointsToDeduct },
-               email: data.customerEmail // 🌟 Directo a la BD
-           },
-           create: { 
-               phone: data.customerPhone, 
-               name: data.customerName, 
-               points: earnedPoints,
-               email: data.customerEmail 
-           }
+           update: { name: data.customerName, points: { increment: earnedPoints - pointsToDeduct } },
+           create: { phone: data.customerPhone, name: data.customerName, points: earnedPoints }
          });
       }
 
@@ -126,7 +123,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, turnNumber: order.turnNumber });
 
   } catch (error: any) {
-    console.error("🔥 ERROR EN CHECKOUT:", error);
+    console.error("🔥 ERROR GRAVE EN CHECKOUT:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
