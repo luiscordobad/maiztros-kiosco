@@ -31,6 +31,7 @@ model Modifier {
 model Customer {
   phone     String   @id
   name      String?
+  email     String?  // 🌟 AHORA SÍ: El correo del cliente
   points    Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,6 +93,7 @@ model Order {
   pointsDiscount Float    @default(0) 
   couponCode     String?  
   tipAmount      Float    @default(0) 
+  pickupTime     String?  // 🌟 AHORA SÍ: La hora de Pick To Go
   status         String   @default("PENDING") 
   shiftId        String?  
   shift          Shift?   @relation(fields: [shiftId], references: [id])
