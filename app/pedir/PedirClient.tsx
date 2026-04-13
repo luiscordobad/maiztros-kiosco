@@ -247,12 +247,21 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setActiveProduct(null);
   };
 
+  // 🌟 LÓGICA DE CARRITO Y CHECKOUT ACTUALIZADA
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null); setCouponError(`Mínimo de compra de $${activeCoupon.minAmount}`);
     }
     if (selectedReward && subtotal < selectedReward.minSpend) { setSelectedReward(null); }
-    if (cart.length === 0 && isCartOpen && appState === 'MENU') { setIsCartOpen(false); }
+    
+    // 🌟 EXTRA UX: Si el carrito se queda vacío, oculta modales y saca al usuario del checkout
+    if (cart.length === 0) {
+        setIsCartOpen(false);
+        if (appState === 'CHECKOUT') {
+            setAppState('MENU');
+        }
+    }
+    
     setPreferenceId(null);
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
@@ -355,6 +364,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
+  // VISTA ÉXITO
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
@@ -370,6 +380,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
+  // VISTA CHECKOUT
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -382,6 +393,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
                 {cart.map((item) => (
+                    // 🌟 CORRECCIÓN: Ahora usa item.cartId para eliminar la preparación exacta correctamente
                     <div key={item.cartId} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
                         <div className="flex-1 pr-4">
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
@@ -407,7 +419,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP:</p>
                         <div className="flex items-start gap-2 mb-3">
                             <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
-                            <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
+                            {/* 🌟 CORRECCIÓN: Botón de privacidad clickable y con cursor de manita */}
+                            <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800 cursor-pointer" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
                         </div>
                         <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs hover:bg-yellow-300">
                             {isRegistering ? 'Creando...' : 'Crear Cuenta VIP'}
@@ -464,6 +477,24 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                 )}
             </div>
         </div>
+        
+        {/* 🌟 CORRECCIÓN: Renderizamos la Modal de Privacidad aquí para la vista de Checkout */}
+        {showPrivacy && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-black text-zinc-900">Privacidad</h3>
+                        <button onClick={() => setShowPrivacy(false)} className="text-zinc-400 hover:text-zinc-600 font-bold text-xl">✕</button>
+                    </div>
+                    <p className="text-sm text-zinc-600 mb-6 font-medium leading-relaxed">
+                        Tus datos personales (nombre, teléfono y correo) se utilizan exclusivamente para enviarte el recibo de tu pedido, contactarte si hay un problema con tu orden, y otorgarte puntos de lealtad en nuestro programa VIP. En Maiztros NO vendemos ni compartimos tu información.
+                    </p>
+                    <button onClick={() => setShowPrivacy(false)} className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-black py-4 rounded-xl transition-colors">
+                        Entendido
+                    </button>
+                </div>
+            </div>
+        )}
       </div>
     );
   }
@@ -560,7 +591,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* 🌟 MODAL PERSONALIZAR (CORREGIDO PARA ERROR DE CONSOLA) */}
+      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => setActiveProduct(null)}></div>
@@ -677,7 +708,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                   ←
                 </button>
               )}
-              {/* 🌟 LA LÍNEA DEL BUG CORREGIDA */}
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep]?.type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
@@ -703,7 +733,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE */}
+      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -716,9 +746,10 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
                             {cart.map(item => (
+                                // 🌟 CORRECCIÓN: key={item.cartId} y removeFromCart(item.cartId)
                                 <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
-                                        <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name}</p>
+                                        <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name || 'Producto'}</p>
                                         <p className="font-black text-zinc-900 text-sm">${(item.totalPrice || 0).toFixed(2)}</p>
                                     </div>
                                     {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes}</p>}
