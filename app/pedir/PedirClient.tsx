@@ -13,7 +13,6 @@ const OPCIONES = {
   BOING: ['Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa'],
   REFRESCO: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral'],
   BEBIDA_ALL: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
-  BEBIDA_ALL_MULTIPLE: ['Coca Original', 'Coca Zero', 'Sprite', 'Manzanita', 'Agua Mineral', 'Boing Mango', 'Boing Guayaba', 'Boing Manzana', 'Boing Fresa', 'Agua Natural'],
   ESPECIALIDAD_CHOICE: ['Construpapas', 'Obra Maestra'],
   PAPAS_MARUCHAN: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes', 'Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín']
 };
@@ -35,7 +34,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  // 🛡️ ESCUDO: Verificamos que los productos existan y tengan nombre antes de ordenarlos
   const visibleProducts = (products || [])
     .filter(p => p?.name && !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
     .sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
@@ -165,7 +163,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     return "Delicioso y preparado al momento.";
   };
 
-  // 🛡️ ESCUDO: Previene que la función explote si el producto viene nulo
   const getProductSteps = (p: any) => {
     if (!p || !p.name) return [];
     const n = p.name.toLowerCase();
@@ -193,7 +190,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setActiveProduct(product); setWizardStep(0); setWizardData({}); 
   };
 
-  // 🛡️ ESCUDO: Prevención de crasheos al checar propiedades de nombres nulos
   const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
     if (!mod) return;
     const currentSelections = wizardData[wizardStep] || [];
@@ -331,7 +327,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setIsLoadingPayment(false);
   };
 
-  // 🛡️ ESCUDO: Evita caídas si los inventarios o productos vienen vacíos
   const isOptionAvailable = (optName: string) => {
     if (!optName) return false;
     const invItem = inventoryItems.find(i => i?.name?.toLowerCase() === optName.toLowerCase());
@@ -565,7 +560,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
+      {/* 🌟 MODAL PERSONALIZAR (CORREGIDO PARA ERROR DE CONSOLA) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => setActiveProduct(null)}></div>
@@ -644,7 +639,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {/* 🛡️ ESCUDO: Optional chaining absoluto para evitar "filter of undefined" */}
                   {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep]?.type || '']
                     ?.filter((opt: string) => {
                        if (getProductSteps(activeProduct)[wizardStep]?.type === 'PAPAS_MARUCHAN') {
@@ -683,6 +677,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                   ←
                 </button>
               )}
+              {/* 🌟 LA LÍNEA DEL BUG CORREGIDA */}
               <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep]?.type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
@@ -694,7 +689,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         const paidCount = currentSelections.filter((s:any) => s?.type === 'QUESO' || s?.type === 'ADEREZO' || s?.type === 'POLVO').length;
                         let baseCount = paidCount;
                         if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
-                        if (!step.isFree) {
+                        if (!stepDef.isFree) {
                           if (baseCount === 1) extraLabel = " (+$15)";
                           if (baseCount === 2) extraLabel = " (+$25)";
                           if (baseCount >= 3) extraLabel = " (+$35)";
@@ -708,7 +703,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
+      {/* CARRITO FLOTANTE */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
