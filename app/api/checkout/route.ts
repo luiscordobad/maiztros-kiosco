@@ -29,7 +29,7 @@ export async function POST(request: Request) {
           customerName: data.customerName || 'Cliente',
           customerPhone: data.customerPhone || null,
           orderType: safeOrderType,
-          paymentMethod: data.paymentMethod,
+          paymentMethod: data.paymentMethod, 
           items: JSON.stringify(data.cart || []), 
           orderNotes: extraInfo, 
           totalAmount: data.totalAmount, 
@@ -95,6 +95,10 @@ export async function POST(request: Request) {
         const url = new URL(request.url);
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${url.protocol}//${url.host}`;
         
+        // 🌟 ARREGLO DEL CORREO Y TURNO: Los empaquetamos en la URL de regreso
+        const safeEmail = data.customerEmail ? encodeURIComponent(data.customerEmail) : '';
+        const successUrl = `${baseUrl}/pedir?status=approved&order_id=${order.id}&turn=${order.turnNumber}&email=${safeEmail}`;
+        
         const itemsForMP = data.cart.map((item: any) => ({ 
             title: item.product.name, 
             quantity: 1, 
@@ -110,13 +114,12 @@ export async function POST(request: Request) {
             body: {
                 items: itemsForMP,
                 payer: { name: data.customerName, email: data.customerEmail },
-                back_urls: { success: `${baseUrl}/pedir?status=approved&order_id=${order.id}` },
+                back_urls: { success: successUrl }, // 🌟 URL con datos completos
                 auto_return: 'approved',
                 external_reference: order.id, 
             }
         });
         
-        // 🌟 RETORNAMOS initPoint PARA REDIRECCIÓN INMEDIATA
         return NextResponse.json({ success: true, turnNumber: order.turnNumber, preferenceId: result.id, initPoint: result.init_point });
     }
     return NextResponse.json({ success: true, turnNumber: order.turnNumber });
