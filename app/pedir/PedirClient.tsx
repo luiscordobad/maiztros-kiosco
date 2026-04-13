@@ -3,6 +3,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useCartStore } from '@/store/cart';
+import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
+
+initMercadoPago('APP_USR-7d3162e4-fbb5-4810-b3dd-3de18d93fb8f', { locale: 'es-MX' });
 
 const OPCIONES = {
   PAPAS: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes'],
@@ -50,6 +53,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   const [editingCartId, setEditingCartId] = useState<string | null>(null);
 
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [preferenceId, setPreferenceId] = useState<string | null>(null); 
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   const [successEmail, setSuccessEmail] = useState<string>('');
   
@@ -122,48 +126,39 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     }
   }, [customerPhone]);
 
-  // 🌟 CORRECCIÓN DE LA VISTA DE ÉXITO Y TICKET
+  // 🌟 CORRECCIÓN EXTREMA DE PAGO APROBADO Y TICKET
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const orderId = urlParams.get('order_id');
+    const turn = urlParams.get('turn'); // Lo agarra directo de la URL
+    const email = urlParams.get('email'); // Lo agarra directo de la URL
 
     if ((status === 'approved' || status === 'success') && orderId) {
+      setOrderSuccessId(turn || orderId); 
+      setSuccessEmail(email || '');
       setAppState('SUCCESS');
-      window.history.replaceState(null, '', window.location.pathname);
-      useCartStore.setState({ cart: [] }); // Vaciamos el carrito automáticamente
       
-      // 1. Validamos en la Base de Datos que se pagó y extraemos sus datos REALES
+      window.history.replaceState(null, '', window.location.pathname);
+      useCartStore.setState({ cart: [] }); // Vaciar carrito
+      
+      // 1. Avisa a la base de datos que ya se pagó (Para que aparezca en Caja)
       fetch('/api/orders', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId, newStatus: 'PAID' })
-      })
-      .then(res => res.json())
-      .then(data => {
-          if (data.success && data.order) {
-              setOrderSuccessId(data.order.turnNumber); // Ej. M123
-              
-              // Extraer correo de las notas empacadas
-              let realEmail = 'maiztrosqro@gmail.com';
-              if (data.order.orderNotes?.includes('📧 CORREO:')) {
-                  const parts = data.order.orderNotes.split(' | ');
-                  realEmail = parts.find(p => p.includes('📧 CORREO:'))?.replace('📧 CORREO: ', '') || realEmail;
-              }
-              setSuccessEmail(realEmail);
-              
-              // 2. Enviamos el ticket con la info 100% correcta
-              const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
-              fetch('/api/send-ticket', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                      email: realEmail, 
-                      orderUrl: `${baseUrl}/ticket/${orderId}`, 
-                      turnNumber: data.order.turnNumber 
-                  })
-              }).catch(() => {});
-          }
+      }).catch(() => {});
+
+      // 2. Envía el ticket directamente con el correo y el turno correctos
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+      fetch('/api/send-ticket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+              email: email || 'maiztrosqro@gmail.com', 
+              orderUrl: `${baseUrl}/ticket/${orderId}`, 
+              turnNumber: turn || orderId 
+          })
       }).catch(() => {});
     }
   }, []);
@@ -307,6 +302,8 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         setIsCartOpen(false);
         if (appState === 'CHECKOUT') setAppState('MENU');
     }
+    
+    setPreferenceId(null);
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
   const handleRegisterInWeb = async () => {
@@ -343,7 +340,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
           if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
             setCouponError(`⚠️ Compra mínima $${coupon.minAmount}.`); setActiveCoupon(null);
           } else {
-            setActiveCoupon(coupon); setSelectedReward(null);
+            setActiveCoupon(coupon); setSelectedReward(null); setPreferenceId(null); 
           }
         } else { setCouponError('❌ Necesitas estar registrado para usar cupones.'); }
     } catch(e) { setCouponError('Error de conexión.'); }
@@ -357,7 +354,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward?.discount || 0, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
 
-  // 🌟 CORRECCIÓN 1 CLIC: Redirección directa a Mercado Pago
   const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
         return window.alert("¡Casi listo! Por favor, llena todos los campos de 'Tus Datos' correctamente.");
@@ -376,7 +372,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
       });
       const data = await response.json();
       
-      // 🚀 REDIRECCIÓN INSTANTÁNEA
+      // 🌟 REDIRECCIÓN INSTANTÁNEA (NO MÁS DOBLE CLIC)
       if (response.ok && data.initPoint) { 
           window.location.href = data.initPoint; 
       }
@@ -394,10 +390,11 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
   };
 
   const finishOrderScreenManually = () => {
+      useCartStore.setState({ cart: [] });
       setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setOrderNotes('');
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ acceptedTerms: false });
-      setOrderSuccessId(null);
+      setOrderSuccessId(null); setPreferenceId(null); setSuccessEmail('');
       setAppState('MENU'); 
   };
 
@@ -411,7 +408,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // 🌟 VISTA ÉXITO
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
@@ -419,18 +415,16 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         <p className="text-lg font-bold mb-8">Pasa por ella a las <span className="bg-white text-green-600 px-2 py-1 rounded-lg">{selectedTime || 'pronto'}</span></p>
         <div className="bg-white text-zinc-900 p-8 rounded-[2rem] shadow-2xl w-full max-w-sm">
             <p className="text-xs uppercase tracking-[0.2em] font-bold text-zinc-400 mb-1">Tu Turno</p>
-            {/* Si ya cargó el ID corto lo mostramos, si no mostramos cargando */}
             <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">
                 {orderSuccessId ? `#${orderSuccessId}` : '...'}
             </p>
-            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {successEmail || 'tu correo'}</p>
+            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {successEmail}</p>
         </div>
         <button onClick={finishOrderScreenManually} className="mt-8 bg-black/20 text-white px-8 py-4 rounded-full font-black text-sm hover:bg-black/30 transition-colors">Volver al Menú</button>
       </div>
     );
   }
 
-  // VISTA CHECKOUT
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -460,11 +454,11 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border space-y-3">
                 <h2 className="font-black text-lg mb-2">Tus Datos</h2>
                 <div className="relative">
-                    <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl focus:border-yellow-500 outline-none text-base font-bold text-zinc-900"/>
+                    <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl focus:border-yellow-500 outline-none text-base font-bold text-zinc-900"/>
                     {isCheckingPoints && <span className="absolute right-4 top-4 text-yellow-500 animate-spin">⏳</span>}
                 </div>
-                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
-                <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
+                <input type="email" value={customerEmail} onChange={e => {setCustomerEmail(e.target.value); setPreferenceId(null);}} placeholder="Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
 
                 {customerPhone.length === 10 && isNewCustomer && (
                     <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2">
@@ -487,7 +481,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                                 const isAffordable = loyaltyPoints >= reward.pts && subtotal >= reward.minSpend && !activeCoupon;
                                 const isSelected = selectedReward?.id === reward.id;
                                 return (
-                                    <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 cursor-not-allowed' : isSelected ? 'bg-zinc-900 text-white font-black' : 'bg-white font-bold hover:bg-zinc-50'}`}>
+                                    <button key={reward.id} disabled={!isAffordable} onClick={() => {setSelectedReward(isSelected ? null : reward); setPreferenceId(null);}} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 cursor-not-allowed' : isSelected ? 'bg-zinc-900 text-white font-black' : 'bg-white font-bold hover:bg-zinc-50'}`}>
                                         <span>{reward.label} ({reward.pts} pts)</span>
                                         <span>{isSelected ? '✅' : !isAffordable ? '🔒' : 'Aplicar'}</span>
                                     </button>
@@ -500,14 +494,14 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
 
             <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100">
                 <h2 className="font-black text-lg mb-2 text-blue-900">🕒 ¿A qué hora pasas?</h2>
-                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base cursor-pointer">
+                <select value={selectedTime} onChange={e => {setSelectedTime(e.target.value); setPreferenceId(null);}} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base cursor-pointer">
                     {availableTimes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
             </div>
             
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100 mb-8">
               <label className="text-zinc-800 font-black text-sm mb-2 block">Notas para la cocina</label>
-              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
+              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => {setOrderNotes(e.target.value); setPreferenceId(null);}} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
             </div>
         </div>
 
@@ -517,14 +511,12 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                     <span className="text-zinc-500 font-bold text-sm">Total</span>
                     <span className="text-3xl font-black">${totalNeto.toFixed(2)}</span>
                 </div>
-                {/* 🌟 1 SOLO CLIC: Botón directo a pagar */}
                 <button onClick={generatePaymentLink} disabled={cart.length === 0 || isLoadingPayment} className="w-full bg-[#009ee3] hover:bg-[#008cc9] text-white font-black py-4 rounded-xl shadow-md transition-colors active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-400 disabled:cursor-not-allowed">
                     {isLoadingPayment ? 'Conectando...' : 'Pagar Ahora'}
                 </button>
             </div>
         </div>
         
-        {/* Modal de Privacidad */}
         {showPrivacy && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
@@ -542,7 +534,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             </div>
         )}
         
-        {/* 🌟 WIZARD FLOTANTE PARA PODER EDITAR EN LA PANTALLA DE CHECKOUT */}
+        {/* WIZARD EN CHECKOUT */}
         {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
             <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
               <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
