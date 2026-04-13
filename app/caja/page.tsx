@@ -49,16 +49,13 @@ export default function MonitorCaja() {
       const data = await res.json();
       if (data.success) {
          // 🌟 CORRECCIÓN DE PAGOS FANTASMA
-         // Filtramos para que SOLO aparezcan las órdenes en línea si el estado ya es PAID
          const validOrders = data.orders.filter((o: any) => {
             const isWeb = o.paymentMethod === 'MERCADO_PAGO' || o.orderNotes?.includes('⏰ RECOGE:');
             
             if (isWeb) {
-                // Si es por internet, solo mostrar cuando MercadoPago ya autorizó
                 return o.status === 'PAID' || o.status === 'PREPARING';
             }
             
-            // Si es en caja (DINE_IN o un TAKEOUT sin hora), mostrar el flujo normal
             return o.status === 'AWAITING_PAYMENT' || o.status === 'PENDING' || o.status === 'PREPARING';
          });
          
@@ -173,7 +170,6 @@ export default function MonitorCaja() {
       setSelectedOrder({ ...selectedOrder, items: newItems });
   };
 
-  // 🌟 GUARDAR CAMBIOS SIN COBRAR (Para órdenes en línea editadas)
   const guardarCambiosEdicion = async () => {
       await fetch('/api/orders', { 
           method: 'PATCH', 
@@ -328,10 +324,9 @@ export default function MonitorCaja() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {pendingCash.map(order => {
-                  const isPickToGo = order.orderNotes?.includes('⏰ RECOGE:') || order.paymentMethod === 'MERCADO_PAGO';
+                  const isPickToGo = order.paymentMethod === 'MERCADO_PAGO' || order.orderNotes?.includes('⏰ RECOGE:');
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
                   
-                  // 🌟 CHEQUEAMOS EL ESTATUS REAL DEL PAGO
                   const isPaidInAdvance = order.status === 'PAID' || order.status === 'PREPARING';
 
                   let pickupTime = 'Pronto';
@@ -350,7 +345,7 @@ export default function MonitorCaja() {
                         <div className="flex justify-between items-start mb-4">
                             <p className="text-5xl font-black italic text-white">#{order.turnNumber}</p>
                             {isPickToGo ? (
-                                <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest animate-pulse border border-purple-400">⚡ Pick To Go</span>
+                                <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest border border-purple-400">⚡ Pick To Go</span>
                             ) : isWebOrder ? (
                                 <span className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-lg text-xs font-black border border-blue-500/30 uppercase tracking-widest">📱 App VIP</span>
                             ) : (
@@ -377,7 +372,10 @@ export default function MonitorCaja() {
                                 <>
                                     <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
-                                    <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">{order.paymentMethod === 'TERMINAL' ? '💳 Pago con Tarjeta' : '💵 Pago en Efectivo'}</p>
+                                    {/* 🌟 ACTUALIZADO PARA QUE NO TE MIENTA EL TEXTO */}
+                                    <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">
+                                        {order.paymentMethod === 'MERCADO_PAGO' ? '📱 App / Mercado Pago' : order.paymentMethod === 'TERMINAL' ? '💳 Pago con Tarjeta' : '💵 Pago en Efectivo'}
+                                    </p>
                                 </>
                             )}
                         </div>
@@ -423,9 +421,6 @@ export default function MonitorCaja() {
             </div>
           </div>
 
-          {/* ========================================== */}
-          {/* MODAL COBRO / EDICIÓN                       */}
-          {/* ========================================== */}
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-[3rem] overflow-hidden flex flex-col shadow-2xl max-h-[90vh]">
@@ -473,7 +468,6 @@ export default function MonitorCaja() {
                               <p className="text-7xl font-black text-white">${(selectedOrder.totalAmount + selectedOrder.tipAmount).toFixed(2)}</p>
                           </div>
 
-                          {/* 🌟 SI YA ESTÁ PAGADA, NO MUESTRA CALCULADORA, SOLO INFO */}
                           {selectedOrder.status === 'PAID' ? (
                               <div className="bg-purple-900/10 border border-purple-500/30 p-8 rounded-2xl text-center flex-1 flex flex-col justify-center">
                                   <span className="text-6xl mb-4 block">✅</span>
@@ -515,7 +509,6 @@ export default function MonitorCaja() {
                               <button onClick={() => setSelectedOrder(null)} className="bg-zinc-800 hover:bg-zinc-700 px-6 py-6 rounded-2xl font-bold text-white transition-colors">Volver</button>
                               <button onClick={cancelarOrdenTotal} className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-6 py-6 rounded-2xl font-black transition-colors border border-red-900/50 hover:border-red-500">🗑️ Cancelar</button>
 
-                              {/* 🌟 SI YA ESTÁ PAGADA, EL BOTÓN SOLO DICE "GUARDAR CAMBIOS" */}
                               {selectedOrder.status === 'PAID' ? (
                                   <button onClick={guardarCambiosEdicion} className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all">Guardar Edición ✅</button>
                               ) : selectedOrder.paymentMethod === 'TERMINAL' ? (
