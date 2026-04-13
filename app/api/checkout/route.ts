@@ -14,7 +14,6 @@ export async function POST(request: Request) {
     const safeOrderType = data.isPickToGo ? 'TAKEOUT' : (data.orderType || 'DINE_IN');
     const initialStatus = data.isPickToGo ? 'AWAITING_PAYMENT' : (data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT');
 
-    // 🛡️ TODO SE GUARDA EN LAS NOTAS PARA NO ROMPER LA BASE DE DATOS
     const extraInfo = [
       data.pickupTime ? `⏰ RECOGE: ${data.pickupTime}` : null,
       data.customerEmail ? `📧 CORREO: ${data.customerEmail}` : null,
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
           customerName: data.customerName || 'Cliente',
           customerPhone: data.customerPhone || null,
           orderType: safeOrderType,
-          paymentMethod: data.paymentMethod,
+          paymentMethod: data.paymentMethod, // 🌟 Ahora dirá MERCADO_PAGO
           items: JSON.stringify(data.cart || []), 
           orderNotes: extraInfo, 
           totalAmount: data.totalAmount, 
@@ -93,7 +92,10 @@ export async function POST(request: Request) {
     if (data.isPickToGo) {
         if (!process.env.MP_ACCESS_TOKEN) throw new Error("Falta el Token");
         const preference = new Preference(client);
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://maiztros.vercel.app';
+        
+        // 🌟 CORRECCIÓN 404: Leemos el dominio real desde la petición de forma dinámica
+        const url = new URL(request.url);
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${url.protocol}//${url.host}`;
         
         const itemsForMP = data.cart.map((item: any) => ({ 
             title: item.product.name, 
