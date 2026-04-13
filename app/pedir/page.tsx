@@ -1,12 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import PedirClient from './PedirClient';
 
-export const dynamic = 'force-dynamic'; // Para que siempre muestre el menú más fresco
+export const dynamic = 'force-dynamic'; // Asegura que el menú siempre esté actualizado
 
 export default async function PedirPage() {
-  // Sacamos los productos reales directo de la base de datos
+  // Descargamos el catálogo completo directamente desde la base de datos
   const products = await prisma.product.findMany();
   const modifiers = await prisma.modifier.findMany();
   
+  // Se los pasamos al cliente para que los dibuje
   return <PedirClient products={products} modifiers={modifiers} />;
 }
