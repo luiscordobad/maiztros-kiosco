@@ -8,9 +8,7 @@ export default function CocinaKDS() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Lista negra de tickets ya despachados para evitar que "revivan"
   const [hiddenOrders, setHiddenOrders] = useState<string[]>([]);
-  
   const [soundEnabled, setSoundEnabled] = useState(false);
   const previousOrderCount = useRef(0);
 
@@ -25,7 +23,6 @@ export default function CocinaKDS() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-        // 🌟 EL CANDADO MAESTRO: Mostramos PAID (Físicos) o PREPARING (Enviados desde caja)
         const visibleOrders = data.orders.filter((o: any) => 
             (o.status === 'PAID' || o.status === 'PREPARING') && !hiddenOrders.includes(o.id)
         );
@@ -50,11 +47,8 @@ export default function CocinaKDS() {
   }, [soundEnabled, hiddenOrders]);
 
   const handleDespachar = async (orderId: string) => {
-    // 1. A la lista negra para que no reviva visualmente
     setHiddenOrders(prev => [...prev, orderId]);
-    // 2. Lo ocultamos visualmente al instante
     setOrders(orders.filter(o => o.id !== orderId)); 
-    // 3. Le avisamos a la BD que ya está listo
     await fetch('/api/orders', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -93,8 +87,17 @@ export default function CocinaKDS() {
               const timeAgo = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
               const isLate = timeAgo >= 10; 
               
-              // 🌟 BANDERA PARA IDENTIFICAR PICK TO GO
               const isPickToGo = order.orderType === 'PICK_TO_GO';
+              
+              // 🌟 EXTRACCIÓN MAGICA DE LA HORA
+              let pickupTime = 'Pronto';
+              let displayNotes = order.orderNotes || '';
+              if (displayNotes.includes('⏰ PICK TO GO - PASA A LAS:')) {
+                  const parts = displayNotes.split(' | ');
+                  pickupTime = parts[0].replace('⏰ PICK TO GO - PASA A LAS:', '').trim();
+                  // Removemos la parte de la hora para que no se duplique abajo en las notas
+                  displayNotes = parts.slice(1).join(' | ').trim();
+              }
 
               return (
                 <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isPickToGo ? 'border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.2)]' : isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-blue-500' : 'border-zinc-700'}`}>
@@ -108,7 +111,7 @@ export default function CocinaKDS() {
                       {isPickToGo ? (
                           <div className="bg-purple-600 text-white px-3 py-1 rounded-lg border border-purple-400 text-center animate-pulse">
                               <p className="text-[10px] font-black uppercase tracking-widest">🚗 Recoge a las</p>
-                              <p className="text-lg font-black">{order.pickupTime || 'Pronto'}</p>
+                              <p className="text-lg font-black">{pickupTime}</p>
                           </div>
                       ) : (
                           <>
@@ -138,10 +141,10 @@ export default function CocinaKDS() {
                       </div>
                     ))}
                     
-                    {order.orderNotes && (
+                    {displayNotes && (
                       <div className="mt-4 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl">
                         <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota de Caja/App:</p>
-                        <p className="text-white font-medium">{order.orderNotes}</p>
+                        <p className="text-white font-medium">{displayNotes}</p>
                       </div>
                     )}
                   </div>
