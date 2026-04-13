@@ -2,7 +2,6 @@
 /* eslint-disable */
 'use client';
 import { useState, useEffect } from 'react';
-// 🌟 CORRECCIÓN VERCEL: Ruta absoluta segura hacia la store
 import { useCartStore } from '@/store/cart';
 
 const OPCIONES = {
@@ -24,7 +23,6 @@ const REWARDS = [
 export default function PedirPage() {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   
-  // 🌟 CORRECCIÓN VERCEL: La página descarga sus propios datos autónomamente
   const [dbData, setDbData] = useState<{products: any[], modifiers: any[], inventoryItems: any[]}>({ products: [], modifiers: [], inventoryItems: [] });
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -51,13 +49,17 @@ export default function PedirPage() {
   const chiles = dbData.modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
   const inventoryItems = dbData.inventoryItems;
 
-  const [appState, setAppState] = useState<'SCREENSAVER' | 'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('SCREENSAVER');
+  const [activeCategory, setActiveCategory] = useState('combos');
+
+  // Estados de Flujo: MENU -> CHECKOUT -> SUCCESS
+  const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
   
+  // Estado para abrir/cerrar el modal del carrito flotante sin cambiar de pantalla
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
   const [activeProduct, setActiveProduct] = useState<any>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
-  const [showAddSuccess, setShowAddSuccess] = useState(false);
-  const [lastAddedCategory, setLastAddedCategory] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
@@ -75,27 +77,24 @@ export default function PedirPage() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [regData, setRegData] = useState({ firstName: '', lastName: '', email: '', acceptedTerms: false });
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [showCookies, setShowCookies] = useState(false);
 
   const [couponCode, setCouponCode] = useState('');
   const [activeCoupon, setActiveCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
 
-  // 🌟 ESTADOS PICK TO GO
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [isClosed, setIsClosed] = useState(false);
   const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
 
-  // LÓGICA DE HORARIOS PICK TO GO (MÉXICO)
   useEffect(() => {
     const calculateTimes = () => {
         const times: string[] = [];
         const now = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Mexico_City"}));
         
-        const startHour = 18; // 6 PM
-        const startMin = 15;  // 15 MIN
-        const endHour = 22;   // 10 PM
+        const startHour = 18; 
+        const startMin = 15;  
+        const endHour = 22;   
         
         let currentSlot = new Date(now);
         currentSlot.setHours(startHour, startMin, 0, 0);
@@ -154,7 +153,7 @@ export default function PedirPage() {
     }
   }, [customerPhone]);
 
-  const handleRegisterInKiosk = async () => {
+  const handleRegisterInWeb = async () => {
     if (!regData.firstName || !regData.lastName || !regData.email) return alert('Por favor, llena tu nombre, apellido y correo.');
     if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad para crear tu cuenta.');
 
@@ -175,26 +174,6 @@ export default function PedirPage() {
     setIsRegistering(false);
   };
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    const resetApp = () => {
-      if (appState !== 'SCREENSAVER' && appState !== 'SUCCESS' && !isSubmitting && !showPrivacy && !showCookies && !showAddSuccess) {
-        useCartStore.setState({ cart: [] });
-        setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
-        setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode(''); setCouponError('');
-        setActiveProduct(null); 
-        setShowAddSuccess(false); setLastAddedCategory('');
-        setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
-        setAppState('SCREENSAVER');
-      }
-    };
-    const resetTimer = () => { clearTimeout(timeoutId); timeoutId = setTimeout(resetApp, 180000); }; // 3 Minutos para web
-    window.addEventListener('click', resetTimer); window.addEventListener('touchstart', resetTimer);
-    window.addEventListener('mousemove', resetTimer); window.addEventListener('scroll', resetTimer);
-    resetTimer(); 
-    return () => { clearTimeout(timeoutId); window.removeEventListener('click', resetTimer); window.removeEventListener('touchstart', resetTimer); window.removeEventListener('mousemove', resetTimer); window.removeEventListener('scroll', resetTimer); };
-  }, [appState, isSubmitting, showPrivacy, showCookies, showAddSuccess]);
-
   const subtotal = getTotal();
 
   useEffect(() => {
@@ -205,14 +184,18 @@ export default function PedirPage() {
     if (selectedReward && subtotal < selectedReward.minSpend) {
         setSelectedReward(null);
     }
-  }, [subtotal, activeCoupon, selectedReward]);
+    // Si el carrito se vacía y estábamos viéndolo, lo cerramos
+    if (cart.length === 0 && isCartOpen && appState === 'MENU') {
+        setIsCartOpen(false);
+    }
+  }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
 
     if (customerPhone.length !== 10 || isNewCustomer) {
-      setCouponError('⚠️ Debes ingresar y registrar tu celular arriba para poder usar cupones.');
+      setCouponError('⚠️ Ingresa y registra tu celular arriba para usar cupones.');
       return;
     }
 
@@ -254,6 +237,9 @@ export default function PedirPage() {
   const totalNeto = totalAfterCoupon - actualDiscount;
   const pointsToEarn = Math.floor(totalNeto);
 
+  // ==========================================
+  // LÓGICA DE PRODUCTOS (WIZARD MÁS COMPACTO)
+  // ==========================================
   const getProductDesc = (name: string) => {
     const n = name.toLowerCase();
     if(n.includes('solitario') || n.includes('individual')) return "1 Esq. Mediano + 1 Bebida Fría";
@@ -262,49 +248,66 @@ export default function PedirPage() {
     if(n.includes('especialista') || n.includes('especialidad')) return "Construpapas u Obra Maestra a elegir + 1 Bebida";
     if(n === 'construpapas') return "Tus papas con esquite encima";
     if(n === 'obra maestra') return "Maruchan con nuestro esquite";
-    if(n === 'don maiztro') return "Maruchan + Papas + Esquite (1er topping gratis)";
-    return "";
+    if(n === 'don maiztro') return "Maruchan + Papas + Esquite";
+    return "Delicioso y preparado al momento.";
   };
+
+  const getProductEmoji = (name: string, category: string) => {
+      if (category === 'COMBO') return '📦';
+      if (category === 'ESQUITE') return '🌽';
+      if (category === 'BEBIDA') return '🥤';
+      if (name.toLowerCase().includes('maruchan') || name.toLowerCase().includes('obra maestra')) return '🍜';
+      if (name.toLowerCase().includes('papa') || name.toLowerCase().includes('dorito') || name.toLowerCase().includes('tostito')) return '🔥';
+      return '🍬';
+  }
 
   const getProductSteps = (p: any) => {
     const n = p.name.toLowerCase();
-    if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
-    if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite Mediano 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite Mediano 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}];
-    if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esq. Grande 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Grande 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esq. Chico 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebida 1', type: 'BEBIDA_ALL'}, {t: 'Bebida 2', type: 'BEBIDA_ALL'}, {t: 'Bebida 3', type: 'BEBIDA_ALL'}, {t: 'Bebida 4', type: 'BEBIDA_ALL'}];
-    if(n.includes('especialista') || n.includes('especialidad')) return [{t: 'Elige tu Especialidad', type: 'ESPECIALIDAD_CHOICE'}, {t: 'Tu Sabor', type: 'PAPAS_MARUCHAN'}, {t: 'Toppings', type: 'TOPPINGS'}, {t: 'Tu Bebida', type: 'BEBIDA_ALL'}];
-    if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
-    if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
-    if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; 
+    if(n.includes('solitario') || n.includes('individual')) return [{t: 'Esquite Mediano', type: 'TOPPINGS'}, {t: 'Bebida', type: 'BEBIDA_ALL'}];
+    if(n.includes('dúo') || n.includes('pareja')) return [{t: 'Esquite 1', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquite 2', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebidas (Elige 2)', type: 'BEBIDA_ALL_MULTIPLE', max: 2}];
+    if(n.includes('tribu') || n.includes('familiar')) return [{t: 'Esquites Grandes (2)', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Esquites Chicos (2)', type: 'TOPPINGS', firstToppingFree: true}, {t: 'Bebidas (Elige 4)', type: 'BEBIDA_ALL_MULTIPLE', max: 4}];
+    if(n.includes('especialista') || n.includes('especialidad')) return [{t: 'Especialidad', type: 'ESPECIALIDAD_CHOICE'}, {t: 'Base (Papas/Maruchan)', type: 'PAPAS_MARUCHAN'}, {t: 'Preparación', type: 'TOPPINGS'}, {t: 'Bebida', type: 'BEBIDA_ALL'}];
+    if(n.includes('boing')) return [{t: 'Sabor', type: 'BOING'}];
+    if(n.includes('refresco')) return [{t: 'Sabor', type: 'REFRESCO'}];
+    if(n.includes('construpapas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}, {t: 'Preparación', type: 'TOPPINGS'}];
+    if(n.includes('don maiztro')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}, {t: 'Elige Papas', type: 'PAPAS'}, {t: 'Preparación', type: 'TOPPINGS', firstToppingFree: true}]; 
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
-    if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
-    if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
+    if(n.includes('maruchan preparada sola')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}];
+    if(n.includes('obra maestra')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}, {t: 'Preparación', type: 'TOPPINGS'}];
     if(p.category === 'ANTOJO' || n === 'agua natural') return [];
-    return [{t: 'Personaliza tu antojo', type: 'TOPPINGS'}];
+    return [{t: 'Personaliza', type: 'TOPPINGS'}];
   };
 
   const handleProductClick = (product: any) => {
     const steps = getProductSteps(product);
     if (steps.length === 0) { 
         addToCart(product, 0, product.name); 
-        setLastAddedCategory(product.category);
-        if (appState === 'MENU') {
-            setShowAddSuccess(true);
-        }
+        // Pequeña animación de feedback táctil
         return; 
     }
     setActiveProduct(product); setWizardStep(0); setWizardData({}); 
   };
 
-  const handleToggleModifier = (mod: any) => {
+  const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
     const currentSelections = wizardData[wizardStep] || [];
+    
+    if (!isMultiple) {
+        // Si es selección única (ej. sabor de refresco)
+        setWizardData({...wizardData, [wizardStep]: [mod]});
+        return;
+    }
+
     const isSelected = currentSelections.find((m: any) => m.id === mod.id);
     let newSelections = [];
-    if (isSelected) newSelections = currentSelections.filter((m: any) => m.id !== mod.id);
-    else {
-      newSelections = [...currentSelections, mod];
-      if (mod.type === 'CHILE') newSelections = newSelections.filter((m: any) => !m.name.toLowerCase().includes('sin chilito') && !m.name.toLowerCase().includes('sin chile'));
-      if (mod.name.toLowerCase().includes('sin chilito') || mod.name.toLowerCase().includes('sin chile')) newSelections = newSelections.filter((m: any) => m.type !== 'CHILE');
+    
+    if (isSelected) {
+        newSelections = currentSelections.filter((m: any) => m.id !== mod.id);
+    } else {
+        if (currentSelections.length >= maxLimit) return; // Límite alcanzado
+        newSelections = [...currentSelections, mod];
+        // Reglas de chiles
+        if (mod.type === 'CHILE') newSelections = newSelections.filter((m: any) => !m.name.toLowerCase().includes('sin chilito') && !m.name.toLowerCase().includes('sin chile'));
+        if (mod.name.toLowerCase().includes('sin chilito') || mod.name.toLowerCase().includes('sin chile')) newSelections = newSelections.filter((m: any) => m.type !== 'CHILE');
     }
     setWizardData({...wizardData, [wizardStep]: newSelections});
   };
@@ -322,7 +325,6 @@ export default function PedirPage() {
       if (step.type === 'TOPPINGS') {
         const paidCount = selections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
         let baseCount = paidCount;
-        
         if (step.firstToppingFree && baseCount > 0) { baseCount -= 1; }
         
         if (!step.isFree) {
@@ -331,18 +333,15 @@ export default function PedirPage() {
           if (baseCount >= 3) totalExtra += 35;
         }
         notesLines.push(`${step.t}: ${selections.map((s:any) => s.name).join(', ')}`);
+      } else if (step.type === 'BEBIDA_ALL_MULTIPLE') {
+        notesLines.push(`${step.t}: ${selections.map((s:any) => s).join(', ')}`);
       } else { 
         notesLines.push(`${step.t}: ${selections[0]}`); 
       }
     });
 
     addToCart(activeProduct, totalExtra, notesLines.join(' | '));
-    setLastAddedCategory(activeProduct.category);
     setActiveProduct(null);
-    
-    if (appState === 'MENU') { 
-        setShowAddSuccess(true); 
-    }
   };
 
   const finishOrderScreenManually = () => {
@@ -351,15 +350,15 @@ export default function PedirPage() {
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
       setOrderSuccessId(null);
-      setAppState('SCREENSAVER');
+      setAppState('MENU'); // Lo devolvemos al menú principal para que siga viendo productos
   };
 
-  // 🌟 NUEVO: COBRO CON MERCADO PAGO
-  const executeOrderPickToGo = async () => {
-    if (!customerName || customerPhone.length !== 10) return alert("Por favor ingresa tu Nombre y WhatsApp a 10 dígitos para avisarte de tu orden.");
-    if (!selectedTime) return alert("Selecciona una hora para pasar por tu pedido.");
+  // 🌟 CHECKOUT WEB (MERCADO PAGO)
+  const handleCheckoutMP = async () => {
+    if (!customerName || customerPhone.length !== 10) return alert("Ingresa tu Nombre y WhatsApp a 10 dígitos para avisarte de tu orden.");
+    if (!selectedTime) return alert("Selecciona a qué hora vas a pasar por tu pedido.");
     
-    setIsSubmitting(true);
+    setIsLoadingPayment(true);
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -374,7 +373,7 @@ export default function PedirPage() {
           customerName, 
           customerEmail: regData.email || customerEmail, 
           customerPhone, 
-          paymentMethod: 'TERMINAL', // Simulamos el pago en tarjeta web
+          paymentMethod: 'TERMINAL', // Pagado online
           orderType: 'PICK_TO_GO', 
           pickupTime: selectedTime,
           orderNotes 
@@ -383,39 +382,17 @@ export default function PedirPage() {
       const data = await response.json();
       if (response.ok) {
         setOrderSuccessId(data.orderId);
-        setShowAddSuccess(false); setLastAddedCategory('');
         
-        // AQUÍ EN PRODUCCIÓN SE REDIRIGE A LA URL DE MERCADOPAGO
-        // window.location.href = data.mercadopago_init_point;
-        alert(`¡Redirigiendo a Mercado Pago para cobrar $${totalNeto.toFixed(2)}!\n\nEn producción esto abre el portal de pago.`);
+        // Simulación: En producción esto redirige a data.mercadopago_init_point
+        alert(`¡Redirigiendo a Mercado Pago para cobrar $${totalNeto.toFixed(2)}!\n\nUna vez pagado, prepararemos todo para las ${selectedTime}`);
         
         setAppState('SUCCESS');
-        
-        const successTimeout = setTimeout(() => { 
-            finishOrderScreenManually();
-        }, 30000); 
-        
+        const successTimeout = setTimeout(() => { finishOrderScreenManually(); }, 30000); 
         successTimeoutRef[1](successTimeout);
       }
-    } catch (error) { alert("Error al procesar el pedido."); setIsSubmitting(false); }
+    } catch (error) { alert("Error al procesar el pedido."); }
+    setIsLoadingPayment(false);
   };
-
-  const renderProductGrid = (items: any[]) => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {items.map((product) => (
-        <div key={product.id} onClick={() => handleProductClick(product)} className="bg-zinc-900 border border-zinc-800 rounded-[2rem] p-6 flex flex-col justify-between cursor-pointer hover:border-yellow-400/50 hover:bg-zinc-800 transition-all shadow-lg active:scale-95">
-          <div>
-            <h2 className="text-xl font-black mb-1">{product.name}</h2>
-            {getProductDesc(product.name) && <p className="text-zinc-500 text-xs mb-4">{getProductDesc(product.name)}</p>}
-          </div>
-          <div className="mt-4 flex items-center justify-between pt-4 border-t border-zinc-800/50">
-            <p className="text-white text-2xl font-black">${product.basePrice.toFixed(2)}</p>
-            <span className="text-yellow-400 font-bold text-sm bg-yellow-400/10 px-4 py-2 rounded-xl">Agregar ➔</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 
   const isOptionAvailable = (optName: string) => {
     const invItem = inventoryItems.find(i => i.name.toLowerCase() === optName.toLowerCase());
@@ -427,55 +404,20 @@ export default function PedirPage() {
 
 
   // ==========================================
-  // VISTAS PRINCIPALES DE LA WEB (PICK TO GO)
+  // VISTAS WEB (APP MÓVIL)
   // ==========================================
 
   if (dataLoading) {
-      return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white"><div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div></div>;
+      return <div className="min-h-screen bg-zinc-50 flex items-center justify-center text-zinc-900"><div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div></div>;
   }
 
   if (isClosed) {
     return (
-        <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-            <span className="text-[10rem] mb-6 drop-shadow-[0_0_30px_rgba(250,204,21,0.5)]">🌙</span>
-            <h1 className="text-5xl font-black text-yellow-400 mb-4 tracking-tighter">Cerrado por hoy</h1>
-            <p className="text-zinc-400 text-xl font-medium max-w-md">Nuestros elotes están descansando. Abrimos mañana a las 5:30 PM (Puedes programar Pick To Go a partir de las 6:15 PM). ¡Te esperamos!</p>
+        <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col items-center justify-center p-6 text-center font-sans">
+            <span className="text-8xl mb-4 opacity-80">🌙</span>
+            <h1 className="text-3xl font-black text-zinc-900 mb-2 tracking-tighter">Cerrado por hoy</h1>
+            <p className="text-zinc-500 text-sm font-medium max-w-xs">Nuestros elotes están descansando. Abrimos mañana a las 5:30 PM (Pick To Go a partir de las 6:15 PM).</p>
         </div>
-    );
-  }
-
-  if (appState === 'SCREENSAVER') {
-      return (
-          <div 
-            onClick={() => setAppState('WELCOME')}
-            className="h-screen w-full bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] cursor-pointer relative overflow-hidden group"
-          >
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-purple-600/20 blur-[150px] rounded-full z-0 pointer-events-none"></div>
-
-             <div className="z-10 flex flex-col items-center animate-in fade-in zoom-in duration-1000 text-center">
-                <span className="text-[8rem] md:text-[10rem] mb-4 drop-shadow-[0_0_50px_rgba(168,85,247,0.5)]">⚡</span>
-                <h1 className="text-[4rem] md:text-[8rem] font-black text-white tracking-tighter leading-none mb-12 drop-shadow-2xl">PICK TO <span className="text-purple-500">GO</span></h1>
-                
-                <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-700 px-12 py-6 rounded-full shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-pulse">
-                    <p className="text-xl md:text-3xl font-black text-yellow-400 uppercase tracking-widest text-center">Toca para ordenar sin filas ➔</p>
-                </div>
-             </div>
-          </div>
-      );
-  }
-
-  if (appState === 'WELCOME') {
-    return (
-      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] animate-in slide-in-from-bottom duration-500">
-        <h1 className="text-6xl md:text-[8rem] font-black text-yellow-400 tracking-tighter mb-4 shadow-black drop-shadow-2xl text-center">MAIZTROS</h1>
-        <p className="text-2xl font-bold text-zinc-300 mb-16 italic text-center">Pide ahora y recoge calientito.</p>
-        <div className="flex flex-col md:flex-row gap-8 w-full max-w-2xl">
-          <button onClick={() => { setAppState('MENU'); window.scrollTo(0,0); }} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white h-64 rounded-[3rem] flex flex-col items-center justify-center gap-6 transition-transform hover:scale-105 active:scale-95 shadow-[0_0_50px_rgba(168,85,247,0.3)]">
-            <span className="text-7xl">🚗</span><span className="text-3xl font-black uppercase tracking-widest">Hacer Pedido</span>
-          </button>
-        </div>
-        <button onClick={() => setAppState('SCREENSAVER')} className="mt-16 text-zinc-500 hover:text-white font-bold uppercase tracking-widest">← Volver al inicio</button>
-      </div>
     );
   }
 
@@ -484,393 +426,331 @@ export default function PedirPage() {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
 
     return (
-      <div className="h-screen bg-purple-600 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
+      <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
+        <h1 className="text-4xl font-black mb-2 tracking-tighter">¡ORDEN RECIBIDA! ⚡</h1>
+        <p className="text-lg font-bold mb-8 opacity-90">Pasa por ella a las <span className="bg-white text-green-600 px-2 py-1 rounded-lg">{selectedTime}</span></p>
+        
+        <div className="bg-white text-zinc-900 p-8 rounded-[2rem] shadow-2xl w-full max-w-sm flex flex-col items-center">
+            <p className="text-xs uppercase tracking-[0.2em] font-bold text-zinc-400 mb-1">Tu Turno</p>
+            <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+            <div className="w-full h-px bg-zinc-200 mb-6 border-dashed"></div>
+            <p className="text-xs font-bold uppercase tracking-widest mb-3 text-zinc-500">Muestra este código al llegar</p>
+            <img src={qrUrl} alt="QR Ticket" className="w-32 h-32 rounded-xl" />
+        </div>
+
         <button 
             onClick={() => {
                 if (successTimeoutRef[0]) clearTimeout(successTimeoutRef[0]);
                 finishOrderScreenManually();
             }} 
-            className="absolute top-10 right-10 bg-black/20 hover:bg-black/40 text-white px-8 py-4 rounded-full font-black text-xl transition-colors backdrop-blur-md border border-white/20 shadow-lg"
+            className="mt-8 bg-black/20 hover:bg-black/30 text-white px-8 py-4 rounded-full font-black text-sm transition-colors backdrop-blur-md border border-white/20"
         >
-            Finalizar ➔
+            Regresar al Menú
         </button>
-
-        <h1 className="text-5xl md:text-7xl font-black mb-4">¡ORDEN RECIBIDA! ⚡</h1>
-        <p className="text-2xl font-bold mb-8 opacity-90">Empezaremos a prepararla para que la recojas a las <span className="bg-white text-purple-600 px-3 py-1 rounded-xl">{selectedTime}</span></p>
-        <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
-          <div className="text-center">
-            <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-80 mb-2">Pasa a la caja con el turno</p>
-            <p className="text-[6rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
-          </div>
-          <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
-          <div className="flex flex-col items-center mt-6 md:mt-0">
-            <p className="text-sm font-bold uppercase tracking-widest mb-4 bg-black/20 px-4 py-2 rounded-full">📱 Escanea para tu Recibo Digital</p>
-            <img src={qrUrl} alt="QR Ticket" className="w-40 h-40 rounded-2xl shadow-lg border-4 border-white" />
-          </div>
-        </div>
       </div>
     );
   }
 
   if (appState === 'CHECKOUT') {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col lg:flex-row p-6 md:p-12 gap-8 text-white relative">
-        <div className="flex-1 bg-zinc-900 rounded-[3rem] p-8 md:p-12 flex flex-col border border-zinc-800 shadow-2xl">
-          <h2 className="text-4xl font-black mb-8 border-b border-zinc-800 pb-6 text-yellow-400">Resumen de Orden</h2>
-          <div className="flex-1 overflow-y-auto space-y-4 pr-4">
-            {cart.map((item) => (
-              <div key={item.id} className="bg-zinc-950 border border-zinc-800 p-6 rounded-3xl flex justify-between items-start">
-                <div className="flex-1">
-                  <p className="font-black text-2xl">{item.product.name}</p>
-                  {item.notes && <p className="text-zinc-500 text-sm mt-3 font-medium leading-relaxed whitespace-pre-wrap">{item.notes.split(' | ').join('\n')}</p>}
-                  
-                  <div className="flex flex-wrap gap-2 mt-5">
-                    <button onClick={() => addToCart(item.product, item.totalPrice - item.product.basePrice, item.notes)} className="text-green-400 bg-green-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
-                        <span>➕</span> Duplicar
-                    </button>
-                    <button onClick={() => removeFromCart(item.id)} className="text-red-400 bg-red-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
-                        <span>🗑️</span> Eliminar
-                    </button>
-                  </div>
-                </div>
-                <div className="text-right ml-6 flex flex-col items-end">
-                  <p className="text-white font-black text-3xl">${item.totalPrice.toFixed(2)}</p>
-                </div>
-              </div>
-            ))}
-            <div className="mt-8">
-              <label className="text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2 block">Comentarios para la cocina</label>
-              <textarea placeholder="Ej. El esquite mediano bien doradito..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-5 rounded-2xl focus:border-yellow-400 outline-none text-lg font-medium resize-none h-32"/>
-            </div>
-          </div>
-          
-          <div className="mt-8 pt-8 border-t border-zinc-800 flex flex-col items-end">
-            <div className="flex justify-between w-full mb-4 text-zinc-400 font-bold text-xl"><p>Subtotal:</p><p>${subtotal.toFixed(2)}</p></div>
-            {activeCoupon && <div className="flex justify-between w-full mb-4 text-purple-400 font-bold text-xl"><p>Cupón / Promo ({activeCoupon.code}):</p><p>-${(subtotal - totalAfterCoupon).toFixed(2)}</p></div>}
-            {selectedReward && !activeCoupon && <div className="flex justify-between w-full mb-4 text-green-400 font-bold text-xl"><p>Bono VIP Aplicado:</p><p>-${actualDiscount.toFixed(2)}</p></div>}
-            <div className="text-right mt-4 border-t border-zinc-800 pt-4 w-full">
-              <p className="text-zinc-500 text-xl font-bold uppercase tracking-widest mb-1">Total a Pagar</p>
-              <p className="text-7xl text-yellow-400 font-black tracking-tighter">${totalNeto.toFixed(2)}</p>
-            </div>
-            <button onClick={() => setAppState('MENU')} className="text-zinc-500 mt-6 font-bold hover:text-white self-start">← Agregar más</button>
-          </div>
-        </div>
+      <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans pb-40">
+        <header className="bg-white p-4 sticky top-0 z-40 border-b border-zinc-200 flex items-center gap-4">
+            <button onClick={() => setAppState('MENU')} className="w-10 h-10 bg-zinc-100 rounded-full flex items-center justify-center text-xl font-bold text-zinc-600 hover:bg-zinc-200">←</button>
+            <h1 className="text-xl font-black tracking-tight">Completar Pedido</h1>
+        </header>
 
-        <div className="w-full lg:w-[450px] flex flex-col gap-6">
-          <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-[3rem] p-8 border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative overflow-hidden">
-            <div className="absolute top-0 right-0 bg-yellow-400 text-zinc-950 font-black px-4 py-1 rounded-bl-2xl text-sm">⭐ MaiztroPuntos</div>
+        <div className="p-4 max-w-lg mx-auto space-y-6">
             
-            <div className="relative z-10">
-                {customerPhone.length < 10 ? (
-                  <div className="mb-6 animate-in fade-in zoom-in duration-500">
-                    <h3 className="text-2xl font-black text-white mb-1">¡No pierdas tus puntos!</h3>
-                    <p className="text-yellow-400 font-bold text-sm mb-4">Ingresa tu celular para ganar o usar recompensas.</p>
-                  </div>
-                ) : (
-                  <div className="mb-6 animate-in fade-in duration-500">
-                    {isNewCustomer ? (
-                        <h3 className="text-2xl font-black text-yellow-400 mb-1">¡Número Nuevo! ✨</h3>
-                    ) : (
-                        <h3 className="text-xl font-black text-white mb-1">Hola, {customerName || 'Maiztro'} 👋</h3>
-                    )}
-                    {!isNewCustomer && <p className="text-zinc-300 font-medium text-sm mb-4">Tienes <span className="text-yellow-400 font-black text-xl">{Math.floor(loyaltyPoints)} pts</span>. (+{pointsToEarn} hoy)</p>}
-                  </div>
-                )}
-
+            {/* RESUMEN DE ORDEN */}
+            <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100">
+                <h2 className="font-black text-lg mb-4 text-zinc-800">Tu Carrito</h2>
                 <div className="space-y-4">
-                  <div className="relative">
-                    <input type="tel" placeholder="Celular (10 dígitos)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} className="w-full bg-zinc-950/80 border border-yellow-500/50 p-5 rounded-2xl focus:border-yellow-400 outline-none text-2xl text-center font-black text-white placeholder:text-zinc-600 tracking-widest shadow-inner"/>
-                    {isCheckingPoints && <span className="absolute right-4 top-6 text-yellow-500 animate-spin">⏳</span>}
-                  </div>
-
-                  {customerPhone.length === 10 && isNewCustomer ? (
-                      <div className="bg-zinc-950 p-6 rounded-2xl border border-yellow-500/50 mt-4 animate-in fade-in slide-in-from-top-4">
-                          <h3 className="text-xl font-black text-white mb-2">Gana {pointsToEarn + 50} pts hoy 🎁</h3>
-                          <p className="text-zinc-400 text-xs font-bold mb-4">Crea tu cuenta rápido para guardar tus puntos.</p>
-                          <div className="space-y-3">
-                              <div className="grid grid-cols-2 gap-2">
-                                  <input type="text" placeholder="Nombre" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
-                                  <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
-                              </div>
-                              <input type="email" placeholder="Correo (Para tus tickets)" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
-                              
-                              <div className="flex items-start gap-2 mt-2 bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                  <input type="checkbox" id="terms_kiosk" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-1 w-5 h-5 accent-yellow-400"/>
-                                  <label htmlFor="terms_kiosk" className="text-[10px] text-zinc-400 font-bold leading-relaxed">
-                                      Acepto la <button type="button" onClick={()=>setShowPrivacy(true)} className="text-yellow-400 underline">Privacidad</button> y <button type="button" onClick={()=>setShowCookies(true)} className="text-yellow-400 underline">Cookies</button>.
-                                  </label>
-                              </div>
-
-                              <button onClick={handleRegisterInKiosk} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-950 py-4 rounded-xl font-black mt-2 active:scale-95 transition-transform shadow-lg">
-                                  {isRegistering ? 'Registrando...' : '¡Crear Cuenta y Ganar Puntos!'}
-                              </button>
-                              <button onClick={() => setCustomerPhone('')} className="w-full text-zinc-500 font-bold text-xs mt-2 underline hover:text-white">Borrar celular y pedir como invitado</button>
-                          </div>
-                      </div>
-                  ) : (
-                      customerPhone.length === 10 && !isNewCustomer && (
-                          <div className="mt-6 border-t border-yellow-500/30 pt-6 animate-in fade-in">
-                            <p className="text-center text-xs font-bold text-yellow-500/80 mb-3 uppercase tracking-widest">Tus Bonos en Efectivo</p>
-                            <div className="space-y-2">
-                              {REWARDS.map(reward => {
-                                const hasPoints = loyaltyPoints >= reward.pts;
-                                const minSpendMet = subtotal >= reward.minSpend;
-                                const isAffordable = hasPoints && minSpendMet && !activeCoupon; 
-                                const isSelected = selectedReward?.id === reward.id;
-                                
-                                return (
-                                  <button 
-                                    key={reward.id} 
-                                    disabled={!isAffordable} 
-                                    onClick={() => setSelectedReward(isSelected ? null : reward)} 
-                                    className={`w-full p-3 rounded-xl border-2 text-left flex justify-between items-center transition-all 
-                                      ${!isAffordable ? 'opacity-50 cursor-not-allowed border-zinc-800 bg-zinc-950/80' : 
-                                        isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-950 shadow-[0_0_15px_rgba(250,204,21,0.4)]' : 
-                                        'bg-zinc-900 border-yellow-500/30 hover:border-yellow-400 text-white'}`}
-                                  >
-                                    <div>
-                                      <p className="font-black">{reward.label}</p>
-                                      <p className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-zinc-800' : 'text-zinc-500'}`}>
-                                        {!hasPoints ? `Faltan ${reward.pts - Math.floor(loyaltyPoints)} pts` : !minSpendMet ? `Min. Compra $${reward.minSpend}` : `Cuesta ${reward.pts} pts`}
-                                      </p>
-                                    </div>
-                                    <span className="text-xl">{isSelected ? '✅' : !isAffordable ? '🔒' : '💸'}</span>
-                                  </button>
-                                );
-                              })}
+                    {cart.map((item) => (
+                        <div key={item.id} className="flex justify-between items-start border-b border-zinc-100 pb-4 last:border-0 last:pb-0">
+                            <div className="flex-1 pr-4">
+                                <p className="font-bold text-zinc-900 text-sm">{item.product.name}</p>
+                                {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
+                                <button onClick={() => removeFromCart(item.id)} className="text-red-500 text-xs font-bold mt-2">Eliminar</button>
                             </div>
-                          </div>
-                      )
-                  )}
+                            <p className="font-black text-zinc-900">${item.totalPrice.toFixed(2)}</p>
+                        </div>
+                    ))}
                 </div>
             </div>
-          </div>
 
-          <div className="bg-zinc-900 rounded-[3rem] p-8 border border-zinc-800 shadow-2xl flex-1 flex flex-col relative overflow-hidden">
-            {isNewCustomer && customerPhone.length === 10 && (
-                <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-8 text-center">
-                    <span className="text-5xl mb-4">🛑</span>
-                    <p className="font-black text-xl text-white mb-2">Termina tu registro</p>
-                    <p className="text-sm font-bold text-zinc-400">Completa tus datos arriba para continuar con el pago, o borra tu celular para pedir como invitado.</p>
+            {/* DATOS DEL CLIENTE Y LEALTAD */}
+            <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100">
+                <h2 className="font-black text-lg mb-4 text-zinc-800">Tus Datos</h2>
+                <div className="space-y-3">
+                    <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60 disabled:bg-zinc-100"/>
+                    <div className="relative">
+                        <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                        {isCheckingPoints && <span className="absolute right-3 top-3 text-yellow-500 animate-spin">⏳</span>}
+                    </div>
+
+                    {/* LÓGICA DE NUEVO CLIENTE (Registro rápido) */}
+                    {customerPhone.length === 10 && isNewCustomer && (
+                        <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2 animate-in fade-in">
+                            <p className="text-yellow-800 text-xs font-bold mb-3">¡Gana puntos desde hoy! Completa tus datos:</p>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                <input type="text" placeholder="Nombre" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none" />
+                                <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none" />
+                            </div>
+                            <input type="email" placeholder="Correo electrónico" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none mb-3" />
+                            
+                            <div className="flex items-start gap-2 mb-3">
+                                <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5"/>
+                                <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
+                            </div>
+                            <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs">Registrarme</button>
+                        </div>
+                    )}
+
+                    {/* RECOMPENSAS VIP */}
+                    {customerPhone.length === 10 && !isNewCustomer && loyaltyPoints > 0 && (
+                        <div className="mt-4 pt-4 border-t border-zinc-100">
+                            <p className="text-xs font-bold text-zinc-500 mb-2">Tienes {loyaltyPoints} pts. Úsalos como dinero:</p>
+                            <div className="space-y-2">
+                                {REWARDS.map(reward => {
+                                    const isAffordable = loyaltyPoints >= reward.pts && subtotal >= reward.minSpend && !activeCoupon;
+                                    const isSelected = selectedReward?.id === reward.id;
+                                    return (
+                                        <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 border-zinc-200' : isSelected ? 'bg-zinc-900 border-zinc-900 text-white font-black' : 'bg-white border-zinc-300 text-zinc-700 font-bold'}`}>
+                                            <span>{reward.label} ({reward.pts} pts)</span>
+                                            <span>{isSelected ? '✅' : !isAffordable ? '🔒' : 'Aplicar'}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* CUPONES */}
+                    <div className="mt-4 pt-4 border-t border-zinc-100 flex gap-2">
+                        <input type="text" placeholder="Código de Promo" value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="flex-1 bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-xs disabled:opacity-50"/>
+                        <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 rounded-xl font-black text-xs disabled:opacity-50">Aplicar</button>
+                    </div>
+                    {couponError && <p className="text-red-500 text-[10px] font-bold mt-1">{couponError}</p>}
+                    {activeCoupon && <p className="text-green-600 text-[10px] font-bold mt-1">✅ Cupón aplicado: {activeCoupon.code}</p>}
                 </div>
-            )}
-
-            <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6 relative z-10">
-              <input type="text" placeholder="Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold disabled:opacity-50 disabled:border-zinc-800 disabled:text-zinc-500"/>
-              
-              <div className="flex gap-2">
-                <input type="text" placeholder="Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
-                <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 transition-colors text-white px-4 rounded-xl font-black text-sm">Aplicar</button>
-              </div>
-              {couponError && <p className="text-red-400 text-xs font-bold text-center mt-2 animate-bounce">{couponError}</p>}
-              {activeCoupon && <p className="text-purple-400 text-xs font-bold text-center mt-2">✅ Promo aplicada con éxito</p>}
-              {selectedReward && <p className="text-zinc-500 text-xs font-bold text-center mt-2">Desactiva tu bono para usar un cupón.</p>}
             </div>
 
-            {/* 🌟 LÓGICA DE HORARIOS PARA WEB */}
-            <div className="bg-purple-900/10 border border-purple-500/30 p-5 rounded-2xl mb-6 relative z-10">
-                <p className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-2">🕒 Elige tu hora de recolección</p>
-                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-purple-900/20 text-purple-300 border border-purple-500/50 p-3 rounded-xl font-black outline-none focus:border-purple-400 appearance-none text-center text-sm">
+            {/* HORARIO DE RECOLECCIÓN */}
+            <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm">
+                <h2 className="font-black text-lg mb-2 text-blue-900">🕒 ¿A qué hora pasas?</h2>
+                <p className="text-xs text-blue-700 mb-3 font-medium">Lo tendremos calientito y listo para entregar.</p>
+                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base">
                     {availableTimes.map(t => (
-                        <option key={t} value={t} className="bg-zinc-900 text-white">Pasaré a las {t}</option>
+                        <option key={t} value={t}>{t}</option>
                     ))}
                 </select>
-                <p className="text-[10px] text-purple-400/70 font-medium text-center mt-2 leading-tight">Tu pedido estará calientito y listo exactamente a esta hora.</p>
             </div>
 
-            <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center relative z-10">Finalizar Compra</h3>
-            <div className="flex-1 flex flex-col gap-3 justify-center relative z-10">
-              <button onClick={handleCheckoutMP} disabled={isSubmitting || cart.length===0} className="bg-[#009ee3] hover:bg-[#008cc9] text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">
-                  {isSubmitting ? 'Procesando...' : '💳 Pagar con Mercado Pago'}
-              </button>
+            <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100 mb-8">
+              <label className="text-zinc-800 font-black text-sm mb-2 block">Notas para la cocina</label>
+              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20"/>
             </div>
-          </div>
+
+        </div>
+
+        {/* BARRA DE PAGO INFERIOR */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 p-4 pb-6 z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+            <div className="max-w-lg mx-auto">
+                <div className="flex justify-between items-end mb-3">
+                    <span className="text-zinc-500 font-bold text-sm">Total a Pagar</span>
+                    <span className="text-3xl font-black text-zinc-900">${totalNeto.toFixed(2)}</span>
+                </div>
+                <button 
+                    onClick={handleCheckoutMP} 
+                    disabled={cart.length === 0 || isLoadingPayment}
+                    className="w-full flex items-center justify-center gap-2 bg-[#009ee3] text-white font-black py-4 rounded-xl text-base transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300"
+                >
+                    {isLoadingPayment ? 'Conectando...' : 'Pagar con Mercado Pago'}
+                </button>
+            </div>
         </div>
 
         {showPrivacy && (
-            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[70] p-6 animate-in fade-in">
-                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
-                    <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Aviso de Privacidad Simplificado</h3>
-                    <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Conforme a lo establecido en la Ley, &quot;Maiztros&quot; informa:</p>
-                        <p><strong>1. Uso de Datos:</strong> Sus datos personales serán utilizados exclusivamente para el programa de lealtad y recibos digitales.</p>
-                        <p><strong>2. Protección:</strong> En Maiztros <strong>NUNCA</strong> venderemos ni compartiremos su información con terceros.</p>
-                    </div>
-                    <button onClick={() => setShowPrivacy(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center z-[70] p-4 animate-in fade-in">
+                <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
+                    <h3 className="text-lg font-black text-zinc-900 mb-3 border-b pb-3">Privacidad</h3>
+                    <p className="text-sm text-zinc-600 mb-6">Tus datos se usan solo para enviarte tu recibo y darte puntos. En Maiztros no vendemos tu información.</p>
+                    <button onClick={() => setShowPrivacy(false)} className="w-full bg-zinc-900 text-white font-black py-3 rounded-xl">Entendido</button>
                 </div>
             </div>
         )}
-
-        {showCookies && (
-            <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[70] p-6 animate-in fade-in">
-                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-lg w-full relative max-h-[80vh] flex flex-col">
-                    <h3 className="text-xl font-black text-white mb-4 border-b border-zinc-800 pb-4">Política de Cookies</h3>
-                    <div className="overflow-y-auto pr-4 space-y-4 text-sm text-zinc-300 font-medium flex-1">
-                        <p>Este sistema utiliza almacenamiento local estrictamente necesario para procesar su orden en la web.</p>
-                        <p><strong>¿Qué NO hacemos?</strong> No utilizamos cookies de rastreo publicitario. Toda la información se borra al finalizar su sesión.</p>
-                    </div>
-                    <button onClick={() => setShowCookies(false)} className="mt-6 w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 rounded-xl">Cerrar</button>
-                </div>
-            </div>
-        )}
-
       </div>
     );
   }
 
+  // ==========================================
+  // PANTALLA PRINCIPAL: MENÚ MÓVIL
+  // ==========================================
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-950 text-white font-sans relative pb-40">
-      <header className="p-6 md:p-8 flex justify-between items-center bg-zinc-950/80 backdrop-blur-lg border-b border-zinc-800 sticky top-0 z-40">
-        <h1 className="text-3xl font-black text-yellow-400 tracking-tight cursor-pointer" onClick={() => setAppState('WELCOME')}>MAIZTROS</h1>
-        <div className="flex items-center gap-4">
-          <div className="bg-zinc-900 px-6 py-3 rounded-full border border-zinc-700 font-bold text-sm tracking-widest uppercase text-zinc-300">
-            🚗 Pick To Go
-          </div>
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
+      
+      {/* HEADER STICKY CON NAVEGACIÓN */}
+      <header className="bg-white/80 backdrop-blur-xl border-b border-zinc-200 sticky top-0 z-30 pt-safe">
+        <div className="p-4 flex justify-between items-center max-w-2xl mx-auto">
+            <div>
+                <h1 className="text-2xl font-black text-zinc-900 tracking-tighter">MAIZTROS <span className="text-yellow-500">GO</span></h1>
+                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">⚡ Pick To Go</p>
+            </div>
+        </div>
+        {/* Píldoras de Categoría Nav */}
+        <div className="flex gap-2 overflow-x-auto px-4 pb-4 scrollbar-hide max-w-2xl mx-auto">
+            <a href="#combos" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">📦 Combos</a>
+            <a href="#esquites" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🌽 Esquites</a>
+            <a href="#bebidas" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🥤 Bebidas</a>
         </div>
       </header>
 
-      <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-16">
-        <section id="seccion-combos">
-          <h2 className="text-4xl font-black mb-8 flex items-center gap-3"><span className="text-5xl">📦</span> Combos Maiztros</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* CONTENIDO DEL MENÚ */}
+      <div className="max-w-2xl mx-auto px-4 space-y-10 pt-6">
+        
+        {/* SECCIÓN COMBOS */}
+        <section id="combos" className="scroll-mt-32">
+          <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">📦 Combos</h2>
+          <div className="flex flex-col gap-4">
             {visibleProducts.filter(p => p.category === 'COMBO').map((product) => (
-              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-gradient-to-br from-yellow-500 to-orange-500 border-4 border-yellow-300 rounded-[3rem] p-8 text-zinc-950 shadow-[0_0_40px_rgba(250,204,21,0.3)] transform hover:scale-[1.03] transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[300px]">
-                <div className="absolute -right-4 -top-4 opacity-20 text-[10rem]">🌽</div>
-                <div className="relative z-10">
-                  <h2 className="text-4xl font-black mb-3 leading-none">{product.name}</h2>
-                  <p className="text-zinc-900 font-bold text-lg leading-relaxed">{getProductDesc(product.name)}</p>
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border border-zinc-200 rounded-[1.5rem] p-4 flex gap-4 shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+                <div className="w-24 h-24 bg-yellow-50 rounded-2xl flex items-center justify-center text-4xl shrink-0">
+                    {getProductEmoji(product.name, product.category)}
                 </div>
-                <div className="mt-8 flex items-center justify-between relative z-10 bg-zinc-950/10 p-4 rounded-2xl backdrop-blur-sm border border-zinc-950/10">
-                  <p className="text-zinc-950 text-4xl font-black">${product.basePrice.toFixed(2)}</p>
-                  <span className="bg-zinc-950 text-yellow-400 h-14 w-14 rounded-full flex items-center justify-center text-3xl font-black shadow-lg">＋</span>
+                <div className="flex-1 flex flex-col justify-between py-1">
+                  <div>
+                    <h3 className="font-black text-zinc-900 text-base leading-tight">{product.name}</h3>
+                    <p className="text-zinc-500 text-xs font-medium mt-1 line-clamp-2">{getProductDesc(product.name)}</p>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                      <p className="text-zinc-900 font-black text-sm">${product.basePrice.toFixed(2)}</p>
+                      <span className="bg-zinc-900 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg">Agregar</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section id="seccion-esquites">
-          <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🌽</span> Esquites</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'ESQUITE'))}
+        {/* SECCIÓN ESQUITES Y ESPECIALIDADES */}
+        <section id="esquites" className="scroll-mt-32">
+          <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">🌽 Esquites y Especiales</h2>
+          <div className="flex flex-col gap-4">
+            {visibleProducts.filter(p => p.category === 'ESQUITE' || p.category === 'ESPECIALIDAD').map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border border-zinc-200 rounded-[1.5rem] p-4 flex gap-4 shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+                <div className="w-24 h-24 bg-zinc-50 rounded-2xl flex items-center justify-center text-4xl shrink-0">
+                    {getProductEmoji(product.name, product.category)}
+                </div>
+                <div className="flex-1 flex flex-col justify-between py-1">
+                  <div>
+                    <h3 className="font-black text-zinc-900 text-base leading-tight">{product.name}</h3>
+                    <p className="text-zinc-500 text-xs font-medium mt-1 line-clamp-2">{getProductDesc(product.name)}</p>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                      <p className="text-zinc-900 font-black text-sm">${product.basePrice.toFixed(2)}</p>
+                      <span className="bg-zinc-100 text-zinc-600 text-[10px] font-black uppercase px-3 py-1.5 rounded-lg">Agregar</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
-        <section id="seccion-especialidades">
-          <h2 className="text-3xl font-black mb-6 text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🔥</span> Especialidades</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'ESPECIALIDAD'))}
-        </section>
-
-        <section id="seccion-bebidas">
-          <h2 className="text-3xl font-black mb-6 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🥤</span> Bebidas</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
-        </section>
-
-        <section id="seccion-otros">
-          <h2 className="text-3xl font-black mb-6 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4 flex items-center gap-3"><span className="text-4xl">🍬</span> Otros Antojos</h2>
-          {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' || p.category === 'PAPA_SOLA' || p.category === 'MARUCHAN_SOLA'))}
+        {/* SECCIÓN BEBIDAS Y OTROS */}
+        <section id="bebidas" className="scroll-mt-32">
+          <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">🥤 Bebidas y Antojos</h2>
+          <div className="grid grid-cols-2 gap-4">
+            {visibleProducts.filter(p => p.category === 'BEBIDA' || p.category === 'ANTOJO').map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border border-zinc-200 rounded-[1.2rem] p-4 flex flex-col items-center text-center shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+                <span className="text-4xl mb-2">{getProductEmoji(product.name, product.category)}</span>
+                <h3 className="font-black text-zinc-900 text-sm mb-1 line-clamp-1">{product.name}</h3>
+                <p className="text-zinc-500 font-black text-xs">${product.basePrice.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
 
-      {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-40 flex justify-between items-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
-          <div className="flex flex-col ml-4">
-            <span className="text-zinc-400 font-black tracking-widest uppercase text-sm mb-1">Orden Actual ({cart.length})</span>
-            <span className="text-5xl text-yellow-400 font-black tracking-tighter">${getTotal().toFixed(2)}</span>
-          </div>
-          <button onClick={() => setAppState('UPSELL')} className="bg-yellow-400 text-zinc-950 px-10 md:px-16 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-[0_10px_30px_rgba(250,204,21,0.3)] active:scale-95 transition-all flex items-center gap-4">
-            Ver Orden <span className="text-3xl">➔</span>
-          </button>
-        </div>
-      )}
-
-      {appState === 'UPSELL' && (
-        <div className="fixed inset-0 bg-zinc-950 flex flex-col z-40 overflow-y-auto animate-in slide-in-from-bottom duration-300">
-          <div className="p-8 md:p-12 max-w-7xl mx-auto w-full pb-40">
-            <h2 className="text-6xl md:text-7xl font-black text-white mb-4 text-center">¡Hazlo un festín!</h2>
-            <p className="text-2xl text-zinc-400 mb-16 text-center font-medium">Agrega bebidas y antojitos a tu orden. Pica lo que quieras.</p>
-            
-            <h3 className="text-3xl font-black mb-8 text-blue-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🥤 Bebidas Frías</h3>
-            {renderProductGrid(visibleProducts.filter(p => p.category === 'BEBIDA'))}
-
-            <h3 className="text-3xl font-black mt-16 mb-8 text-purple-400 uppercase tracking-widest border-b border-zinc-800 pb-4">🍬 Antojitos y Gomitas</h3>
-            {renderProductGrid(visibleProducts.filter(p => p.category === 'ANTOJO' && (p.name.toLowerCase().includes('gomita') || p.name.toLowerCase().includes('panda') || p.name.toLowerCase().includes('mango') || p.name.toLowerCase().includes('dulce'))))}
-          </div>
-
-          <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 z-50 flex justify-center shadow-[0_-20px_50px_rgba(0,0,0,0.6)]">
-             <button onClick={() => setAppState('CHECKOUT')} className="bg-yellow-400 text-zinc-950 px-20 py-6 rounded-[2rem] font-black text-2xl hover:bg-yellow-300 shadow-xl active:scale-95 transition-all flex items-center gap-4 w-full max-w-2xl justify-center">
-              Continuar al Pago <span className="text-3xl">➔</span>
-            </button>
-          </div>
-        </div>
-      )}
-
+      {/* WIZARD MODAL (Estilo Bottom Sheet) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
-        <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-50 backdrop-blur-md">
-          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl rounded-[3rem] flex flex-col shadow-2xl overflow-hidden h-[90vh] md:h-auto md:max-h-[90vh]">
-            <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-900 sticky top-0 z-10">
+        <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
+          {/* Backdrop click to close */}
+          <div className="flex-1 w-full" onClick={() => setActiveProduct(null)}></div>
+          
+          <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[85vh] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-8">
+            <div className="p-5 border-b border-zinc-100 flex justify-between items-center sticky top-0 bg-white rounded-t-[2rem] z-10">
               <div>
-                <p className="text-yellow-400 font-bold tracking-widest uppercase text-sm mb-2">
+                <p className="text-zinc-400 font-bold tracking-widest uppercase text-[10px] mb-1">
                   Paso {wizardStep + 1} de {getProductSteps(activeProduct).length}
                 </p>
-                <h2 className="text-3xl font-black text-white">{getProductSteps(activeProduct)[wizardStep].t}</h2>
+                <h2 className="text-xl font-black text-zinc-900 leading-tight">{getProductSteps(activeProduct)[wizardStep].t}</h2>
               </div>
-              <button onClick={() => setActiveProduct(null)} className="bg-zinc-800 text-zinc-400 h-16 w-16 rounded-full flex items-center justify-center text-3xl font-bold hover:text-white hover:bg-zinc-700 transition-colors">✕</button>
+              <button onClick={() => setActiveProduct(null)} className="w-10 h-10 bg-zinc-100 text-zinc-500 rounded-full flex items-center justify-center font-bold">✕</button>
             </div>
             
-            <div className="p-8 overflow-y-auto flex-1 space-y-10">
+            <div className="p-5 overflow-y-auto flex-1 bg-zinc-50 pb-24">
               {getProductSteps(activeProduct)[wizardStep].type === 'TOPPINGS' ? (
-                <div className="space-y-8 animate-in fade-in duration-300">
-                  <div className="bg-yellow-400/10 border border-yellow-400/30 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
-                      <div>
-                          <h4 className="text-yellow-400 font-black text-lg mb-1 flex items-center gap-2">🧀 Toppings Especiales</h4>
-                          <p className="text-sm text-zinc-300 font-bold">
-                             {getProductSteps(activeProduct)[wizardStep].firstToppingFree ? '🎁 ¡Tu primer topping es GRATIS! Después:' : 'Agrega todo el sabor que quieras por un costo extra:'}
-                          </p>
+                <div className="space-y-8">
+                  {getProductSteps(activeProduct)[wizardStep].firstToppingFree && (
+                      <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3">
+                          <span className="text-2xl">🎁</span>
+                          <p className="text-xs text-yellow-800 font-bold leading-tight">Tu primer topping especial es gratis. Los siguientes tienen costo extra.</p>
                       </div>
-                      <div className="flex gap-4 text-xs font-black text-yellow-500 bg-zinc-950 p-3 rounded-xl border border-yellow-500/20 whitespace-nowrap">
-                         <span>1 x $15</span>
-                         <span>2 x $25</span>
-                         <span>3+ x $35 (Tope)</span>
-                      </div>
-                  </div>
+                  )}
 
-                  <div className="space-y-8 border-b border-zinc-800 pb-10">
-                    {[ 
-                      {t: '1. Aderezos Extras', m: aderezos}, 
-                      {t: '2. Ponle Queso', m: quesos}, 
-                      {t: '3. Polvito de Papas', m: polvos}
-                    ].map(sec => (
-                      <div key={sec.t}>
-                        <h3 className="text-lg font-black text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400"></span>{sec.t}</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          {sec.m.map((mod:any) => (
-                            <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{mod.name}</button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="space-y-8 pt-4">
-                    <div>
-                      <h3 className="text-xl font-black text-green-400 uppercase tracking-widest mb-4 flex items-center gap-2">🌶️ Barra Libre (¡Gratis!)</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {chiles.map((mod:any) => (
-                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-green-500 text-zinc-950 border-green-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-green-500/50 text-zinc-300'}`}>{mod.name}</button>
-                        ))}
+                  {[ 
+                    {t: 'Aderezos Extras', m: aderezos, icon: '🧈'}, 
+                    {t: 'Ponle Queso', m: quesos, icon: '🧀'}, 
+                    {t: 'Polvito de Papas', m: polvos, icon: '🌶️'}
+                  ].map(sec => (
+                    <div key={sec.t}>
+                      <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest mb-3 flex items-center gap-2">{sec.icon} {sec.t}</h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        {sec.m.map((mod:any) => {
+                            const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                            return (
+                                <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                                    <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                    {isSelected && <span>✓</span>}
+                                </button>
+                            );
+                        })}
                       </div>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-black text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400"></span>Restricciones (Sin...)</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {restricciones.map((mod:any) => (
-                          <button key={mod.id} onClick={() => handleToggleModifier(mod)} className={`p-5 rounded-2xl border-2 text-sm md:text-base font-black transition-all ${(wizardData[wizardStep] || []).find((m:any) => m.id === mod.id) ? 'bg-red-500 text-white border-red-500 scale-[0.98]' : 'bg-zinc-900 border-zinc-700 hover:border-red-400/50 text-zinc-300'}`}>{mod.name}</button>
-                        ))}
-                      </div>
+                  ))}
+
+                  <div className="border-t border-zinc-200 pt-6">
+                    <h3 className="text-sm font-black text-green-600 uppercase tracking-widest mb-3">🔥 Barra Libre (Gratis)</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {chiles.map((mod:any) => {
+                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                          return (
+                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                                  <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                  {isSelected && <span>✓</span>}
+                              </button>
+                          );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-zinc-200 pt-6">
+                    <h3 className="text-sm font-black text-red-500 uppercase tracking-widest mb-3">🚫 Sin...</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {restricciones.map((mod:any) => {
+                          const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
+                          return (
+                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                                  <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                  {isSelected && <span>✓</span>}
+                              </button>
+                          );
+                      })}
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3">
                   {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep].type]
                     .filter((opt: string) => {
                        if (getProductSteps(activeProduct)[wizardStep].type === 'PAPAS_MARUCHAN') {
@@ -880,20 +760,39 @@ export default function PedirPage() {
                        }
                        return isOptionAvailable(opt);
                     })
-                    .map((opt: string) => (
-                    <button key={opt} onClick={() => setWizardData({...wizardData, [wizardStep]: [opt]})} className={`p-6 rounded-2xl border-2 font-black transition-all text-xl ${(wizardData[wizardStep] || []).includes(opt) ? 'bg-yellow-400 text-zinc-950 border-yellow-400 scale-[0.98] shadow-lg' : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500 text-zinc-300'}`}>{opt}</button>
-                  ))}
+                    .map((opt: string) => {
+                        const stepDef = getProductSteps(activeProduct)[wizardStep];
+                        const isMultiple = stepDef.max && stepDef.max > 1;
+                        const isSelected = (wizardData[wizardStep] || []).includes(opt);
+                        
+                        return (
+                            <button 
+                                key={opt} 
+                                onClick={() => {
+                                    if(isMultiple) {
+                                        handleToggleModifier(opt, true, stepDef.max);
+                                    } else {
+                                        setWizardData({...wizardData, [wizardStep]: [opt]});
+                                    }
+                                }} 
+                                className={`p-4 rounded-xl border text-sm font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+                            >
+                                {opt}
+                                {isSelected && <span>✓</span>}
+                            </button>
+                        );
+                    })}
                 </div>
               )}
             </div>
 
-            <div className="p-8 border-t border-zinc-800 bg-zinc-900 sticky bottom-0 flex gap-4 z-10">
+            <div className="p-4 border-t border-zinc-100 bg-white sticky bottom-0 flex gap-3 z-10">
               {wizardStep > 0 && (
-                <button onClick={() => setWizardStep(prev => prev - 1)} className="w-1/3 bg-zinc-800 hover:bg-zinc-700 text-white py-6 rounded-2xl font-black text-xl transition-colors active:scale-[0.98]">
-                  ← Atrás
+                <button onClick={() => setWizardStep(prev => prev - 1)} className="bg-zinc-100 text-zinc-600 w-14 rounded-xl font-black text-xl flex items-center justify-center">
+                  ←
                 </button>
               )}
-              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-950 py-6 rounded-2xl font-black text-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-300 active:scale-[0.98] transition-transform">
+              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98]">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
                     const stepDef = getProductSteps(activeProduct)[wizardStep];
@@ -903,58 +802,73 @@ export default function PedirPage() {
                         const currentSelections = wizardData[wizardStep] || [];
                         const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
                         let baseCount = paidCount;
-                        
-                        if (stepDef.firstToppingFree && baseCount > 0) { baseCount -= 1; }
+                        if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
                         
                         if (!stepDef.isFree) {
-                          if (baseCount === 1) extraLabel = " (+ $15.00)";
-                          if (baseCount === 2) extraLabel = " (+ $25.00)";
-                          if (baseCount >= 3) extraLabel = " (+ $35.00)";
+                          if (baseCount === 1) extraLabel = " (+$15)";
+                          if (baseCount === 2) extraLabel = " (+$25)";
+                          if (baseCount >= 3) extraLabel = " (+$35)";
                         }
                     }
-                    
-                    return isLastStep ? `Terminar y Agregar${extraLabel} ➔` : `Siguiente Paso${extraLabel} ➔`;
+                    return isLastStep ? `Agregar${extraLabel}` : `Siguiente${extraLabel}`;
                 })()}
               </button>
             </div>
           </div>
         </div>
       )}
-      
-      {showAddSuccess && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[60] p-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-zinc-900 border border-zinc-800 p-8 md:p-10 rounded-[3rem] w-full max-w-md shadow-2xl text-center flex flex-col items-center">
-            <span className="text-7xl mb-4 block drop-shadow-lg">🛒</span>
-            <h2 className="text-3xl font-black text-white mb-2">¡Agregado con éxito!</h2>
-            <p className="text-zinc-400 font-bold mb-8">¿Qué deseas hacer ahora?</p>
-            
-            <div className="flex flex-col gap-4 w-full">
-              <button 
-                onClick={() => {
-                  setShowAddSuccess(false);
-                }} 
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-5 rounded-2xl transition-colors border border-zinc-700 text-lg"
-              >
-                ➕ Agregar otro antojo
-              </button>
-              <button 
-                onClick={() => {
-                  setShowAddSuccess(false);
-                  const wasDrinkOrAntojoOrCombo = lastAddedCategory === 'BEBIDA' || lastAddedCategory === 'ANTOJO' || lastAddedCategory === 'COMBO';
-                  if (!wasDrinkOrAntojoOrCombo) {
-                     setAppState('UPSELL');
-                  } else {
-                     setAppState('CHECKOUT');
-                  }
-                }} 
-                className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all text-xl"
-              >
-                Siguiente paso ➔
-              </button>
-            </div>
-          </div>
-        </div>
+
+      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
+      {cart.length > 0 && !activeProduct && (
+        <>
+            {isCartOpen ? (
+                <div className="fixed inset-0 bg-zinc-900/60 z-40 flex flex-col justify-end animate-in fade-in duration-200">
+                    <div className="flex-1 w-full" onClick={() => setIsCartOpen(false)}></div>
+                    <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[80vh] animate-in slide-in-from-bottom-8">
+                        <div className="p-5 border-b border-zinc-100 flex justify-between items-center">
+                            <h2 className="text-lg font-black text-zinc-900">Tu Carrito</h2>
+                            <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 font-bold">Ocultar ↓</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
+                            {cart.map(item => (
+                                <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative">
+                                    <div className="flex justify-between items-start pr-6 mb-1">
+                                        <p className="font-black text-zinc-900 text-sm leading-tight">{item.name}</p>
+                                        <p className="font-black text-zinc-900 text-sm">${item.totalPrice.toFixed(2)}</p>
+                                    </div>
+                                    {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes}</p>}
+                                    <button onClick={() => removeFromCart(item.cartId)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 font-black text-lg leading-none">&times;</button>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="p-5 bg-white border-t border-zinc-100 flex flex-col gap-3">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-zinc-500 font-bold text-sm">Subtotal:</span>
+                                <span className="text-xl font-black text-zinc-900">${getTotal().toFixed(2)}</span>
+                            </div>
+                            <button onClick={() => { setIsCartOpen(false); setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="w-full bg-zinc-900 text-white py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98]">
+                                Finalizar Pedido
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-zinc-200 z-30 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
+                    <div className="max-w-2xl mx-auto flex gap-3">
+                        <button onClick={() => setIsCartOpen(true)} className="bg-zinc-100 border border-zinc-200 text-zinc-900 px-6 py-4 rounded-xl font-black flex items-center justify-center gap-2 active:bg-zinc-200">
+                            <span>🛒</span>
+                            <span>{cart.length}</span>
+                        </button>
+                        <button onClick={() => { setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98] flex justify-between items-center px-6">
+                            <span>Pagar</span>
+                            <span>${getTotal().toFixed(2)}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+        </>
       )}
+
     </div>
   );
 }
