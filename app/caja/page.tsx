@@ -54,7 +54,12 @@ export default function MonitorCaja() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-         const validOrders = data.orders.filter((o: any) => o.status === 'AWAITING_PAYMENT' || (o.status === 'PENDING' && o.orderType === 'TAKEOUT'));
+         // 🌟 LÓGICA ACTUALIZADA: Atrapamos las órdenes en Caja y las Web (PickToGo y Takeout)
+         const validOrders = data.orders.filter((o: any) => 
+            o.status === 'AWAITING_PAYMENT' || 
+            (o.status === 'PENDING' && o.orderType === 'PICK_TO_GO') || 
+            (o.status === 'PENDING' && o.orderType === 'TAKEOUT')
+         );
          setPendingCash(validOrders);
       }
     } catch (error) { console.error("Error fetching orders"); }
@@ -101,19 +106,9 @@ export default function MonitorCaja() {
   // ==========================================
   const handleCloseShift = async () => {
     if (!reportedCash) return;
-    
-    // 1. Cerramos el turno en la Base de Datos
     await fetch('/api/shift', { method: 'PATCH', body: JSON.stringify({ shiftId: activeShift.id, reportedCash }) });
-    
-    // 2. Limpiamos la pantalla (La cajera ya ve que se cerró)
-    setShowCloseModal(false); 
-    setReportedCash(''); 
-    checkShift();
-
-    // 3. Disparamos el correo automático a Luis de forma asíncrona (Silencioso)
-    fetch('/api/send-report?type=daily').catch(() => {
-        // Ignoramos errores frontales para no asustar a la cajera, el reporte intentará salir de todos modos.
-    });
+    setShowCloseModal(false); setReportedCash(''); checkShift();
+    fetch('/api/send-report?type=daily').catch(() => {});
   };
 
   const changePaymentMethod = async (orderId: string, currentMethod: string) => {
@@ -140,6 +135,18 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
+  // 🌟 NUEVA LÓGICA: Mandar directo al KDS sin cobrar (porque ya está pagado en web)
+  const sendToKDS = async (orderId: string) => {
+      if (!window.confirm('¿Mandar este pedido a la pantalla de cocina (KDS) ahora?')) return;
+      await fetch('/api/orders', { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          // 'PREPARING' es el estado que el KDS escucha
+          body: JSON.stringify({ orderId, newStatus: 'PREPARING' }) 
+      });
+      fetchCashOrders();
+  };
+
   // ==========================================
   // LÓGICA DE EDICIÓN EN CAJA
   // ==========================================
@@ -157,9 +164,8 @@ export default function MonitorCaja() {
       const newQty = (item.quantity || 1) + delta;
 
       if (newQty <= 0) {
-          if (window.confirm('¿Eliminar este producto de la orden?')) {
-              newItems.splice(index, 1);
-          } else return;
+          if (window.confirm('¿Eliminar este producto de la orden?')) newItems.splice(index, 1);
+          else return;
       } else {
           newItems[index] = { ...item, quantity: newQty, totalPrice: unitPrice * newQty };
       }
@@ -180,7 +186,7 @@ export default function MonitorCaja() {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
             orderId: selectedOrder.id, 
-            newStatus: 'PAID',
+            newStatus: 'PAID', // Al marcar PAID, el KDS lo atrapa automáticamente
             updatedItems: selectedOrder.items, 
             newTotal: selectedOrder.totalAmount 
         }) 
@@ -196,10 +202,7 @@ export default function MonitorCaja() {
         await fetch('/api/orders', { 
             method: 'PATCH', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                orderId: selectedOrder.id, 
-                newStatus: 'REFUNDED' 
-            }) 
+            body: JSON.stringify({ orderId: selectedOrder.id, newStatus: 'REFUNDED' }) 
         });
         setSelectedOrder(null);
         fetchCashOrders();
@@ -227,7 +230,7 @@ export default function MonitorCaja() {
             headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
                 orderId: order.id, 
-                newStatus: 'PAID',
+                newStatus: 'PAID', // El KDS lo detectará automáticamente
                 updatedItems: order.items,
                 newTotal: order.totalAmount
             }) 
@@ -332,15 +335,22 @@ export default function MonitorCaja() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {pendingCash.map(order => {
+                  const isPickToGo = order.orderType === 'PICK_TO_GO';
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
                   
                   return (
-                    <div key={order.id} className={`bg-zinc-900 p-6 rounded-[2rem] border-2 shadow-xl flex flex-col justify-between h-auto min-h-[16rem] transition-colors ${isWebOrder ? 'border-purple-500/50 bg-purple-900/10' : 'border-orange-500/50'}`}>
+                    <div key={order.id} className={`bg-zinc-900 p-6 rounded-[2rem] border-2 shadow-xl flex flex-col justify-between h-auto min-h-[16rem] transition-colors ${
+                        isPickToGo ? 'border-purple-500 shadow-[0_0_25px_rgba(168,85,247,0.3)] bg-purple-900/10' : 
+                        isWebOrder ? 'border-blue-500/50 bg-blue-900/10' : 
+                        'border-orange-500/50'
+                    }`}>
                       <div>
                         <div className="flex justify-between items-start mb-4">
                             <p className="text-5xl font-black italic text-white">#{order.turnNumber}</p>
-                            {isWebOrder ? (
-                                <span className="bg-purple-500/20 text-purple-400 px-3 py-1 rounded-lg text-xs font-black border border-purple-500/30 uppercase tracking-widest animate-pulse">📱 Nuevo Web</span>
+                            {isPickToGo ? (
+                                <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest animate-pulse border border-purple-400">⚡ Pick To Go</span>
+                            ) : isWebOrder ? (
+                                <span className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-lg text-xs font-black border border-blue-500/30 uppercase tracking-widest">📱 App VIP</span>
                             ) : (
                                 <span className="bg-orange-500/20 text-orange-400 px-3 py-1 rounded-lg text-xs font-black border border-orange-500/30 uppercase tracking-widest">En Caja</span>
                             )}
@@ -348,15 +358,32 @@ export default function MonitorCaja() {
                         <p className="text-zinc-300 font-bold text-xl truncate pr-2">{order.customerName}</p>
                         
                         <div className="mt-4 pt-4 border-t border-zinc-800">
-                            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
-                            <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
-                            <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">{order.paymentMethod === 'TERMINAL' ? '💳 Pago con Tarjeta' : '💵 Pago en Efectivo'}</p>
+                            {isPickToGo ? (
+                                <>
+                                    <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
+                                    <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
+                                    <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest">
+                                        ⏰ RECOGE A LAS {order.pickupTime || 'Pronto'}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
+                                    <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
+                                    <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">{order.paymentMethod === 'TERMINAL' ? '💳 Pago con Tarjeta' : '💵 Pago en Efectivo'}</p>
+                                </>
+                            )}
                         </div>
                       </div>
                       
                       <div className="mt-6 flex flex-col gap-2">
-                          {isWebOrder ? (
-                              <button onClick={() => acceptWebOrder(order.id)} className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
+                          {isPickToGo ? (
+                              // 🌟 BOTÓN MÁGICO QUE MANDA LA ORDEN AL KDS
+                              <button onClick={() => sendToKDS(order.id)} className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
+                                  🍳 Mandar a Cocina
+                              </button>
+                          ) : isWebOrder ? (
+                              <button onClick={() => acceptWebOrder(order.id)} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-blue-500/20">
                                   ⏱️ Aceptar y dar Tiempo
                               </button>
                           ) : (
