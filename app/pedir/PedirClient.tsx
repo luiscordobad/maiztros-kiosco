@@ -34,7 +34,11 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable);
+  // 🌟 ORDENAMOS LOS PRODUCTOS POR PRECIO PARA QUE SE VEA LIMPIO EL MENÚ
+  const visibleProducts = products
+    .filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
+    .sort((a, b) => a.basePrice - b.basePrice);
+
   const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
   const aderezos = modifiers.filter(m => m.type === 'ADEREZO' && m.isAvailable);
   const quesos = modifiers.filter(m => m.type === 'QUESO' && m.isAvailable);
@@ -110,6 +114,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           if (data.success) {
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
+            if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else { setLoyaltyPoints(0); setIsNewCustomer(true); }
           setIsCheckingPoints(false);
@@ -525,7 +530,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           </div>
         </section>
 
-        {/* 🌟 OTROS ANTOJOS (NUEVO) */}
+        {/* OTROS ANTOJOS (NUEVO) */}
         <section id="otros" className="scroll-mt-32">
           <h2 className="text-xl font-black mb-4 flex items-center gap-2">🍬 Otros Antojos</h2>
           <div className="grid grid-cols-2 gap-4">
