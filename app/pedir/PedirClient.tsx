@@ -3,11 +3,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useCartStore } from '@/store/cart';
-
-// IMPORTAMOS EL SDK DE MERCADO PAGO PARA FRONTEND
 import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
 
-// 🌟 LLAVE PÚBLICA INYECTADA
 initMercadoPago('APP_USR-7d3162e4-fbb5-4810-b3dd-3de18d93fb8f', { locale: 'es-MX' });
 
 const OPCIONES = {
@@ -28,10 +25,8 @@ const REWARDS = [
 
 export default function PedirClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
-  
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
-  // Solo traemos el inventario físico por API (igual que en el kiosco original)
   useEffect(() => {
       fetch('/api/admin?action=kiosco_sync')
         .then(res => res.json())
@@ -39,7 +34,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  // 🌟 Ahora leemos directo de las propiedades (props) que vienen de la Base de Datos
   const visibleProducts = products.filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable);
   const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
   const aderezos = modifiers.filter(m => m.type === 'ADEREZO' && m.isAvailable);
@@ -80,7 +74,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   const [isClosed, setIsClosed] = useState(false);
   const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
 
-  // Lógica de horarios
   useEffect(() => {
     const calculateTimes = () => {
         const times: string[] = [];
@@ -108,7 +101,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     return () => clearInterval(interval);
   }, [selectedTime]);
 
-  // Puntos de lealtad
   useEffect(() => {
     if (customerPhone.length === 10) {
       setIsCheckingPoints(true);
@@ -118,7 +110,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           if (data.success) {
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
-            if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else { setLoyaltyPoints(0); setIsNewCustomer(true); }
           setIsCheckingPoints(false);
@@ -126,7 +117,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     }
   }, [customerPhone]);
 
-  // ATRAPAMOS EL PAGO EXITOSO AL REGRESAR DE MP
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
@@ -152,8 +142,8 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
       if (category === 'COMBO') return '📦';
       if (category === 'ESQUITE') return '🌽';
       if (category === 'BEBIDA') return '🥤';
-      if (name.toLowerCase().includes('maruchan')) return '🍜';
-      if (name.toLowerCase().includes('papa')) return '🔥';
+      if (name.toLowerCase().includes('maruchan') || name.toLowerCase().includes('obra maestra')) return '🍜';
+      if (name.toLowerCase().includes('papa') || name.toLowerCase().includes('dorito') || name.toLowerCase().includes('tostito')) return '🔥';
       return '🍬';
   }
 
@@ -234,7 +224,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
     setActiveProduct(null);
   };
 
-  // Cupones y registro
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null); setCouponError(`Mínimo de compra de $${activeCoupon.minAmount}`);
@@ -245,8 +234,8 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
   const handleRegisterInWeb = async () => {
-    if (!customerName || !customerEmail) return alert('Por favor, llena tu nombre y correo en los campos de arriba.');
-    if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad para crear tu cuenta.');
+    if (!customerName || !customerEmail) return alert('Por favor, llena tu nombre y correo.');
+    if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad.');
     setIsRegistering(true);
     try {
         const res = await fetch('/api/customer', {
@@ -257,7 +246,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
         const data = await res.json();
         if (data.success) {
             setCustomerName(data.customer.name); setLoyaltyPoints(data.customer.points); setIsNewCustomer(false); 
-        } else { alert('Error al registrar. Intenta pedir como invitado destildando la opción.'); }
+        } else { alert('Error al registrar. Intenta pedir sin cuenta.'); }
     } catch(e) { alert('Error de red.'); }
     setIsRegistering(false);
   };
@@ -265,21 +254,21 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   const handleApplyCoupon = async () => {
     setCouponError('');
     if (!couponCode) return;
-    if (customerPhone.length !== 10) return setCouponError('⚠️ Ingresa tu celular para validar promociones.');
+    if (customerPhone.length !== 10) return setCouponError('⚠️ Ingresa tu celular para validar.');
 
     const res = await fetch(`/api/customer?phone=${customerPhone}`);
     const data = await res.json();
     if (data.success && data.activeCoupons) { 
       const coupon = data.activeCoupons.find((c:any) => c.code === couponCode.toUpperCase());
-      if (!coupon) return setCouponError('❌ Cupón inválido o expirado.');
+      if (!coupon) return setCouponError('❌ Cupón inválido.');
       const alreadyUsed = data.history.some((o:any) => o.couponCode === coupon.code);
-      if (alreadyUsed && coupon.code !== 'MAIZTROVIP') return setCouponError('⚠️ Ya utilizaste este cupón antes.');
+      if (alreadyUsed && coupon.code !== 'MAIZTROVIP') return setCouponError('⚠️ Ya utilizaste este cupón.');
       if (coupon.minAmount > 0 && subtotal < coupon.minAmount) {
-        setCouponError(`⚠️ Compra mínima de $${coupon.minAmount} requerida.`); setActiveCoupon(null);
+        setCouponError(`⚠️ Compra mínima $${coupon.minAmount}.`); setActiveCoupon(null);
       } else {
         setActiveCoupon(coupon); setSelectedReward(null); setPreferenceId(null); 
       }
-    } else { setCouponError('❌ Necesitas estar registrado para usar cupones. Únete abajo.'); }
+    } else { setCouponError('❌ Necesitas estar registrado para usar cupones.'); }
   };
 
   let totalAfterCoupon = subtotal;
@@ -366,7 +355,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
         </header>
 
         <div className="space-y-6">
-            {/* Carrito */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
                 {cart.map((item) => (
@@ -381,7 +369,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                 ))}
             </div>
 
-            {/* Datos */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border space-y-3">
                 <h2 className="font-black text-lg mb-2">Tus Datos</h2>
                 <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60"/>
@@ -471,6 +458,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
             <a href="#combos" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">📦 Combos</a>
             <a href="#esquites" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🌽 Esquites</a>
             <a href="#bebidas" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🥤 Bebidas</a>
+            <a href="#otros" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🍬 Otros</a>
         </div>
       </header>
 
@@ -499,9 +487,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           </div>
         </section>
 
-        {/* ESQUITES */}
+        {/* ESQUITES Y ESPECIALIDADES */}
         <section id="esquites" className="scroll-mt-32">
-          <h2 className="text-xl font-black mb-4 flex items-center gap-2">🌽 Esquites</h2>
+          <h2 className="text-xl font-black mb-4 flex items-center gap-2">🌽 Esquites y Especiales</h2>
           <div className="flex flex-col gap-4">
             {visibleProducts.filter(p => p.category === 'ESQUITE' || p.category === 'ESPECIALIDAD').map((product) => (
               <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border rounded-[1.5rem] p-4 flex gap-4 shadow-sm active:scale-[0.98] cursor-pointer">
@@ -536,6 +524,21 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
             ))}
           </div>
         </section>
+
+        {/* 🌟 OTROS ANTOJOS (NUEVO) */}
+        <section id="otros" className="scroll-mt-32">
+          <h2 className="text-xl font-black mb-4 flex items-center gap-2">🍬 Otros Antojos</h2>
+          <div className="grid grid-cols-2 gap-4">
+            {visibleProducts.filter(p => p.category === 'ANTOJO' || p.category === 'PAPA_SOLA' || p.category === 'MARUCHAN_SOLA').map((product) => (
+              <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white border rounded-[1.2rem] p-4 flex flex-col items-center text-center shadow-sm cursor-pointer">
+                <span className="text-4xl mb-2">{getProductEmoji(product.name, product.category)}</span>
+                <h3 className="font-black text-xs line-clamp-1">{product.name}</h3>
+                <p className="text-zinc-500 font-black text-xs">${product.basePrice.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
       </div>
 
       {/* MODAL PERSONALIZAR (WIZARD MÓVIL) */}
