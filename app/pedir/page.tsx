@@ -49,6 +49,8 @@ export default function PedirPage() {
   const chiles = dbData.modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
   const inventoryItems = dbData.inventoryItems;
 
+  const [activeCategory, setActiveCategory] = useState('combos');
+
   // Estados de Flujo: MENU -> CHECKOUT -> SUCCESS
   const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
   
@@ -59,11 +61,10 @@ export default function PedirPage() {
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  // 🌟 AQUÍ ESTÁ LA VARIABLE FALTANTE QUE CAUSÓ EL ERROR
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
-  
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   
+  // 🌟 CAMPOS OBLIGATORIOS
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -75,7 +76,7 @@ export default function PedirPage() {
   
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [regData, setRegData] = useState({ firstName: '', lastName: '', email: '', acceptedTerms: false });
+  const [regData, setRegData] = useState({ acceptedTerms: false });
   const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [couponCode, setCouponCode] = useState('');
@@ -136,6 +137,7 @@ export default function PedirPage() {
           if (data.success) {
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
+            if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else {
             setLoyaltyPoints(0);
@@ -154,7 +156,7 @@ export default function PedirPage() {
   }, [customerPhone]);
 
   const handleRegisterInWeb = async () => {
-    if (!regData.firstName || !regData.lastName || !regData.email) return alert('Por favor, llena tu nombre, apellido y correo.');
+    if (!customerName || !customerEmail) return alert('Por favor, llena tu nombre y correo en los campos de arriba.');
     if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad para crear tu cuenta.');
 
     setIsRegistering(true);
@@ -162,14 +164,14 @@ export default function PedirPage() {
         const res = await fetch('/api/customer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: customerPhone, ...regData })
+            body: JSON.stringify({ phone: customerPhone, firstName: customerName, lastName: '', email: customerEmail })
         });
         const data = await res.json();
         if (data.success) {
             setCustomerName(data.customer.name);
             setLoyaltyPoints(data.customer.points);
             setIsNewCustomer(false); 
-        } else { alert('Error al registrar cuenta. Intenta pedir como invitado borrando tu celular.'); }
+        } else { alert('Error al registrar cuenta. Intenta pedir como invitado, destildando la opción.'); }
     } catch(e) { alert('Error de red. Revisa tu conexión.'); }
     setIsRegistering(false);
   };
@@ -184,7 +186,6 @@ export default function PedirPage() {
     if (selectedReward && subtotal < selectedReward.minSpend) {
         setSelectedReward(null);
     }
-    // Si el carrito se vacía y estábamos viéndolo, lo cerramos
     if (cart.length === 0 && isCartOpen && appState === 'MENU') {
         setIsCartOpen(false);
     }
@@ -194,8 +195,8 @@ export default function PedirPage() {
     setCouponError('');
     if (!couponCode) return;
 
-    if (customerPhone.length !== 10 || isNewCustomer) {
-      setCouponError('⚠️ Ingresa y registra tu celular arriba para usar cupones.');
+    if (customerPhone.length !== 10) {
+      setCouponError('⚠️ Ingresa tu celular para validar promociones.');
       return;
     }
 
@@ -223,7 +224,7 @@ export default function PedirPage() {
         setSelectedReward(null); 
       }
     } else {
-      setCouponError('❌ Error al validar tu cuenta.');
+      setCouponError('❌ Necesitas estar registrado para usar cupones. Únete abajo.');
     }
   };
 
@@ -237,7 +238,7 @@ export default function PedirPage() {
   const totalNeto = totalAfterCoupon - actualDiscount;
 
   // ==========================================
-  // LÓGICA DE PRODUCTOS (WIZARD COMPACTO)
+  // LÓGICA DE PRODUCTOS WIZARD
   // ==========================================
   const getProductDesc = (name: string) => {
     const n = name.toLowerCase();
@@ -300,9 +301,8 @@ export default function PedirPage() {
     if (isSelected) {
         newSelections = currentSelections.filter((m: any) => m.id !== mod.id);
     } else {
-        if (currentSelections.length >= maxLimit) return; // Límite alcanzado
+        if (currentSelections.length >= maxLimit) return; 
         newSelections = [...currentSelections, mod];
-        // Reglas de chiles
         if (mod.type === 'CHILE') newSelections = newSelections.filter((m: any) => !m.name.toLowerCase().includes('sin chilito') && !m.name.toLowerCase().includes('sin chile'));
         if (mod.name.toLowerCase().includes('sin chilito') || mod.name.toLowerCase().includes('sin chile')) newSelections = newSelections.filter((m: any) => m.type !== 'CHILE');
     }
@@ -343,16 +343,18 @@ export default function PedirPage() {
 
   const finishOrderScreenManually = () => {
       useCartStore.setState({ cart: [] });
-      setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+      setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setOrderNotes('');
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
-      setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
+      setIsNewCustomer(false); setRegData({ acceptedTerms: false });
       setOrderSuccessId(null);
-      setAppState('MENU'); // Lo devolvemos al menú principal
+      setAppState('MENU'); 
   };
 
-  // 🌟 CHECKOUT WEB (MERCADO PAGO)
+  // 🌟 CHECKOUT WEB (MERCADO PAGO + EMAIL MANDATORIO + TICKET AUTO)
   const handleCheckoutMP = async () => {
-    if (!customerName || customerPhone.length !== 10) return alert("Ingresa tu Nombre y WhatsApp a 10 dígitos para avisarte de tu orden.");
+    if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
+        return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y un Correo válido para enviarte tu recibo.");
+    }
     if (!selectedTime) return alert("Selecciona a qué hora vas a pasar por tu pedido.");
     
     setIsLoadingPayment(true);
@@ -368,24 +370,37 @@ export default function PedirPage() {
           couponCode: activeCoupon?.code || null, 
           tipAmount: 0, 
           customerName, 
-          customerEmail: regData.email || customerEmail, 
+          customerEmail: customerEmail, 
           customerPhone, 
-          paymentMethod: 'TERMINAL', // Pagado online simulado
+          paymentMethod: 'TERMINAL', 
           orderType: 'PICK_TO_GO', 
           pickupTime: selectedTime,
           orderNotes 
         })
       });
       const data = await response.json();
+      
       if (response.ok) {
-        setOrderSuccessId(data.orderId);
+        const orderIdReal = data.turnNumber || data.orderId;
+        setOrderSuccessId(orderIdReal);
         
-        // Simulación: En producción esto redirige a data.mercadopago_init_point
-        alert(`¡Redirigiendo a Mercado Pago para cobrar $${totalNeto.toFixed(2)}!\n\nUna vez pagado, prepararemos todo para las ${selectedTime}`);
+        // 🌟 ENVIAR TICKET AUTOMÁTICAMENTE (Sin abrir modales extra)
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+        const orderUrl = `${baseUrl}/ticket/${orderIdReal}`;
+        
+        fetch('/api/send-ticket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: customerEmail, orderUrl, turnNumber: orderIdReal })
+        }).catch(e => console.log("Envío de ticket asíncrono")); // Lo manda de fondo sin atorar al cliente
+
+        alert(`¡Redirigiendo a Mercado Pago para cobrar $${totalNeto.toFixed(2)}!\n\nUna vez pagado, tu ticket llegará a: ${customerEmail}`);
         
         setAppState('SUCCESS');
-        const successTimeout = setTimeout(() => { finishOrderScreenManually(); }, 30000); 
+        const successTimeout = setTimeout(() => { finishOrderScreenManually(); }, 40000); 
         successTimeoutRef[1](successTimeout);
+      } else {
+        alert("Hubo un problema procesando tu orden.");
       }
     } catch (error) { alert("Error al procesar el pedido."); }
     setIsLoadingPayment(false);
@@ -418,10 +433,8 @@ export default function PedirPage() {
     );
   }
 
+  // 🌟 PANTALLA ÉXITO (SIN QR, MÁS LIMPIA)
   if (appState === 'SUCCESS') {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${baseUrl}/ticket/${orderSuccessId}`)}&bgcolor=FFFFFF`;
-
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
         <h1 className="text-4xl font-black mb-2 tracking-tighter">¡ORDEN RECIBIDA! ⚡</h1>
@@ -429,10 +442,10 @@ export default function PedirPage() {
         
         <div className="bg-white text-zinc-900 p-8 rounded-[2rem] shadow-2xl w-full max-w-sm flex flex-col items-center">
             <p className="text-xs uppercase tracking-[0.2em] font-bold text-zinc-400 mb-1">Tu Turno</p>
-            <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+            <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">#{String(orderSuccessId).slice(-4).toUpperCase()}</p>
             <div className="w-full h-px bg-zinc-200 mb-6 border-dashed"></div>
-            <p className="text-xs font-bold uppercase tracking-widest mb-3 text-zinc-500">Muestra este código al llegar</p>
-            <img src={qrUrl} alt="QR Ticket" className="w-32 h-32 rounded-xl" />
+            <p className="text-xs font-bold uppercase tracking-widest mb-1 text-zinc-500">Muestra este número al llegar</p>
+            <p className="text-[10px] text-zinc-400 mt-2 font-medium">Te hemos enviado tu recibo detallado a:<br/><b className="text-zinc-700">{customerEmail}</b></p>
         </div>
 
         <button 
@@ -442,7 +455,7 @@ export default function PedirPage() {
             }} 
             className="mt-8 bg-black/20 hover:bg-black/30 text-white px-8 py-4 rounded-full font-black text-sm transition-colors backdrop-blur-md border border-white/20"
         >
-            Regresar al Menú
+            Volver al Menú
         </button>
       </div>
     );
@@ -451,14 +464,13 @@ export default function PedirPage() {
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans pb-40">
-        <header className="bg-white p-4 sticky top-0 z-40 border-b border-zinc-200 flex items-center gap-4">
+        <header className="bg-white p-4 sticky top-0 z-40 border-b border-zinc-200 flex items-center gap-4 shadow-sm">
             <button onClick={() => setAppState('MENU')} className="w-10 h-10 bg-zinc-100 rounded-full flex items-center justify-center text-xl font-bold text-zinc-600 hover:bg-zinc-200">←</button>
             <h1 className="text-xl font-black tracking-tight">Completar Pedido</h1>
         </header>
 
-        <div className="p-4 max-w-lg mx-auto space-y-6">
+        <div className="p-4 max-w-lg mx-auto space-y-6 mt-4">
             
-            {/* RESUMEN DE ORDEN */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100">
                 <h2 className="font-black text-lg mb-4 text-zinc-800">Tu Carrito</h2>
                 <div className="space-y-4">
@@ -475,35 +487,32 @@ export default function PedirPage() {
                 </div>
             </div>
 
-            {/* DATOS DEL CLIENTE Y LEALTAD */}
+            {/* 🌟 DATOS DEL CLIENTE SIEMPRE OBLIGATORIOS */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100">
                 <h2 className="font-black text-lg mb-4 text-zinc-800">Tus Datos</h2>
                 <div className="space-y-3">
-                    <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60 disabled:bg-zinc-100"/>
+                    <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                    
                     <div className="relative">
                         <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
                         {isCheckingPoints && <span className="absolute right-3 top-3 text-yellow-500 animate-spin">⏳</span>}
                     </div>
 
-                    {/* LÓGICA DE NUEVO CLIENTE (Registro rápido) */}
+                    <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Tu Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+
                     {customerPhone.length === 10 && isNewCustomer && (
                         <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2 animate-in fade-in">
-                            <p className="text-yellow-800 text-xs font-bold mb-3">¡Gana puntos desde hoy! Completa tus datos:</p>
-                            <div className="grid grid-cols-2 gap-2 mb-2">
-                                <input type="text" placeholder="Nombre" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none" />
-                                <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none" />
-                            </div>
-                            <input type="email" placeholder="Correo electrónico" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-white border border-yellow-200 p-2 rounded-lg text-xs font-bold text-zinc-900 outline-none mb-3" />
-                            
+                            <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP:</p>
                             <div className="flex items-start gap-2 mb-3">
-                                <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5"/>
-                                <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
+                                <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
+                                <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline cursor-pointer font-bold text-zinc-800" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span> para crear mi cuenta.</label>
                             </div>
-                            <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs">Registrarme</button>
+                            <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs shadow-sm hover:bg-yellow-300">
+                                {isRegistering ? 'Creando...' : 'Crear Cuenta VIP'}
+                            </button>
                         </div>
                     )}
 
-                    {/* RECOMPENSAS VIP */}
                     {customerPhone.length === 10 && !isNewCustomer && loyaltyPoints > 0 && (
                         <div className="mt-4 pt-4 border-t border-zinc-100">
                             <p className="text-xs font-bold text-zinc-500 mb-2">Tienes {loyaltyPoints} pts. Úsalos como dinero:</p>
@@ -512,7 +521,7 @@ export default function PedirPage() {
                                     const isAffordable = loyaltyPoints >= reward.pts && subtotal >= reward.minSpend && !activeCoupon;
                                     const isSelected = selectedReward?.id === reward.id;
                                     return (
-                                        <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 border-zinc-200' : isSelected ? 'bg-zinc-900 border-zinc-900 text-white font-black' : 'bg-white border-zinc-300 text-zinc-700 font-bold'}`}>
+                                        <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 border-zinc-200' : isSelected ? 'bg-zinc-900 border-zinc-900 text-white font-black shadow-md' : 'bg-white border-zinc-300 text-zinc-700 font-bold hover:bg-zinc-50'}`}>
                                             <span>{reward.label} ({reward.pts} pts)</span>
                                             <span>{isSelected ? '✅' : !isAffordable ? '🔒' : 'Aplicar'}</span>
                                         </button>
@@ -525,18 +534,17 @@ export default function PedirPage() {
                     {/* CUPONES */}
                     <div className="mt-4 pt-4 border-t border-zinc-100 flex gap-2">
                         <input type="text" placeholder="Código de Promo" value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="flex-1 bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-xs disabled:opacity-50"/>
-                        <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 rounded-xl font-black text-xs disabled:opacity-50">Aplicar</button>
+                        <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 rounded-xl font-black text-xs disabled:opacity-50 shadow-sm">Aplicar</button>
                     </div>
-                    {couponError && <p className="text-red-500 text-[10px] font-bold mt-1">{couponError}</p>}
+                    {couponError && <p className="text-red-500 text-[10px] font-bold mt-1 animate-pulse">{couponError}</p>}
                     {activeCoupon && <p className="text-green-600 text-[10px] font-bold mt-1">✅ Cupón aplicado: {activeCoupon.code}</p>}
                 </div>
             </div>
 
-            {/* HORARIO DE RECOLECCIÓN */}
             <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm">
                 <h2 className="font-black text-lg mb-2 text-blue-900">🕒 ¿A qué hora pasas?</h2>
                 <p className="text-xs text-blue-700 mb-3 font-medium">Lo tendremos calientito y listo para entregar.</p>
-                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base">
+                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base shadow-sm">
                     {availableTimes.map(t => (
                         <option key={t} value={t}>{t}</option>
                     ))}
@@ -545,24 +553,23 @@ export default function PedirPage() {
 
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100 mb-8">
               <label className="text-zinc-800 font-black text-sm mb-2 block">Notas para la cocina</label>
-              <textarea placeholder="Opcional. Ej. Sin servilletas..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20"/>
+              <textarea placeholder="Opcional. Ej. Sin servilletas, tenedores extra..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
             </div>
 
         </div>
 
-        {/* BARRA DE PAGO INFERIOR */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 p-4 pb-6 z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
             <div className="max-w-lg mx-auto">
-                <div className="flex justify-between items-end mb-3">
+                <div className="flex justify-between items-end mb-3 px-2">
                     <span className="text-zinc-500 font-bold text-sm">Total a Pagar</span>
                     <span className="text-3xl font-black text-zinc-900">${totalNeto.toFixed(2)}</span>
                 </div>
                 <button 
                     onClick={handleCheckoutMP} 
                     disabled={cart.length === 0 || isLoadingPayment}
-                    className="w-full flex items-center justify-center gap-2 bg-[#009ee3] text-white font-black py-4 rounded-xl text-base transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300"
+                    className="w-full flex items-center justify-center gap-2 bg-[#009ee3] hover:bg-[#008cc9] text-white font-black py-4 rounded-xl text-base transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300 shadow-md"
                 >
-                    {isLoadingPayment ? 'Conectando...' : 'Pagar con Mercado Pago'}
+                    {isLoadingPayment ? 'Conectando...' : '💳 Pagar con Mercado Pago'}
                 </button>
             </div>
         </div>
@@ -586,7 +593,6 @@ export default function PedirPage() {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
       
-      {/* HEADER STICKY CON NAVEGACIÓN */}
       <header className="bg-white/80 backdrop-blur-xl border-b border-zinc-200 sticky top-0 z-30 pt-safe">
         <div className="p-4 flex justify-between items-center max-w-2xl mx-auto">
             <div>
@@ -594,7 +600,6 @@ export default function PedirPage() {
                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">⚡ Pick To Go</p>
             </div>
         </div>
-        {/* Píldoras de Categoría Nav */}
         <div className="flex gap-2 overflow-x-auto px-4 pb-4 scrollbar-hide max-w-2xl mx-auto">
             <a href="#combos" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">📦 Combos</a>
             <a href="#esquites" className="bg-zinc-100 text-zinc-800 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap active:bg-zinc-200 transition-colors">🌽 Esquites</a>
@@ -602,10 +607,8 @@ export default function PedirPage() {
         </div>
       </header>
 
-      {/* CONTENIDO DEL MENÚ */}
       <div className="max-w-2xl mx-auto px-4 space-y-10 pt-6">
         
-        {/* SECCIÓN COMBOS */}
         <section id="combos" className="scroll-mt-32">
           <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">📦 Combos</h2>
           <div className="flex flex-col gap-4">
@@ -629,7 +632,6 @@ export default function PedirPage() {
           </div>
         </section>
 
-        {/* SECCIÓN ESQUITES Y ESPECIALIDADES */}
         <section id="esquites" className="scroll-mt-32">
           <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">🌽 Esquites y Especiales</h2>
           <div className="flex flex-col gap-4">
@@ -653,7 +655,6 @@ export default function PedirPage() {
           </div>
         </section>
 
-        {/* SECCIÓN BEBIDAS Y OTROS */}
         <section id="bebidas" className="scroll-mt-32">
           <h2 className="text-xl font-black mb-4 text-zinc-800 flex items-center gap-2">🥤 Bebidas y Antojos</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -668,10 +669,8 @@ export default function PedirPage() {
         </section>
       </div>
 
-      {/* WIZARD MODAL (Estilo Bottom Sheet) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
-          {/* Backdrop click to close */}
           <div className="flex-1 w-full" onClick={() => setActiveProduct(null)}></div>
           
           <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[85vh] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-8">
@@ -706,7 +705,7 @@ export default function PedirPage() {
                         {sec.m.map((mod:any) => {
                             const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
                             return (
-                                <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                                <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900 shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-yellow-200'}`}>
                                     <span className="line-clamp-2 pr-2">{mod.name}</span>
                                     {isSelected && <span>✓</span>}
                                 </button>
@@ -722,7 +721,7 @@ export default function PedirPage() {
                       {chiles.map((mod:any) => {
                           const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
                           return (
-                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-green-200'}`}>
                                   <span className="line-clamp-2 pr-2">{mod.name}</span>
                                   {isSelected && <span>✓</span>}
                               </button>
@@ -737,7 +736,7 @@ export default function PedirPage() {
                       {restricciones.map((mod:any) => {
                           const isSelected = (wizardData[wizardStep] || []).find((m:any) => m.id === mod.id);
                           return (
-                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                              <button key={mod.id} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-red-200'}`}>
                                   <span className="line-clamp-2 pr-2">{mod.name}</span>
                                   {isSelected && <span>✓</span>}
                               </button>
@@ -772,7 +771,7 @@ export default function PedirPage() {
                                         setWizardData({...wizardData, [wizardStep]: [opt]});
                                     }
                                 }} 
-                                className={`p-4 rounded-xl border text-sm font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+                                className={`p-4 rounded-xl border text-sm font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300'}`}
                             >
                                 {opt}
                                 {isSelected && <span>✓</span>}
@@ -783,13 +782,13 @@ export default function PedirPage() {
               )}
             </div>
 
-            <div className="p-4 border-t border-zinc-100 bg-white sticky bottom-0 flex gap-3 z-10">
+            <div className="p-4 border-t border-zinc-100 bg-white sticky bottom-0 flex gap-3 z-10 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
               {wizardStep > 0 && (
-                <button onClick={() => setWizardStep(prev => prev - 1)} className="bg-zinc-100 text-zinc-600 w-14 rounded-xl font-black text-xl flex items-center justify-center">
+                <button onClick={() => setWizardStep(prev => prev - 1)} className="bg-zinc-100 text-zinc-600 w-14 rounded-xl font-black text-xl flex items-center justify-center hover:bg-zinc-200">
                   ←
                 </button>
               )}
-              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98]">
+              <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep].type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
                 {(() => {
                     const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
                     const stepDef = getProductSteps(activeProduct)[wizardStep];
@@ -821,14 +820,14 @@ export default function PedirPage() {
             {isCartOpen ? (
                 <div className="fixed inset-0 bg-zinc-900/60 z-40 flex flex-col justify-end animate-in fade-in duration-200">
                     <div className="flex-1 w-full" onClick={() => setIsCartOpen(false)}></div>
-                    <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[80vh] animate-in slide-in-from-bottom-8">
+                    <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[80vh] animate-in slide-in-from-bottom-8 shadow-[0_-20px_50px_rgba(0,0,0,0.1)]">
                         <div className="p-5 border-b border-zinc-100 flex justify-between items-center">
                             <h2 className="text-lg font-black text-zinc-900">Tu Carrito</h2>
-                            <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 font-bold">Ocultar ↓</button>
+                            <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 font-bold bg-zinc-100 px-3 py-1 rounded-full text-xs">Ocultar ↓</button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
                             {cart.map(item => (
-                                <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative">
+                                <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
                                         <p className="font-black text-zinc-900 text-sm leading-tight">{item.name}</p>
                                         <p className="font-black text-zinc-900 text-sm">${item.totalPrice.toFixed(2)}</p>
@@ -843,7 +842,7 @@ export default function PedirPage() {
                                 <span className="text-zinc-500 font-bold text-sm">Subtotal:</span>
                                 <span className="text-xl font-black text-zinc-900">${getTotal().toFixed(2)}</span>
                             </div>
-                            <button onClick={() => { setIsCartOpen(false); setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="w-full bg-zinc-900 text-white py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98]">
+                            <button onClick={() => { setIsCartOpen(false); setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="w-full bg-zinc-900 text-white py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98] shadow-md">
                                 Finalizar Pedido
                             </button>
                         </div>
@@ -852,11 +851,11 @@ export default function PedirPage() {
             ) : (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-zinc-200 z-30 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
                     <div className="max-w-2xl mx-auto flex gap-3">
-                        <button onClick={() => setIsCartOpen(true)} className="bg-zinc-100 border border-zinc-200 text-zinc-900 px-6 py-4 rounded-xl font-black flex items-center justify-center gap-2 active:bg-zinc-200">
+                        <button onClick={() => setIsCartOpen(true)} className="bg-zinc-100 border border-zinc-200 text-zinc-900 px-6 py-4 rounded-xl font-black flex items-center justify-center gap-2 active:bg-zinc-200 transition-colors">
                             <span>🛒</span>
-                            <span>{cart.length}</span>
+                            <span className="bg-zinc-900 text-white text-[10px] px-2 py-0.5 rounded-full">{cart.length}</span>
                         </button>
-                        <button onClick={() => { setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98] flex justify-between items-center px-6">
+                        <button onClick={() => { setAppState('CHECKOUT'); window.scrollTo(0,0); }} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-base transition-transform active:scale-[0.98] flex justify-between items-center px-6 shadow-sm">
                             <span>Pagar</span>
                             <span>${getTotal().toFixed(2)}</span>
                         </button>
