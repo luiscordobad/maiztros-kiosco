@@ -376,7 +376,7 @@ export default function PedirPage() {
       setAppState('MENU'); 
   };
 
-  // 🌟 GENERAR LINK DE PAGO (MERCADO PAGO BRICKS)
+// 🌟 GENERAR LINK DE PAGO Y RENDERIZAR BRICK EN LA PÁGINA
   const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
         return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y Correo para enviarte tu recibo.");
@@ -398,7 +398,9 @@ export default function PedirPage() {
           customerName, 
           customerEmail, 
           customerPhone, 
-          orderType: 'PICK_TO_GO', 
+          orderType: 'TAKEOUT', // Prisma feliz
+          isPickToGo: true, // Bandera para que la API sepa que es web y cobre con MP
+          paymentMethod: 'TERMINAL',
           pickupTime: selectedTime,
           orderNotes 
         })
@@ -406,9 +408,12 @@ export default function PedirPage() {
       const data = await response.json();
       
       if (response.ok && data.preferenceId) {
+          // Al asignar esto, el botón azul "Proceder al pago" desaparecerá
+          // y en su lugar aparecerá mágicamente el módulo de Mercado Pago "Wallet Brick"
           setPreferenceId(data.preferenceId);
       } else {
-          alert("Hubo un problema generando el link de pago.");
+          alert("Hubo un problema generando el link de pago. Revisa la consola.");
+          console.error(data.error);
       }
     } catch (error) { 
         alert("Error al procesar el pedido."); 
