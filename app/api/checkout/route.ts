@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
-// Leemos el Access Token desde Vercel por seguridad
 const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN || '' });
 
 export async function POST(request: Request) {
@@ -12,11 +11,10 @@ export async function POST(request: Request) {
     const data = await request.json();
     const turnNumber = 'M' + Math.floor(100 + Math.random() * 900).toString();
     
-    // Prisma solo acepta TAKEOUT o DINE_IN
     const safeOrderType = data.isPickToGo ? 'TAKEOUT' : (data.orderType || 'DINE_IN');
     const initialStatus = data.isPickToGo ? 'AWAITING_PAYMENT' : (data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT');
 
-    // 🛡️ TRUCO MAESTRO: Guardamos el correo y la hora en las notas de la orden
+    // 🛡️ TODO SE GUARDA EN LAS NOTAS PARA NO ROMPER LA BASE DE DATOS
     const extraInfo = [
       data.pickupTime ? `⏰ RECOGE: ${data.pickupTime}` : null,
       data.customerEmail ? `📧 CORREO: ${data.customerEmail}` : null,
@@ -34,7 +32,7 @@ export async function POST(request: Request) {
           orderType: safeOrderType,
           paymentMethod: data.paymentMethod,
           items: JSON.stringify(data.cart || []), 
-          orderNotes: extraInfo, // <--- Aquí va todo el paquete
+          orderNotes: extraInfo, 
           totalAmount: data.totalAmount, 
           pointsDiscount: data.pointsDiscount || 0, 
           couponCode: data.couponCode || null,
@@ -44,11 +42,9 @@ export async function POST(request: Request) {
         }
       });
 
-      // Actualizar puntos de cliente
       if (data.customerPhone && data.customerPhone.length === 10) {
          const earnedPoints = data.totalAmount; 
          const pointsToDeduct = data.pointsDeducted || 0; 
-         
          await tx.customer.upsert({
            where: { phone: data.customerPhone },
            update: { name: data.customerName, points: { increment: earnedPoints - pointsToDeduct } },
@@ -56,7 +52,6 @@ export async function POST(request: Request) {
          });
       }
 
-      // Descontar Inventario
       const inventoryUpdates: Record<string, number> = {};
       const addDeduction = (name: string, qty: number) => { if (!name) return; inventoryUpdates[name] = (inventoryUpdates[name] || 0) + qty; };
 
@@ -69,7 +64,6 @@ export async function POST(request: Request) {
                   if (note.includes('Sabor de Maruchan:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Tu Sabor:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Tu Bebida:') || note.includes('Bebida 1:') || note.includes('Bebida 2:') || note.includes('Bebida 3:') || note.includes('Bebida 4:')) addDeduction(note.split(': ')[1].trim(), 1);
-                  if (note.includes('Sabor de Boing:') || note.includes('Sabor de Refresco:')) addDeduction(note.split(': ')[1].trim(), 1);
               });
           }
           if (pName === item.notes && (item.product.category === 'BEBIDA' || item.product.category === 'PAPA_SOLA')) addDeduction(pName, 1);
@@ -96,10 +90,8 @@ export async function POST(request: Request) {
       return newOrder;
     });
 
-    // 🌟 MANDAMOS A COBRAR A MERCADO PAGO
     if (data.isPickToGo) {
-        if (!process.env.MP_ACCESS_TOKEN) throw new Error("Falta el Access Token de Mercado Pago en Vercel");
-
+        if (!process.env.MP_ACCESS_TOKEN) throw new Error("Falta el Token");
         const preference = new Preference(client);
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://maiztros.vercel.app';
         
@@ -126,7 +118,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, turnNumber: order.turnNumber, preferenceId: result.id });
     }
     return NextResponse.json({ success: true, turnNumber: order.turnNumber });
-
   } catch (error: any) {
     console.error("🔥 ERROR EN CHECKOUT:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
