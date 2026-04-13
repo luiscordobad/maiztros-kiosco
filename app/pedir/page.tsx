@@ -8,7 +8,7 @@ import { useCartStore } from '@/store/cart';
 import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
 
 // 🌟 LLAVE PÚBLICA INYECTADA
-initMercadoPago('APP_USR-d7a3927f-3b2a-45bf-bea8-bf3f378feb77', { locale: 'es-MX' });
+initMercadoPago('APP_USR-7d3162e4-fbb5-4810-b3dd-3de18d93fb8f', { locale: 'es-MX' });
 
 const OPCIONES = {
   PAPAS: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes'],
