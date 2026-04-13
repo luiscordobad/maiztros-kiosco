@@ -201,7 +201,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setActiveProduct(product); setWizardStep(0); setWizardData({}); setEditingCartId(null);
   };
 
-  // 🌟 CORRECCIÓN DE EDITAR: Extraemos el ID seguro
   const handleEditCartItem = (item: any) => {
     const safeId = item.id || item.cartId;
     setEditingCartId(safeId);
@@ -211,14 +210,11 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     if(isCartOpen) setIsCartOpen(false);
   };
 
-  // 🌟 CORRECCIÓN DE ELIMINAR: Extraemos el ID seguro y frenamos la propagación
   const handleRemoveFromCart = (e: React.MouseEvent, item: any) => {
       e.preventDefault();
       e.stopPropagation();
       const safeId = item.id || item.cartId;
-      if (safeId) {
-          removeFromCart(safeId);
-      }
+      if (safeId) { removeFromCart(safeId); }
   };
 
   const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
@@ -358,7 +354,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
           cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, 
           pointsDeducted: selectedReward?.pts || 0, customerName, 
           customerEmail, customerPhone, isPickToGo: true, couponCode: activeCoupon?.code || null,
-          paymentMethod: 'TERMINAL', pickupTime: selectedTime, orderNotes 
+          paymentMethod: 'MERCADO_PAGO', pickupTime: selectedTime, orderNotes // 🌟 MARCADO PARA LA CAJA
         })
       });
       const data = await response.json();
@@ -411,7 +407,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // 🌟 VISTA CHECKOUT (PANTALLA FINAL DE PAGO)
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -424,7 +419,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
                 {cart.map((item, index) => (
-                    // 🌟 CORRECCIÓN: Key segura e identificador seguro
                     <div key={item.id || item.cartId || index} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
                         <div className="flex-1 pr-4">
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
@@ -511,7 +505,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             </div>
         </div>
         
-        {/* 🌟 AÑADIDO AL CHECKOUT: Modal del Wizard para que funcione "Editar" en esta pantalla */}
+        {/* 🌟 Modal del Wizard visible en la pantalla de Checkout */}
         {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
             <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
               <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -651,7 +645,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // VISTA MENÚ PRINCIPAL
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
       <header className="bg-white/80 backdrop-blur-xl border-b sticky top-0 z-30 pt-safe">
@@ -743,7 +736,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
+      {/* 🌟 MODAL PERSONALIZAR VISTA MENU */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
@@ -885,7 +878,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
+      {/* CARRITO FLOTANTE VISTA MENU */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -898,7 +891,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
                             {cart.map((item, index) => (
-                                // 🌟 CORRECCIÓN: Key segura
                                 <div key={item.id || item.cartId || index} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
                                         <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name || 'Producto'}</p>
@@ -939,7 +931,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             )}
         </>
       )}
-
     </div>
   );
 }
