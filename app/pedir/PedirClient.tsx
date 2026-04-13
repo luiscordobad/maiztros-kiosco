@@ -201,18 +201,24 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setActiveProduct(product); setWizardStep(0); setWizardData({}); setEditingCartId(null);
   };
 
+  // 🌟 CORRECCIÓN DE EDITAR: Extraemos el ID seguro
   const handleEditCartItem = (item: any) => {
-    setEditingCartId(item.cartId);
+    const safeId = item.id || item.cartId;
+    setEditingCartId(safeId);
     setActiveProduct(item.product);
     setWizardStep(0);
     setWizardData({});
     if(isCartOpen) setIsCartOpen(false);
   };
 
-  // 🌟 AÑADIDO: Función envoltorio para manejar el clic y asegurar que se ejecute la eliminación
-  const handleRemoveFromCart = (e: React.MouseEvent, cartId: string) => {
-      e.stopPropagation(); // Evita que el evento se propague si el contenedor padre tiene onClick
-      removeFromCart(cartId);
+  // 🌟 CORRECCIÓN DE ELIMINAR: Extraemos el ID seguro y frenamos la propagación
+  const handleRemoveFromCart = (e: React.MouseEvent, item: any) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const safeId = item.id || item.cartId;
+      if (safeId) {
+          removeFromCart(safeId);
+      }
   };
 
   const handleToggleModifier = (mod: any, isMultiple: boolean = true, maxLimit: number = 99) => {
@@ -405,6 +411,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
+  // 🌟 VISTA CHECKOUT (PANTALLA FINAL DE PAGO)
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -416,14 +423,15 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         <div className="space-y-6">
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
-                {cart.map((item) => (
-                    <div key={item.cartId} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
+                {cart.map((item, index) => (
+                    // 🌟 CORRECCIÓN: Key segura e identificador seguro
+                    <div key={item.id || item.cartId || index} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
                         <div className="flex-1 pr-4">
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
                             {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
                             <div className="flex gap-3 mt-2">
                                 <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                <button type="button" onClick={(e) => handleRemoveFromCart(e, item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
                             </div>
                         </div>
                         <p className="font-black">${(item.totalPrice || 0).toFixed(2)}</p>
@@ -503,6 +511,126 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             </div>
         </div>
         
+        {/* 🌟 AÑADIDO AL CHECKOUT: Modal del Wizard para que funcione "Editar" en esta pantalla */}
+        {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
+            <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
+              <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
+              <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[85vh] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-8">
+                <div className="p-5 border-b border-zinc-100 flex justify-between items-center sticky top-0 bg-white rounded-t-[2rem] z-10">
+                  <div>
+                    <p className="text-zinc-400 font-bold tracking-widest uppercase text-[10px] mb-1">
+                      {editingCartId ? 'Modificando • ' : ''}Paso {wizardStep + 1} de {getProductSteps(activeProduct).length}
+                    </p>
+                    <h2 className="text-xl font-black text-zinc-900 leading-tight">{getProductSteps(activeProduct)[wizardStep]?.t || ''}</h2>
+                  </div>
+                  <button onClick={() => { setActiveProduct(null); setEditingCartId(null); }} className="w-10 h-10 bg-zinc-100 text-zinc-500 rounded-full flex items-center justify-center font-bold">✕</button>
+                </div>
+                <div className="p-5 overflow-y-auto flex-1 bg-zinc-50 pb-24">
+                  {getProductSteps(activeProduct)[wizardStep]?.type === 'TOPPINGS' ? (
+                    <div className="space-y-8">
+                      {getProductSteps(activeProduct)[wizardStep].firstToppingFree && (
+                          <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3">
+                              <span className="text-2xl">🎁</span>
+                              <p className="text-xs text-yellow-800 font-bold leading-tight">Tu primer topping especial es gratis. Los siguientes tienen costo extra.</p>
+                          </div>
+                      )}
+                      {[ {t: 'Aderezos Extras', m: aderezos, icon: '🧈'}, {t: 'Ponle Queso', m: quesos, icon: '🧀'}, {t: 'Polvito de Papas', m: polvos, icon: '🌶️'} ].map(sec => (
+                        <div key={sec.t}>
+                          <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest mb-3 flex items-center gap-2">{sec.icon} {sec.t}</h3>
+                          <div className="grid grid-cols-2 gap-3">
+                            {sec.m.map((mod:any) => {
+                                const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
+                                return (
+                                    <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-yellow-400 border-yellow-400 text-zinc-900 shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-yellow-200'}`}>
+                                        <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                        {isSelected && <span>✓</span>}
+                                    </button>
+                                );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      <div className="border-t border-zinc-200 pt-6">
+                        <h3 className="text-sm font-black text-green-600 uppercase tracking-widest mb-3">🔥 Barra Libre (Gratis)</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          {chiles.map((mod:any) => {
+                              const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
+                              return (
+                                  <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-green-200'}`}>
+                                      <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                      {isSelected && <span>✓</span>}
+                                  </button>
+                              );
+                          })}
+                        </div>
+                      </div>
+                      <div className="border-t border-zinc-200 pt-6">
+                        <h3 className="text-sm font-black text-red-500 uppercase tracking-widest mb-3">🚫 Sin...</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          {restricciones.map((mod:any) => {
+                              const isSelected = (wizardData[wizardStep] || []).find((m:any) => m?.id === mod?.id);
+                              return (
+                                  <button key={mod.id || Math.random()} onClick={() => handleToggleModifier(mod, true)} className={`p-4 rounded-xl border text-xs font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-red-500 border-red-500 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-600 hover:border-red-200'}`}>
+                                      <span className="line-clamp-2 pr-2">{mod.name}</span>
+                                      {isSelected && <span>✓</span>}
+                                  </button>
+                              );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {(OPCIONES as any)[getProductSteps(activeProduct)[wizardStep]?.type || '']
+                        ?.filter((opt: string) => {
+                           if (getProductSteps(activeProduct)[wizardStep]?.type === 'PAPAS_MARUCHAN') {
+                              const baseChoice = wizardData[0]?.[0];
+                              if (baseChoice === 'Construpapas') return OPCIONES.PAPAS.includes(opt) && isOptionAvailable(opt);
+                              if (baseChoice === 'Obra Maestra') return OPCIONES.MARUCHAN.includes(opt) && isOptionAvailable(opt);
+                           }
+                           return isOptionAvailable(opt);
+                        })
+                        ?.map((opt: string) => {
+                            const stepDef = getProductSteps(activeProduct)[wizardStep];
+                            const isMultiple = stepDef?.max && stepDef.max > 1;
+                            const isSelected = (wizardData[wizardStep] || []).includes(opt);
+                            return (
+                                <button key={opt} onClick={() => { if(isMultiple) { handleToggleModifier(opt, true, stepDef.max); } else { setWizardData({...wizardData, [wizardStep]: [opt]}); } }} className={`p-4 rounded-xl border text-sm font-black transition-all text-left flex justify-between items-center ${isSelected ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300'}`}>
+                                    {opt}
+                                    {isSelected && <span>✓</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 border-t border-zinc-100 bg-white sticky bottom-0 flex gap-3 z-10 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
+                  {wizardStep > 0 && <button onClick={() => setWizardStep(prev => prev - 1)} className="bg-zinc-100 text-zinc-600 w-14 rounded-xl font-black text-xl flex items-center justify-center hover:bg-zinc-200">←</button>}
+                  <button onClick={handleNextOrFinish} disabled={getProductSteps(activeProduct)[wizardStep]?.type !== 'TOPPINGS' && !(wizardData[wizardStep] && wizardData[wizardStep].length > 0)} className="flex-1 bg-yellow-400 text-zinc-900 py-4 rounded-xl font-black text-sm uppercase disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm">
+                    {(() => {
+                        const isLastStep = wizardStep === getProductSteps(activeProduct).length - 1;
+                        const currentStepDef = getProductSteps(activeProduct)[wizardStep];
+                        let extraLabel = "";
+                        if (currentStepDef && currentStepDef.type === 'TOPPINGS') {
+                            const currentSelections = wizardData[wizardStep] || [];
+                            const paidCount = currentSelections.filter((s:any) => s?.type === 'QUESO' || s?.type === 'ADEREZO' || s?.type === 'POLVO').length;
+                            let baseCount = paidCount;
+                            if (currentStepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
+                            if (!currentStepDef.isFree) {
+                              if (baseCount === 1) extraLabel = " (+$15)";
+                              if (baseCount === 2) extraLabel = " (+$25)";
+                              if (baseCount >= 3) extraLabel = " (+$35)";
+                            }
+                        }
+                        return isLastStep ? `${editingCartId ? 'Guardar' : 'Agregar'}${extraLabel}` : `Siguiente${extraLabel}`;
+                    })()}
+                  </button>
+                </div>
+              </div>
+            </div>
+        )}
+
+        {/* Modal de Privacidad */}
         {showPrivacy && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
@@ -523,6 +651,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
+  // VISTA MENÚ PRINCIPAL
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
       <header className="bg-white/80 backdrop-blur-xl border-b sticky top-0 z-30 pt-safe">
@@ -614,8 +743,9 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
+      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
-        <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-[60] animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => { setActiveProduct(null); setEditingCartId(null); }}></div>
           
           <div className="bg-white w-full max-w-2xl mx-auto rounded-t-[2rem] flex flex-col max-h-[85vh] shadow-[0_-20px_50px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-8">
@@ -755,6 +885,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
+      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -766,8 +897,9 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                             <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 font-bold bg-zinc-100 px-3 py-1 rounded-full text-xs">Ocultar ↓</button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
-                            {cart.map(item => (
-                                <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
+                            {cart.map((item, index) => (
+                                // 🌟 CORRECCIÓN: Key segura
+                                <div key={item.id || item.cartId || index} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
                                         <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name || 'Producto'}</p>
                                         <p className="font-black text-zinc-900 text-sm">${(item.totalPrice || 0).toFixed(2)}</p>
@@ -775,7 +907,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                                     {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes.split(' | ').join(', ')}</p>}
                                     <div className="flex gap-3 mt-3">
                                         <button type="button" onClick={() => handleEditCartItem(item)} className="text-blue-500 text-xs font-bold bg-blue-50 px-3 py-1 rounded-md">Editar</button>
-                                        <button type="button" onClick={(e) => handleRemoveFromCart(e, item.cartId)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
+                                        <button type="button" onClick={(e) => handleRemoveFromCart(e, item)} className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1 rounded-md">Eliminar</button>
                                     </div>
                                 </div>
                             ))}
