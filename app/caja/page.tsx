@@ -349,11 +349,8 @@ export default function MonitorCaja() {
                   const isPickToGo = order.orderType === 'PICK_TO_GO';
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
 
-                  // 🌟 EXTRAEMOS LA HORA DE PICK TO GO Y LA OCULTAMOS DE LAS NOTAS ORIGINALES
-                  let pickupTime = 'Pronto';
-                  if (order.orderNotes && order.orderNotes.includes('⏰ PICK TO GO - PASA A LAS:')) {
-                      pickupTime = order.orderNotes.split(' | ')[0].replace('⏰ PICK TO GO - PASA A LAS:', '').trim();
-                  }
+                  // 🌟 EXTRAEMOS LA HORA DIRECTAMENTE DE LA COLUMNA DE LA BD
+                  const pickupTime = order.pickupTime || 'Pronto';
                   
                   return (
                     <div key={order.id} className={`bg-zinc-900 p-6 rounded-[2rem] border-2 shadow-xl flex flex-col justify-between h-auto min-h-[16rem] transition-colors ${
