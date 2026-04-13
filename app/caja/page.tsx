@@ -54,7 +54,7 @@ export default function MonitorCaja() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-         // 🌟 LÓGICA ACTUALIZADA: Atrapamos las órdenes en Caja y las Web (PickToGo y Takeout)
+         // 🌟 ATENEMOS AWAITING_PAYMENT, TAKEOUT Y PICK_TO_GO
          const validOrders = data.orders.filter((o: any) => 
             o.status === 'AWAITING_PAYMENT' || 
             (o.status === 'PENDING' && o.orderType === 'PICK_TO_GO') || 
@@ -106,8 +106,16 @@ export default function MonitorCaja() {
   // ==========================================
   const handleCloseShift = async () => {
     if (!reportedCash) return;
+    
+    // 1. Cerramos el turno en la Base de Datos
     await fetch('/api/shift', { method: 'PATCH', body: JSON.stringify({ shiftId: activeShift.id, reportedCash }) });
-    setShowCloseModal(false); setReportedCash(''); checkShift();
+    
+    // 2. Limpiamos la pantalla
+    setShowCloseModal(false); 
+    setReportedCash(''); 
+    checkShift();
+
+    // 3. Disparamos el correo automático a Luis de forma asíncrona (Silencioso)
     fetch('/api/send-report?type=daily').catch(() => {});
   };
 
@@ -135,13 +143,12 @@ export default function MonitorCaja() {
     fetchCashOrders(); 
   };
 
-  // 🌟 NUEVA LÓGICA: Mandar directo al KDS sin cobrar (porque ya está pagado en web)
+  // 🌟 GATILLO PARA KDS DE LOS PICK TO GO (Evita cobrar otra vez)
   const sendToKDS = async (orderId: string) => {
       if (!window.confirm('¿Mandar este pedido a la pantalla de cocina (KDS) ahora?')) return;
       await fetch('/api/orders', { 
           method: 'PATCH', 
           headers: { 'Content-Type': 'application/json' }, 
-          // 'PREPARING' es el estado que el KDS escucha
           body: JSON.stringify({ orderId, newStatus: 'PREPARING' }) 
       });
       fetchCashOrders();
@@ -164,8 +171,9 @@ export default function MonitorCaja() {
       const newQty = (item.quantity || 1) + delta;
 
       if (newQty <= 0) {
-          if (window.confirm('¿Eliminar este producto de la orden?')) newItems.splice(index, 1);
-          else return;
+          if (window.confirm('¿Eliminar este producto de la orden?')) {
+              newItems.splice(index, 1);
+          } else return;
       } else {
           newItems[index] = { ...item, quantity: newQty, totalPrice: unitPrice * newQty };
       }
@@ -186,7 +194,7 @@ export default function MonitorCaja() {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
             orderId: selectedOrder.id, 
-            newStatus: 'PAID', // Al marcar PAID, el KDS lo atrapa automáticamente
+            newStatus: 'PAID',
             updatedItems: selectedOrder.items, 
             newTotal: selectedOrder.totalAmount 
         }) 
@@ -202,7 +210,10 @@ export default function MonitorCaja() {
         await fetch('/api/orders', { 
             method: 'PATCH', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ orderId: selectedOrder.id, newStatus: 'REFUNDED' }) 
+            body: JSON.stringify({ 
+                orderId: selectedOrder.id, 
+                newStatus: 'REFUNDED' 
+            }) 
         });
         setSelectedOrder(null);
         fetchCashOrders();
@@ -230,7 +241,7 @@ export default function MonitorCaja() {
             headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
                 orderId: order.id, 
-                newStatus: 'PAID', // El KDS lo detectará automáticamente
+                newStatus: 'PAID',
                 updatedItems: order.items,
                 newTotal: order.totalAmount
             }) 
@@ -337,6 +348,12 @@ export default function MonitorCaja() {
               {pendingCash.map(order => {
                   const isPickToGo = order.orderType === 'PICK_TO_GO';
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
+
+                  // 🌟 EXTRAEMOS LA HORA DE PICK TO GO Y LA OCULTAMOS DE LAS NOTAS ORIGINALES
+                  let pickupTime = 'Pronto';
+                  if (order.orderNotes && order.orderNotes.includes('⏰ PICK TO GO - PASA A LAS:')) {
+                      pickupTime = order.orderNotes.split(' | ')[0].replace('⏰ PICK TO GO - PASA A LAS:', '').trim();
+                  }
                   
                   return (
                     <div key={order.id} className={`bg-zinc-900 p-6 rounded-[2rem] border-2 shadow-xl flex flex-col justify-between h-auto min-h-[16rem] transition-colors ${
@@ -363,7 +380,7 @@ export default function MonitorCaja() {
                                     <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
                                     <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest">
-                                        ⏰ RECOGE A LAS {order.pickupTime || 'Pronto'}
+                                        ⏰ RECOGE A LAS {pickupTime}
                                     </div>
                                 </>
                             ) : (
@@ -378,7 +395,6 @@ export default function MonitorCaja() {
                       
                       <div className="mt-6 flex flex-col gap-2">
                           {isPickToGo ? (
-                              // 🌟 BOTÓN MÁGICO QUE MANDA LA ORDEN AL KDS
                               <button onClick={() => sendToKDS(order.id)} className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
                                   🍳 Mandar a Cocina
                               </button>
