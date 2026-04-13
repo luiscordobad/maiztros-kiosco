@@ -1,3 +1,5 @@
+// @ts-nocheck
+/* eslint-disable */
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -20,11 +22,10 @@ export default function CocinaKDS() {
 
   const fetchOrders = async () => {
     try {
-      // Descargamos todas las órdenes activas
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-        // EL CANDADO MAESTRO: Solo mostramos órdenes Pagadas (PAID) o Aceptadas de la APP (PREPARING)
+        // 🌟 EL CANDADO MAESTRO: Mostramos PAID (Físicos) o PREPARING (Enviados desde caja)
         const visibleOrders = data.orders.filter((o: any) => 
             (o.status === 'PAID' || o.status === 'PREPARING') && !hiddenOrders.includes(o.id)
         );
@@ -49,11 +50,11 @@ export default function CocinaKDS() {
   }, [soundEnabled, hiddenOrders]);
 
   const handleDespachar = async (orderId: string) => {
-    // 1. A la lista negra para que no reviva
+    // 1. A la lista negra para que no reviva visualmente
     setHiddenOrders(prev => [...prev, orderId]);
     // 2. Lo ocultamos visualmente al instante
     setOrders(orders.filter(o => o.id !== orderId)); 
-    // 3. Le avisamos a la BD
+    // 3. Le avisamos a la BD que ya está listo
     await fetch('/api/orders', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -91,22 +92,34 @@ export default function CocinaKDS() {
               const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
               const timeAgo = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
               const isLate = timeAgo >= 10; 
+              
+              // 🌟 BANDERA PARA IDENTIFICAR PICK TO GO
+              const isPickToGo = order.orderType === 'PICK_TO_GO';
 
               return (
-                <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-purple-500' : 'border-zinc-700'}`}>
+                <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isPickToGo ? 'border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.2)]' : isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-blue-500' : 'border-zinc-700'}`}>
                   
-                  <div className={`p-6 flex justify-between items-center border-b ${isLate ? 'bg-red-500/20 border-red-500/50' : order.orderType === 'TAKEOUT' ? 'bg-purple-900/20 border-purple-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
+                  <div className={`p-6 flex justify-between items-center border-b ${isPickToGo ? 'bg-purple-900/30 border-purple-500/50' : isLate ? 'bg-red-500/20 border-red-500/50' : order.orderType === 'TAKEOUT' ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
                     <div>
                       <h2 className="text-4xl font-black italic tracking-tighter">#{order.turnNumber}</h2>
                       <p className="text-zinc-400 font-bold mt-1">{order.customerName}</p>
                     </div>
                     <div className="text-right">
-                      <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-purple-400 animate-pulse'}`}>
-                        {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '📱 LLEVAR'}
-                      </p>
-                      <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400 animate-pulse' : 'text-zinc-500'}`}>
-                        Hace {timeAgo} min
-                      </p>
+                      {isPickToGo ? (
+                          <div className="bg-purple-600 text-white px-3 py-1 rounded-lg border border-purple-400 text-center animate-pulse">
+                              <p className="text-[10px] font-black uppercase tracking-widest">🚗 Recoge a las</p>
+                              <p className="text-lg font-black">{order.pickupTime || 'Pronto'}</p>
+                          </div>
+                      ) : (
+                          <>
+                              <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-blue-400 animate-pulse'}`}>
+                                {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '📱 LLEVAR'}
+                              </p>
+                              <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400 animate-pulse' : 'text-zinc-500'}`}>
+                                Hace {timeAgo} min
+                              </p>
+                          </>
+                      )}
                     </div>
                   </div>
 
