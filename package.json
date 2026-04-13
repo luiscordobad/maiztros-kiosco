@@ -20,6 +20,8 @@
     "react-dom": "^18.2.0",
     "resend": "^3.2.0",
     "recharts": "^2.12.0",
+    "mercadopago": "^2.0.9",               // <-- AGREGA ESTA LÍNEA (No olvides la coma al final)
+    "@mercadopago/sdk-react": "^0.1.4"     // <-- Y AGREGA ESTA LÍNEA
     "zustand": "^4.5.0"
   },
   "devDependencies": {
