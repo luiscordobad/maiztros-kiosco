@@ -9,13 +9,15 @@ export async function POST(request: Request) {
   try {
     const data = await request.json();
     
-    // Calculamos el turno (M + 3 dígitos)
     const turnNumber = 'M' + Math.floor(100 + Math.random() * 900).toString();
     
-    // Si es "Pick To Go" online, forzamos que inicie en AWAITING_PAYMENT hasta que MP avise.
-    // Si es en el kiosco físico y elige "Terminal", lo mandamos como PAID (porque ya la terminal de la sucursal lo aprobó).
     const isOnlinePayment = data.orderType === 'PICK_TO_GO' && data.paymentMethod === 'TERMINAL';
     const initialStatus = isOnlinePayment ? 'AWAITING_PAYMENT' : (data.paymentMethod === 'TERMINAL' ? 'PAID' : 'AWAITING_PAYMENT');
+
+    // 🌟 TRUCO MAESTRO: Guardamos la hora en las notas para no romper la base de datos
+    const finalOrderNotes = data.pickupTime 
+      ? `⏰ PICK TO GO - PASA A LAS: ${data.pickupTime} | ${data.orderNotes || ''}`
+      : (data.orderNotes || '');
 
     const order = await prisma.$transaction(async (tx) => {
       const activeShift = await tx.shift.findFirst({ where: { status: 'OPEN' } });
@@ -26,15 +28,14 @@ export async function POST(request: Request) {
           customerName: data.customerName || 'Cliente',
           customerPhone: data.customerPhone || null,
           customerEmail: data.customerEmail || null,
-          orderType: data.orderType || 'DINE_IN',
+          orderType: data.orderType || 'DINE_IN', // Se guarda como TICK_TO_GO en caso de web
           paymentMethod: data.paymentMethod,
-          items: JSON.stringify(data.cart || []), // Aseguramos formato JSON string
-          orderNotes: data.orderNotes || '',
+          items: JSON.stringify(data.cart || []), 
+          orderNotes: finalOrderNotes, // <--- La hora viaja segura aquí
           totalAmount: data.totalAmount, 
           pointsDiscount: data.pointsDiscount || 0, 
           couponCode: data.couponCode || null,
           tipAmount: data.tipAmount || 0,
-          pickupTime: data.pickupTime || null, // 🌟 Agregado para Pick to Go
           status: initialStatus,
           shiftId: activeShift?.id || null 
         }
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
               notesArray.forEach((note: string) => {
                   if (note.includes('Bolsa de Papas:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Sabor de Maruchan:')) addDeduction(note.split(': ')[1].trim(), 1);
-                  if (note.includes('Tu Sabor:')) addDeduction(note.split(': ')[1].trim(), 1); // Combo Especialista
+                  if (note.includes('Tu Sabor:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Tu Bebida:') || note.includes('Bebida 1:') || note.includes('Bebida 2:') || note.includes('Bebida 3:') || note.includes('Bebida 4:')) addDeduction(note.split(': ')[1].trim(), 1);
                   if (note.includes('Sabor de Boing:') || note.includes('Sabor de Refresco:')) addDeduction(note.split(': ')[1].trim(), 1);
               });
@@ -147,7 +148,6 @@ export async function POST(request: Request) {
             }
         });
 
-        // Retornamos el success con el ID de preferencia para abrir el Widget en la Web
         return NextResponse.json({ 
             success: true, 
             orderId: order.id, 
@@ -156,7 +156,6 @@ export async function POST(request: Request) {
         });
     }
 
-    // Retorno normal para Kiosco Físico o Pago en Efectivo
     return NextResponse.json({ success: true, orderId: order.id, turnNumber });
 
   } catch (error: any) {
