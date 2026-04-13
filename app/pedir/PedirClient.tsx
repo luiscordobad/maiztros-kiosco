@@ -23,26 +23,26 @@ const REWARDS = [
   { id: 'tier3', pts: 1000, minSpend: 400, discount: 80, label: 'Bono de $80 MXN' }
 ];
 
-export default function PedirClient({ products = [], modifiers = [] }: { products: any[], modifiers: any[] }) {
+export default function PedirClient({ products, modifiers }: { products: any[], modifiers: any[] }) {
   const { cart, addToCart, removeFromCart, getTotal } = useCartStore();
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
   useEffect(() => {
       fetch('/api/admin?action=kiosco_sync')
         .then(res => res.json())
-        .then(data => { if(data?.success) setInventoryItems(data.inventoryItems || []); })
+        .then(data => { if(data.success) setInventoryItems(data.inventoryItems || []); })
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  const visibleProducts = (products || [])
-    .filter(p => p?.name && !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
-    .sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
+  const visibleProducts = products
+    .filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
+    .sort((a, b) => a.basePrice - b.basePrice);
 
-  const polvos = (modifiers || []).filter(m => m?.type === 'POLVO' && m?.isAvailable);
-  const aderezos = (modifiers || []).filter(m => m?.type === 'ADEREZO' && m?.isAvailable);
-  const quesos = (modifiers || []).filter(m => m?.type === 'QUESO' && m?.isAvailable);
-  const restricciones = (modifiers || []).filter(m => m?.type === 'RESTRICCION' && m?.isAvailable);
-  const chiles = (modifiers || []).filter(m => m?.type === 'CHILE' && m?.isAvailable);
+  const polvos = modifiers.filter(m => m.type === 'POLVO' && m.isAvailable);
+  const aderezos = modifiers.filter(m => m.type === 'ADEREZO' && m.isAvailable);
+  const quesos = modifiers.filter(m => m.type === 'QUESO' && m.isAvailable);
+  const restricciones = modifiers.filter(m => m.type === 'RESTRICCION' && m.isAvailable);
+  const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
 
   const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -109,14 +109,14 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
       fetch(`/api/customer?phone=${customerPhone}`)
         .then(res => res.json())
         .then(data => {
-          if (data?.success) {
-            setLoyaltyPoints(data.points || 0);
+          if (data.success) {
+            setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
             if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else { setLoyaltyPoints(0); setIsNewCustomer(true); }
           setIsCheckingPoints(false);
-        }).catch(() => setIsCheckingPoints(false));
+        });
     }
   }, [customerPhone]);
 
@@ -130,6 +130,13 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
       setAppState('SUCCESS');
       window.history.replaceState(null, '', window.location.pathname);
       
+      // 🌟 AVISAMOS A LA BD QUE EL PAGO FUE EXITOSO (Cambia a PAID)
+      fetch('/api/orders', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, newStatus: 'PAID' })
+      }).catch(() => {});
+
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
       fetch('/api/send-ticket', {
           method: 'POST',
@@ -247,21 +254,16 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     setActiveProduct(null);
   };
 
-  // 🌟 LÓGICA DE CARRITO Y CHECKOUT ACTUALIZADA
   useEffect(() => {
     if (activeCoupon && activeCoupon.minAmount > 0 && subtotal < activeCoupon.minAmount) {
       setActiveCoupon(null); setCouponError(`Mínimo de compra de $${activeCoupon.minAmount}`);
     }
     if (selectedReward && subtotal < selectedReward.minSpend) { setSelectedReward(null); }
     
-    // 🌟 EXTRA UX: Si el carrito se queda vacío, oculta modales y saca al usuario del checkout
     if (cart.length === 0) {
         setIsCartOpen(false);
-        if (appState === 'CHECKOUT') {
-            setAppState('MENU');
-        }
+        if (appState === 'CHECKOUT') setAppState('MENU');
     }
-    
     setPreferenceId(null);
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
@@ -364,7 +366,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // VISTA ÉXITO
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
@@ -380,7 +381,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     );
   }
 
-  // VISTA CHECKOUT
   if (appState === 'CHECKOUT') {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 pb-40 p-4 max-w-lg mx-auto">
@@ -393,12 +393,12 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border">
                 <h2 className="font-black text-lg mb-4">Tu Carrito</h2>
                 {cart.map((item) => (
-                    // 🌟 CORRECCIÓN: Ahora usa item.cartId para eliminar la preparación exacta correctamente
-                    <div key={item.cartId} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
+                    // 🌟 CORRECCIÓN: Botón de eliminar con item.id para que funcione perfecto
+                    <div key={item.id} className="flex justify-between items-start border-b py-3 last:border-0 border-zinc-100">
                         <div className="flex-1 pr-4">
                             <p className="font-bold text-sm">{item.product?.name || 'Producto'}</p>
                             {item.notes && <p className="text-zinc-500 text-xs mt-1 leading-relaxed">{item.notes.split(' | ').join(', ')}</p>}
-                            <button onClick={() => removeFromCart(item.cartId)} className="text-red-500 text-xs font-bold mt-2">Eliminar</button>
+                            <button onClick={() => removeFromCart(item.id)} className="text-red-500 text-xs font-bold mt-2">Eliminar</button>
                         </div>
                         <p className="font-black">${(item.totalPrice || 0).toFixed(2)}</p>
                     </div>
@@ -419,7 +419,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         <p className="text-yellow-800 text-xs font-bold mb-3">🎁 ¡Gana puntos en esta compra! Únete al club VIP:</p>
                         <div className="flex items-start gap-2 mb-3">
                             <input type="checkbox" id="terms" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-0.5 accent-yellow-500"/>
-                            {/* 🌟 CORRECCIÓN: Botón de privacidad clickable y con cursor de manita */}
+                            {/* 🌟 CORRECCIÓN: Botón Privacidad clickeable con manita */}
                             <label htmlFor="terms" className="text-[10px] text-zinc-600 leading-tight">Acepto la <span className="underline font-bold text-zinc-800 cursor-pointer" onClick={(e) => { e.preventDefault(); setShowPrivacy(true); }}>Privacidad</span></label>
                         </div>
                         <button onClick={handleRegisterInWeb} disabled={isRegistering} className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-black text-xs hover:bg-yellow-300">
@@ -478,7 +478,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             </div>
         </div>
         
-        {/* 🌟 CORRECCIÓN: Renderizamos la Modal de Privacidad aquí para la vista de Checkout */}
+        {/* 🌟 MODAL DE PRIVACIDAD */}
         {showPrivacy && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white p-6 rounded-[2rem] max-w-sm w-full shadow-2xl">
@@ -591,7 +591,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </section>
       </div>
 
-      {/* MODAL PERSONALIZAR (WIZARD MÓVIL BLINDADO) */}
       {activeProduct && getProductSteps(activeProduct)[wizardStep] && (
         <div className="fixed inset-0 bg-zinc-900/60 flex flex-col justify-end z-50 animate-in fade-in duration-200">
           <div className="flex-1 w-full" onClick={() => setActiveProduct(null)}></div>
@@ -733,7 +732,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
         </div>
       )}
 
-      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
@@ -746,14 +744,14 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-zinc-50">
                             {cart.map(item => (
-                                // 🌟 CORRECCIÓN: key={item.cartId} y removeFromCart(item.cartId)
-                                <div key={item.cartId} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
+                                // 🌟 CORRECCIÓN: Botón de eliminar con item.id
+                                <div key={item.id} className="bg-white border border-zinc-200 p-4 rounded-xl relative shadow-sm">
                                     <div className="flex justify-between items-start pr-6 mb-1">
                                         <p className="font-black text-zinc-900 text-sm leading-tight">{item.product?.name || 'Producto'}</p>
                                         <p className="font-black text-zinc-900 text-sm">${(item.totalPrice || 0).toFixed(2)}</p>
                                     </div>
-                                    {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes}</p>}
-                                    <button onClick={() => removeFromCart(item.cartId)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 font-black text-lg leading-none">&times;</button>
+                                    {item.notes && <p className="text-xs text-zinc-500 font-medium leading-snug">{item.notes.split(' | ').join(', ')}</p>}
+                                    <button onClick={() => removeFromCart(item.id)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 font-black text-lg leading-none">&times;</button>
                                 </div>
                             ))}
                         </div>
