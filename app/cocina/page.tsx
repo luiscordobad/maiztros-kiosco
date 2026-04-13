@@ -23,21 +23,15 @@ export default function CocinaKDS() {
       const res = await fetch('/api/orders');
       const data = await res.json();
       if (data.success) {
-        // Filtramos las órdenes que están pagadas o en preparación y que no hayamos despachado manualmente
         const visibleOrders = data.orders.filter((o: any) => 
             (o.status === 'PAID' || o.status === 'PREPARING') && !hiddenOrders.includes(o.id)
         );
         
         setOrders(visibleOrders);
-        
-        if (visibleOrders.length > previousOrderCount.current) {
-          playDing();
-        }
+        if (visibleOrders.length > previousOrderCount.current) playDing();
         previousOrderCount.current = visibleOrders.length;
       }
-    } catch (error) {
-      console.error('Error de red al buscar órdenes');
-    }
+    } catch (error) { console.error('Error de red al buscar órdenes'); }
     setLoading(false);
   };
 
@@ -79,7 +73,6 @@ export default function CocinaKDS() {
           <div className="flex flex-col items-center justify-center mt-32 opacity-50">
             <span className="text-8xl mb-6">🧹</span>
             <h2 className="text-3xl font-bold">Cocina Limpia</h2>
-            <p className="text-xl mt-2">Esperando el siguiente antojo...</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -88,13 +81,20 @@ export default function CocinaKDS() {
               const timeAgo = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
               const isLate = timeAgo >= 10; 
               
-              // 🌟 LÓGICA DE IDENTIFICACIÓN: Revisamos columna pickupTime o el tipo de orden
-              const isPickToGo = order.pickupTime !== null || order.orderType === 'PICK_TO_GO';
-              const pickupTime = order.pickupTime || 'Pronto';
+              // 🌟 DESEMPAQUETAR LAS NOTAS PARA LA COCINA
+              const isPickToGo = order.orderNotes?.includes('⏰ RECOGE:');
+              let pickupTime = 'Pronto';
+              let displayNotes = order.orderNotes || '';
+
+              if (isPickToGo || displayNotes.includes('📝 NOTAS:') || displayNotes.includes('📧 CORREO:')) {
+                  const parts = displayNotes.split(' | ');
+                  pickupTime = parts.find(p => p.includes('⏰ RECOGE:'))?.replace('⏰ RECOGE: ', '') || 'Pronto';
+                  // Solo mostramos las notas reales del cliente al cocinero
+                  displayNotes = parts.find(p => p.includes('📝 NOTAS:'))?.replace('📝 NOTAS: ', '') || '';
+              }
 
               return (
                 <div key={order.id} className={`bg-zinc-900 border-2 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl transition-colors duration-500 ${isPickToGo ? 'border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.2)]' : isLate ? 'border-red-500 shadow-red-500/20' : order.orderType === 'TAKEOUT' ? 'border-blue-500' : 'border-zinc-700'}`}>
-                  
                   <div className={`p-6 flex justify-between items-center border-b ${isPickToGo ? 'bg-purple-900/30 border-purple-500/50' : isLate ? 'bg-red-500/20 border-red-500/50' : order.orderType === 'TAKEOUT' ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-800/50 border-zinc-800'}`}>
                     <div>
                       <h2 className="text-4xl font-black italic tracking-tighter">#{order.turnNumber}</h2>
@@ -111,9 +111,7 @@ export default function CocinaKDS() {
                               <p className={`font-black text-xl ${order.orderType === 'DINE_IN' ? 'text-yellow-400' : 'text-blue-400 animate-pulse'}`}>
                                 {order.orderType === 'DINE_IN' ? '🍽️ AQUÍ' : '📱 LLEVAR'}
                               </p>
-                              <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400 animate-pulse' : 'text-zinc-500'}`}>
-                                Hace {timeAgo} min
-                              </p>
+                              <p className={`text-sm font-bold mt-1 ${isLate ? 'text-red-400 animate-pulse' : 'text-zinc-500'}`}>Hace {timeAgo} min</p>
                           </>
                       )}
                     </div>
@@ -126,19 +124,13 @@ export default function CocinaKDS() {
                             {item.quantity > 1 && <span className="bg-yellow-400 text-zinc-950 px-2 py-1 rounded font-black text-sm">{item.quantity}x</span>}
                             <p className="text-xl font-black">{item.product.name}</p>
                         </div>
-                        {item.notes && (
-                          <p className="text-zinc-400 text-sm mt-2 font-medium whitespace-pre-wrap leading-relaxed">
-                            {item.notes.split(' | ').join('\n')}
-                          </p>
-                        )}
+                        {item.notes && <p className="text-zinc-400 text-sm mt-2 font-medium whitespace-pre-wrap leading-relaxed">{item.notes.split(' | ').join('\n')}</p>}
                       </div>
                     ))}
-                    
-                    {/* 🌟 NOTAS GENERALES: Ahora se muestran limpias (sin la hora mezclada) */}
-                    {order.orderNotes && (
+                    {displayNotes && (
                       <div className="mt-4 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl">
                         <p className="text-yellow-400 font-bold uppercase text-xs mb-1">Nota de Caja/App:</p>
-                        <p className="text-white font-medium">{order.orderNotes}</p>
+                        <p className="text-white font-medium">{displayNotes}</p>
                       </div>
                     )}
                   </div>
