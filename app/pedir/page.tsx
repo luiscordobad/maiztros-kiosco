@@ -49,8 +49,6 @@ export default function PedirPage() {
   const chiles = dbData.modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
   const inventoryItems = dbData.inventoryItems;
 
-  const [activeCategory, setActiveCategory] = useState('combos');
-
   // Estados de Flujo: MENU -> CHECKOUT -> SUCCESS
   const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
   
@@ -61,7 +59,9 @@ export default function PedirPage() {
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<any>({}); 
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // 🌟 AQUÍ ESTÁ LA VARIABLE FALTANTE QUE CAUSÓ EL ERROR
+  const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   
   const [customerName, setCustomerName] = useState('');
@@ -235,10 +235,9 @@ export default function PedirPage() {
 
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward.discount, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
-  const pointsToEarn = Math.floor(totalNeto);
 
   // ==========================================
-  // LÓGICA DE PRODUCTOS (WIZARD MÁS COMPACTO)
+  // LÓGICA DE PRODUCTOS (WIZARD COMPACTO)
   // ==========================================
   const getProductDesc = (name: string) => {
     const n = name.toLowerCase();
@@ -282,7 +281,6 @@ export default function PedirPage() {
     const steps = getProductSteps(product);
     if (steps.length === 0) { 
         addToCart(product, 0, product.name); 
-        // Pequeña animación de feedback táctil
         return; 
     }
     setActiveProduct(product); setWizardStep(0); setWizardData({}); 
@@ -292,7 +290,6 @@ export default function PedirPage() {
     const currentSelections = wizardData[wizardStep] || [];
     
     if (!isMultiple) {
-        // Si es selección única (ej. sabor de refresco)
         setWizardData({...wizardData, [wizardStep]: [mod]});
         return;
     }
@@ -350,7 +347,7 @@ export default function PedirPage() {
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
       setOrderSuccessId(null);
-      setAppState('MENU'); // Lo devolvemos al menú principal para que siga viendo productos
+      setAppState('MENU'); // Lo devolvemos al menú principal
   };
 
   // 🌟 CHECKOUT WEB (MERCADO PAGO)
@@ -373,7 +370,7 @@ export default function PedirPage() {
           customerName, 
           customerEmail: regData.email || customerEmail, 
           customerPhone, 
-          paymentMethod: 'TERMINAL', // Pagado online
+          paymentMethod: 'TERMINAL', // Pagado online simulado
           orderType: 'PICK_TO_GO', 
           pickupTime: selectedTime,
           orderNotes 
