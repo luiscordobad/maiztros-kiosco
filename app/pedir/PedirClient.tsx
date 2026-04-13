@@ -126,13 +126,13 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
     }
   }, [customerPhone]);
 
-  // 🌟 CORRECCIÓN EXTREMA DE PAGO APROBADO Y TICKET
+  // 🌟 CORRECCIÓN DEL 404 EN EL LINK DEL CORREO
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const orderId = urlParams.get('order_id');
-    const turn = urlParams.get('turn'); // Lo agarra directo de la URL
-    const email = urlParams.get('email'); // Lo agarra directo de la URL
+    const turn = urlParams.get('turn'); 
+    const email = urlParams.get('email'); 
 
     if ((status === 'approved' || status === 'success') && orderId) {
       setOrderSuccessId(turn || orderId); 
@@ -140,23 +140,23 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
       setAppState('SUCCESS');
       
       window.history.replaceState(null, '', window.location.pathname);
-      useCartStore.setState({ cart: [] }); // Vaciar carrito
+      useCartStore.setState({ cart: [] }); 
       
-      // 1. Avisa a la base de datos que ya se pagó (Para que aparezca en Caja)
       fetch('/api/orders', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId, newStatus: 'PAID' })
       }).catch(() => {});
 
-      // 2. Envía el ticket directamente con el correo y el turno correctos
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+      
+      // 🌟 AQUÍ SE CORRIGIÓ: Enviamos 'turn' (M137) al link del ticket en lugar de 'orderId'
       fetch('/api/send-ticket', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               email: email || 'maiztrosqro@gmail.com', 
-              orderUrl: `${baseUrl}/ticket/${orderId}`, 
+              orderUrl: `${baseUrl}/ticket/${turn || orderId}`, // <--- LINK REPARADO
               turnNumber: turn || orderId 
           })
       }).catch(() => {});
@@ -372,7 +372,6 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
       });
       const data = await response.json();
       
-      // 🌟 REDIRECCIÓN INSTANTÁNEA (NO MÁS DOBLE CLIC)
       if (response.ok && data.initPoint) { 
           window.location.href = data.initPoint; 
       }
@@ -418,7 +417,7 @@ export default function PedirClient({ products = [], modifiers = [] }: { product
             <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">
                 {orderSuccessId ? `#${orderSuccessId}` : '...'}
             </p>
-            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {successEmail}</p>
+            <p className="text-[10px] text-zinc-500 font-medium">Recibo enviado a: {successEmail || 'tu correo'}</p>
         </div>
         <button onClick={finishOrderScreenManually} className="mt-8 bg-black/20 text-white px-8 py-4 rounded-full font-black text-sm hover:bg-black/30 transition-colors">Volver al Menú</button>
       </div>
