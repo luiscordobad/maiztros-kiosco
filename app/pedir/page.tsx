@@ -4,6 +4,12 @@
 import { useState, useEffect } from 'react';
 import { useCartStore } from '@/store/cart';
 
+// IMPORTAMOS EL SDK DE MERCADO PAGO PARA FRONTEND
+import { initMercadoPago, Wallet } from '@mercadopago/sdk-react';
+
+// 🌟 LLAVE PÚBLICA INYECTADA
+initMercadoPago('APP_USR-d7a3927f-3b2a-45bf-bea8-bf3f378feb77', { locale: 'es-MX' });
+
 const OPCIONES = {
   PAPAS: ['Chips Fuego', 'Chips Jalapeño', 'Chips Sal', 'Doritos Nacho', 'Tostitos Morados', 'Cheetos Flamin Hot', 'Takis Fuego', 'Takis Original', 'Runners', 'Tostitos Verdes'],
   MARUCHAN: ['Pollo Picante', 'Carne de Res', 'Camarón, Limón y Habanero', 'Camarón y Piquín'],
@@ -51,10 +57,7 @@ export default function PedirPage() {
 
   const [activeCategory, setActiveCategory] = useState('combos');
 
-  // Estados de Flujo: MENU -> CHECKOUT -> SUCCESS
   const [appState, setAppState] = useState<'MENU' | 'CHECKOUT' | 'SUCCESS'>('MENU');
-  
-  // Estado para abrir/cerrar el modal del carrito flotante sin cambiar de pantalla
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   const [activeProduct, setActiveProduct] = useState<any>(null);
@@ -62,9 +65,9 @@ export default function PedirPage() {
   const [wizardData, setWizardData] = useState<any>({}); 
 
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [preferenceId, setPreferenceId] = useState<string | null>(null); 
   const [orderSuccessId, setOrderSuccessId] = useState<any>(null);
   
-  // 🌟 CAMPOS OBLIGATORIOS
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -87,6 +90,29 @@ export default function PedirPage() {
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [isClosed, setIsClosed] = useState(false);
   const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
+
+  // ATRAPAMOS EL PAGO EXITOSO AL REGRESAR DE MP
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    const orderId = urlParams.get('order_id');
+
+    if ((status === 'approved' || status === 'success') && orderId) {
+      setOrderSuccessId(orderId);
+      setAppState('SUCCESS');
+      
+      // Limpiar URL
+      window.history.replaceState(null, '', window.location.pathname);
+      
+      // Enviamos el ticket automáticamente por correo
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+      fetch('/api/send-ticket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: customerEmail || 'maiztrosqro@gmail.com', orderUrl: `${baseUrl}/ticket/${orderId}`, turnNumber: orderId })
+      }).catch(() => {});
+    }
+  }, [customerEmail]);
 
   useEffect(() => {
     const calculateTimes = () => {
@@ -189,6 +215,7 @@ export default function PedirPage() {
     if (cart.length === 0 && isCartOpen && appState === 'MENU') {
         setIsCartOpen(false);
     }
+    setPreferenceId(null);
   }, [subtotal, activeCoupon, selectedReward, cart.length, isCartOpen, appState]);
 
   const handleApplyCoupon = async () => {
@@ -222,6 +249,7 @@ export default function PedirPage() {
       } else {
         setActiveCoupon(coupon); 
         setSelectedReward(null); 
+        setPreferenceId(null); 
       }
     } else {
       setCouponError('❌ Necesitas estar registrado para usar cupones. Únete abajo.');
@@ -237,9 +265,6 @@ export default function PedirPage() {
   const actualDiscount = selectedReward && !activeCoupon ? Math.min(selectedReward.discount, totalAfterCoupon) : 0;
   const totalNeto = totalAfterCoupon - actualDiscount;
 
-  // ==========================================
-  // LÓGICA DE PRODUCTOS WIZARD
-  // ==========================================
   const getProductDesc = (name: string) => {
     const n = name.toLowerCase();
     if(n.includes('solitario') || n.includes('individual')) return "1 Esq. Mediano + 1 Bebida Fría";
@@ -269,7 +294,7 @@ export default function PedirPage() {
     if(n.includes('especialista') || n.includes('especialidad')) return [{t: 'Especialidad', type: 'ESPECIALIDAD_CHOICE'}, {t: 'Base (Papas/Maruchan)', type: 'PAPAS_MARUCHAN'}, {t: 'Preparación', type: 'TOPPINGS'}, {t: 'Bebida', type: 'BEBIDA_ALL'}];
     if(n.includes('boing')) return [{t: 'Sabor', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor', type: 'REFRESCO'}];
-    if(n.includes('construpapas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}, {t: 'Preparación', type: 'TOPPINGS'}];
+    if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Preparación', type: 'TOPPINGS'}];
     if(n.includes('don maiztro')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}, {t: 'Elige Papas', type: 'PAPAS'}, {t: 'Preparación', type: 'TOPPINGS', firstToppingFree: true}]; 
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor Maruchan', type: 'MARUCHAN'}];
@@ -347,13 +372,14 @@ export default function PedirPage() {
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ acceptedTerms: false });
       setOrderSuccessId(null);
+      setPreferenceId(null);
       setAppState('MENU'); 
   };
 
-  // 🌟 CHECKOUT WEB (MERCADO PAGO + EMAIL MANDATORIO + TICKET AUTO)
-  const handleCheckoutMP = async () => {
+  // 🌟 GENERAR LINK DE PAGO (MERCADO PAGO BRICKS)
+  const generatePaymentLink = async () => {
     if (!customerName || customerPhone.length !== 10 || !customerEmail || !customerEmail.includes('@')) {
-        return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y un Correo válido para enviarte tu recibo.");
+        return alert("¡Casi listo! Por favor, ingresa tu Nombre, WhatsApp y Correo para enviarte tu recibo.");
     }
     if (!selectedTime) return alert("Selecciona a qué hora vas a pasar por tu pedido.");
     
@@ -370,9 +396,8 @@ export default function PedirPage() {
           couponCode: activeCoupon?.code || null, 
           tipAmount: 0, 
           customerName, 
-          customerEmail: customerEmail, 
+          customerEmail, 
           customerPhone, 
-          paymentMethod: 'TERMINAL', 
           orderType: 'PICK_TO_GO', 
           pickupTime: selectedTime,
           orderNotes 
@@ -380,29 +405,14 @@ export default function PedirPage() {
       });
       const data = await response.json();
       
-      if (response.ok) {
-        const orderIdReal = data.turnNumber || data.orderId;
-        setOrderSuccessId(orderIdReal);
-        
-        // 🌟 ENVIAR TICKET AUTOMÁTICAMENTE (Sin abrir modales extra)
-        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
-        const orderUrl = `${baseUrl}/ticket/${orderIdReal}`;
-        
-        fetch('/api/send-ticket', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: customerEmail, orderUrl, turnNumber: orderIdReal })
-        }).catch(e => console.log("Envío de ticket asíncrono")); // Lo manda de fondo sin atorar al cliente
-
-        alert(`¡Redirigiendo a Mercado Pago para cobrar $${totalNeto.toFixed(2)}!\n\nUna vez pagado, tu ticket llegará a: ${customerEmail}`);
-        
-        setAppState('SUCCESS');
-        const successTimeout = setTimeout(() => { finishOrderScreenManually(); }, 40000); 
-        successTimeoutRef[1](successTimeout);
+      if (response.ok && data.preferenceId) {
+          setPreferenceId(data.preferenceId);
       } else {
-        alert("Hubo un problema procesando tu orden.");
+          alert("Hubo un problema generando el link de pago.");
       }
-    } catch (error) { alert("Error al procesar el pedido."); }
+    } catch (error) { 
+        alert("Error al procesar el pedido."); 
+    }
     setIsLoadingPayment(false);
   };
 
@@ -413,11 +423,6 @@ export default function PedirPage() {
     if (prodItem) return prodItem.isAvailable;
     return true; 
   };
-
-
-  // ==========================================
-  // VISTAS WEB (APP MÓVIL)
-  // ==========================================
 
   if (dataLoading) {
       return <div className="min-h-screen bg-zinc-50 flex items-center justify-center text-zinc-900"><div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div></div>;
@@ -433,7 +438,6 @@ export default function PedirPage() {
     );
   }
 
-  // 🌟 PANTALLA ÉXITO (SIN QR, MÁS LIMPIA)
   if (appState === 'SUCCESS') {
     return (
       <div className="min-h-screen bg-green-500 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative">
@@ -444,8 +448,7 @@ export default function PedirPage() {
             <p className="text-xs uppercase tracking-[0.2em] font-bold text-zinc-400 mb-1">Tu Turno</p>
             <p className="text-[5rem] leading-none font-black italic tracking-tighter text-zinc-900 mb-6">#{String(orderSuccessId).slice(-4).toUpperCase()}</p>
             <div className="w-full h-px bg-zinc-200 mb-6 border-dashed"></div>
-            <p className="text-xs font-bold uppercase tracking-widest mb-1 text-zinc-500">Muestra este número al llegar</p>
-            <p className="text-[10px] text-zinc-400 mt-2 font-medium">Te hemos enviado tu recibo detallado a:<br/><b className="text-zinc-700">{customerEmail}</b></p>
+            <p className="text-[10px] text-zinc-500 mt-2 font-medium">Te hemos enviado tu recibo detallado al correo. Preséntate en caja con este número.</p>
         </div>
 
         <button 
@@ -487,18 +490,17 @@ export default function PedirPage() {
                 </div>
             </div>
 
-            {/* 🌟 DATOS DEL CLIENTE SIEMPRE OBLIGATORIOS */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100">
                 <h2 className="font-black text-lg mb-4 text-zinc-800">Tus Datos</h2>
                 <div className="space-y-3">
-                    <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Tu Nombre *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                    <input type="text" value={customerName} onChange={e => {setCustomerName(e.target.value); setPreferenceId(null);}} placeholder="Tu Nombre *" disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900 disabled:opacity-60 disabled:bg-zinc-100"/>
                     
                     <div className="relative">
-                        <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                        <input type="tel" value={customerPhone} onChange={e => {setCustomerPhone(e.target.value.replace(/\D/g, '')); setPreferenceId(null);}} maxLength={10} placeholder="WhatsApp (10 dígitos) *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
                         {isCheckingPoints && <span className="absolute right-3 top-3 text-yellow-500 animate-spin">⏳</span>}
                     </div>
 
-                    <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Tu Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
+                    <input type="email" value={customerEmail} onChange={e => {setCustomerEmail(e.target.value); setPreferenceId(null);}} placeholder="Tu Correo Electrónico *" className="w-full bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm font-bold text-zinc-900"/>
 
                     {customerPhone.length === 10 && isNewCustomer && (
                         <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mt-2 animate-in fade-in">
@@ -521,7 +523,7 @@ export default function PedirPage() {
                                     const isAffordable = loyaltyPoints >= reward.pts && subtotal >= reward.minSpend && !activeCoupon;
                                     const isSelected = selectedReward?.id === reward.id;
                                     return (
-                                        <button key={reward.id} disabled={!isAffordable} onClick={() => setSelectedReward(isSelected ? null : reward)} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 border-zinc-200' : isSelected ? 'bg-zinc-900 border-zinc-900 text-white font-black shadow-md' : 'bg-white border-zinc-300 text-zinc-700 font-bold hover:bg-zinc-50'}`}>
+                                        <button key={reward.id} disabled={!isAffordable} onClick={() => {setSelectedReward(isSelected ? null : reward); setPreferenceId(null);}} className={`w-full p-3 rounded-xl border text-left flex justify-between items-center text-xs transition-all ${!isAffordable ? 'opacity-40 bg-zinc-50 border-zinc-200' : isSelected ? 'bg-zinc-900 border-zinc-900 text-white font-black shadow-md' : 'bg-white border-zinc-300 text-zinc-700 font-bold hover:bg-zinc-50'}`}>
                                             <span>{reward.label} ({reward.pts} pts)</span>
                                             <span>{isSelected ? '✅' : !isAffordable ? '🔒' : 'Aplicar'}</span>
                                         </button>
@@ -531,9 +533,8 @@ export default function PedirPage() {
                         </div>
                     )}
 
-                    {/* CUPONES */}
                     <div className="mt-4 pt-4 border-t border-zinc-100 flex gap-2">
-                        <input type="text" placeholder="Código de Promo" value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="flex-1 bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-xs disabled:opacity-50"/>
+                        <input type="text" placeholder="Código de Promo" value={couponCode} onChange={e => {setCouponCode(e.target.value.toUpperCase()); setPreferenceId(null);}} disabled={!!selectedReward} className="flex-1 bg-zinc-50 border border-zinc-200 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-xs disabled:opacity-50"/>
                         <button onClick={handleApplyCoupon} disabled={!!selectedReward} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 rounded-xl font-black text-xs disabled:opacity-50 shadow-sm">Aplicar</button>
                     </div>
                     {couponError && <p className="text-red-500 text-[10px] font-bold mt-1 animate-pulse">{couponError}</p>}
@@ -544,7 +545,7 @@ export default function PedirPage() {
             <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm">
                 <h2 className="font-black text-lg mb-2 text-blue-900">🕒 ¿A qué hora pasas?</h2>
                 <p className="text-xs text-blue-700 mb-3 font-medium">Lo tendremos calientito y listo para entregar.</p>
-                <select value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base shadow-sm">
+                <select value={selectedTime} onChange={e => {setSelectedTime(e.target.value); setPreferenceId(null);}} className="w-full bg-white text-blue-900 border border-blue-200 p-4 rounded-xl font-black outline-none focus:border-blue-500 text-base shadow-sm">
                     {availableTimes.map(t => (
                         <option key={t} value={t}>{t}</option>
                     ))}
@@ -553,24 +554,35 @@ export default function PedirPage() {
 
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-zinc-100 mb-8">
               <label className="text-zinc-800 font-black text-sm mb-2 block">Notas para la cocina</label>
-              <textarea placeholder="Opcional. Ej. Sin servilletas, tenedores extra..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
+              <textarea placeholder="Opcional. Ej. Sin servilletas, tenedores extra..." value={orderNotes} onChange={(e) => {setOrderNotes(e.target.value); setPreferenceId(null);}} className="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-xl outline-none text-sm font-medium resize-none h-20 focus:border-yellow-400"/>
             </div>
 
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 p-4 pb-6 z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-            <div className="max-w-lg mx-auto">
-                <div className="flex justify-between items-end mb-3 px-2">
+            <div className="max-w-lg mx-auto flex flex-col gap-2">
+                <div className="flex justify-between items-end mb-2 px-2">
                     <span className="text-zinc-500 font-bold text-sm">Total a Pagar</span>
                     <span className="text-3xl font-black text-zinc-900">${totalNeto.toFixed(2)}</span>
                 </div>
-                <button 
-                    onClick={handleCheckoutMP} 
-                    disabled={cart.length === 0 || isLoadingPayment}
-                    className="w-full flex items-center justify-center gap-2 bg-[#009ee3] hover:bg-[#008cc9] text-white font-black py-4 rounded-xl text-base transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300 shadow-md"
-                >
-                    {isLoadingPayment ? 'Conectando...' : '💳 Pagar con Mercado Pago'}
-                </button>
+                
+                {preferenceId ? (
+                    <div className="w-full animate-in fade-in duration-500 relative bg-[#f5f5f5] p-3 rounded-2xl border border-zinc-200 shadow-inner">
+                        <Wallet initialization={{ preferenceId: preferenceId, redirectMode: 'modal' }} customization={{ texts: { action: 'pay', valueProp: 'security_details' } }} />
+                        <div className="mt-3 flex items-center justify-center gap-1 opacity-70">
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">🔒 Powered by</span>
+                            <span className="text-[#009ee3] font-black text-xs tracking-tight">mercado pago</span>
+                        </div>
+                    </div>
+                ) : (
+                    <button 
+                        onClick={generatePaymentLink} 
+                        disabled={cart.length === 0 || isLoadingPayment}
+                        className="w-full flex items-center justify-center gap-2 bg-[#009ee3] hover:bg-[#008cc9] text-white font-black py-4 rounded-xl text-base transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300 shadow-md"
+                    >
+                        {isLoadingPayment ? 'Conectando de forma segura...' : 'Proceder al Pago'}
+                    </button>
+                )}
             </div>
         </div>
 
@@ -587,12 +599,8 @@ export default function PedirPage() {
     );
   }
 
-  // ==========================================
-  // PANTALLA PRINCIPAL: MENÚ MÓVIL
-  // ==========================================
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans relative pb-32">
-      
       <header className="bg-white/80 backdrop-blur-xl border-b border-zinc-200 sticky top-0 z-30 pt-safe">
         <div className="p-4 flex justify-between items-center max-w-2xl mx-auto">
             <div>
@@ -814,7 +822,6 @@ export default function PedirPage() {
         </div>
       )}
 
-      {/* CARRITO FLOTANTE (BOTTOM SHEET) */}
       {cart.length > 0 && !activeProduct && (
         <>
             {isCartOpen ? (
