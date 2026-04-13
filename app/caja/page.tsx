@@ -51,7 +51,7 @@ export default function MonitorCaja() {
          // 🌟 CORRECCIÓN DE PAGOS FANTASMA
          // Filtramos para que SOLO aparezcan las órdenes en línea si el estado ya es PAID
          const validOrders = data.orders.filter((o: any) => {
-            const isWeb = o.orderNotes?.includes('⏰ RECOGE:');
+            const isWeb = o.paymentMethod === 'MERCADO_PAGO' || o.orderNotes?.includes('⏰ RECOGE:');
             
             if (isWeb) {
                 // Si es por internet, solo mostrar cuando MercadoPago ya autorizó
@@ -328,12 +328,15 @@ export default function MonitorCaja() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {pendingCash.map(order => {
-                  const isPickToGo = order.orderNotes?.includes('⏰ RECOGE:');
+                  const isPickToGo = order.orderNotes?.includes('⏰ RECOGE:') || order.paymentMethod === 'MERCADO_PAGO';
                   const isWebOrder = order.status === 'PENDING' && order.orderType === 'TAKEOUT';
+                  
+                  // 🌟 CHEQUEAMOS EL ESTATUS REAL DEL PAGO
+                  const isPaidInAdvance = order.status === 'PAID' || order.status === 'PREPARING';
 
                   let pickupTime = 'Pronto';
                   if (isPickToGo) {
-                      const parts = order.orderNotes.split(' | ');
+                      const parts = order.orderNotes?.split(' | ') || [];
                       pickupTime = parts.find(p => p.includes('⏰ RECOGE:'))?.replace('⏰ RECOGE: ', '') || 'Pronto';
                   }
 
@@ -347,7 +350,7 @@ export default function MonitorCaja() {
                         <div className="flex justify-between items-start mb-4">
                             <p className="text-5xl font-black italic text-white">#{order.turnNumber}</p>
                             {isPickToGo ? (
-                                <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest border border-purple-400">⚡ Pick To Go</span>
+                                <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest animate-pulse border border-purple-400">⚡ Pick To Go</span>
                             ) : isWebOrder ? (
                                 <span className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-lg text-xs font-black border border-blue-500/30 uppercase tracking-widest">📱 App VIP</span>
                             ) : (
@@ -359,9 +362,14 @@ export default function MonitorCaja() {
                         <div className="mt-4 pt-4 border-t border-zinc-800">
                             {isPickToGo ? (
                                 <>
-                                    <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
+                                    {isPaidInAdvance ? (
+                                        <p className="text-purple-300 text-[10px] font-black uppercase tracking-widest mb-1">Pagado en MercadoPago ✅</p>
+                                    ) : (
+                                        <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-1 animate-pulse">⏳ Cliente pagando en línea...</p>
+                                    )}
+                                    
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
-                                    <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest animate-pulse">
+                                    <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest">
                                         ⏰ RECOGE A LAS {pickupTime}
                                     </div>
                                 </>
@@ -377,14 +385,20 @@ export default function MonitorCaja() {
                       
                       <div className="mt-6 flex flex-col gap-2">
                           {isPickToGo ? (
-                              <div className="flex gap-2">
-                                  <button onClick={() => handleCobrarClick(order)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold p-4 rounded-xl transition-all active:scale-95 border border-zinc-700" title="Editar Preparación">
-                                      ✏️
+                              isPaidInAdvance ? (
+                                  <div className="flex gap-2">
+                                      <button onClick={() => handleCobrarClick(order)} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold p-4 rounded-xl transition-all active:scale-95 border border-zinc-700" title="Editar Preparación">
+                                          ✏️
+                                      </button>
+                                      <button onClick={() => sendToKDS(order.id)} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
+                                          🍳 Mandar a Cocina
+                                      </button>
+                                  </div>
+                              ) : (
+                                  <button disabled className="w-full bg-zinc-800 text-zinc-500 py-4 rounded-xl font-black text-sm uppercase tracking-widest cursor-not-allowed">
+                                      Esperando Pago...
                                   </button>
-                                  <button onClick={() => sendToKDS(order.id)} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-purple-500/20">
-                                      🍳 Mandar a Cocina
-                                  </button>
-                              </div>
+                              )
                           ) : isWebOrder ? (
                               <button onClick={() => acceptWebOrder(order.id)} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-blue-500/20">
                                   ⏱️ Aceptar y dar Tiempo
@@ -459,7 +473,7 @@ export default function MonitorCaja() {
                               <p className="text-7xl font-black text-white">${(selectedOrder.totalAmount + selectedOrder.tipAmount).toFixed(2)}</p>
                           </div>
 
-                          {/* 🌟 SI YA ESTÁ PAGADA, NO MUESTRA CALCULADORA */}
+                          {/* 🌟 SI YA ESTÁ PAGADA, NO MUESTRA CALCULADORA, SOLO INFO */}
                           {selectedOrder.status === 'PAID' ? (
                               <div className="bg-purple-900/10 border border-purple-500/30 p-8 rounded-2xl text-center flex-1 flex flex-col justify-center">
                                   <span className="text-6xl mb-4 block">✅</span>
