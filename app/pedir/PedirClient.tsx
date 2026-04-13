@@ -34,7 +34,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
         .catch(e => console.error("Error cargando inventario", e));
   }, []);
 
-  // 🌟 ORDENAMOS LOS PRODUCTOS POR PRECIO PARA QUE SE VEA LIMPIO EL MENÚ
   const visibleProducts = products
     .filter(p => !p.name.toLowerCase().includes('ramaiztro') && p.isAvailable)
     .sort((a, b) => a.basePrice - b.basePrice);
@@ -76,7 +75,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [isClosed, setIsClosed] = useState(false);
-  const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const calculateTimes = () => {
@@ -114,7 +112,6 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           if (data.success) {
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
-            if(data.email && !customerEmail) setCustomerEmail(data.email);
             setIsNewCustomer(false);
           } else { setLoyaltyPoints(0); setIsNewCustomer(true); }
           setIsCheckingPoints(false);
@@ -435,8 +432,9 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
                     <span className="text-3xl font-black">${totalNeto.toFixed(2)}</span>
                 </div>
                 {preferenceId ? (
+                    // 🌟 AQUÍ ESTÁ EL CAMBIO PARA EL REDIRECT LIMPIO Y SIN ERRORES (redirectMode: 'self')
                     <div className="w-full bg-[#f5f5f5] p-3 rounded-2xl border border-zinc-200">
-                        <Wallet initialization={{ preferenceId: preferenceId, redirectMode: 'modal' }} customization={{ texts: { action: 'pay', valueProp: 'security_details' } }} />
+                        <Wallet initialization={{ preferenceId: preferenceId, redirectMode: 'self' }} customization={{ texts: { action: 'pay', valueProp: 'security_details' } }} />
                     </div>
                 ) : (
                     <button onClick={generatePaymentLink} disabled={cart.length === 0 || isLoadingPayment} className="w-full bg-[#009ee3] text-white font-black py-4 rounded-xl shadow-md">
@@ -530,7 +528,7 @@ export default function PedirClient({ products, modifiers }: { products: any[], 
           </div>
         </section>
 
-        {/* OTROS ANTOJOS (NUEVO) */}
+        {/* 🌟 OTROS ANTOJOS (NUEVO) */}
         <section id="otros" className="scroll-mt-32">
           <h2 className="text-xl font-black mb-4 flex items-center gap-2">🍬 Otros Antojos</h2>
           <div className="grid grid-cols-2 gap-4">
