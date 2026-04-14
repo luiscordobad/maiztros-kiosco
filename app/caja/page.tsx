@@ -364,7 +364,7 @@ export default function MonitorCaja() {
                                     )}
                                     
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
-                                    <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest">
+                                    <div className="bg-purple-600 text-white font-black text-xs text-center py-2 px-3 rounded-xl mt-3 uppercase tracking-widest animate-pulse">
                                         ⏰ RECOGE A LAS {pickupTime}
                                     </div>
                                 </>
@@ -372,7 +372,6 @@ export default function MonitorCaja() {
                                 <>
                                     <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
                                     <p className="text-4xl text-white font-black">${(order.totalAmount + order.tipAmount).toFixed(2)}</p>
-                                    {/* 🌟 ACTUALIZADO PARA QUE NO TE MIENTA EL TEXTO */}
                                     <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">
                                         {order.paymentMethod === 'MERCADO_PAGO' ? '📱 App / Mercado Pago' : order.paymentMethod === 'TERMINAL' ? '💳 Pago con Tarjeta' : '💵 Pago en Efectivo'}
                                     </p>
@@ -538,6 +537,48 @@ export default function MonitorCaja() {
               <button onClick={() => { setWaitingTerminal(false); setTerminalIntentId(null); }} className="mt-16 text-zinc-500 hover:text-white underline font-bold uppercase tracking-widest text-xs">Cancelar operación</button>
             </div>
           )}
+
+          {/* 🌟 MODAL: REGISTRAR GASTO */}
+          {showMoveModal && (
+            <div className="fixed inset-0 bg-black/90 flex justify-center items-center p-4 z-[60] backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
+                <h2 className="text-2xl font-black text-white mb-6">Registrar Retiro de Efectivo</h2>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1 block">¿Quién autoriza / retira?</label>
+                    <select value={moveAuthor} onChange={e => setMoveAuthor(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 transition-colors">
+                      <option value="LUIS (JEFE)">Luis (Jefe)</option>
+                      <option value="COLABORADOR">Colaborador en Turno</option>
+                    </select>
+                  </div>
+                  <input type="number" value={moveAmount} onChange={e => setMoveAmount(e.target.value)} placeholder="Monto ($)" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white text-2xl font-black outline-none focus:border-red-500 transition-colors"/>
+                  <input type="text" value={moveReason} onChange={e => setMoveReason(e.target.value)} placeholder="Motivo (Ej. Pago hielo, Gasolina)" className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl text-white font-bold outline-none focus:border-red-500 transition-colors"/>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <button onClick={() => setShowMoveModal(false)} className="flex-1 bg-zinc-800 py-4 rounded-xl font-bold hover:bg-zinc-700 transition-colors text-white">Cancelar</button>
+                    <button onClick={handleCashMovement} className="flex-[2] bg-red-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-red-500 transition-colors active:scale-95">Confirmar Retiro</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 🌟 MODAL: CERRAR TURNO */}
+          {showCloseModal && (
+            <div className="fixed inset-0 bg-black/95 flex justify-center items-center p-4 z-[60] backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-[3rem] p-10 text-center shadow-2xl">
+                <span className="text-6xl mb-4 block">💰</span>
+                <h2 className="text-2xl font-black mb-2 text-white">Corte de Caja (Ciego)</h2>
+                <p className="text-zinc-500 text-sm mb-8 font-bold">Cuenta todo el efectivo físico en caja (incluyendo morralla y fondo) e ingresa el monto total exacto.</p>
+                <input type="number" value={reportedCash} onChange={e => setReportedCash(e.target.value)} placeholder="$ 0.00" className="w-full bg-zinc-950 border border-zinc-700 p-6 rounded-2xl text-4xl font-black text-white outline-none mb-8 text-center focus:border-yellow-400 transition-colors"/>
+                <div className="flex gap-4">
+                  <button onClick={() => setShowCloseModal(false)} className="flex-1 bg-zinc-800 py-4 rounded-xl font-bold text-white hover:bg-zinc-700 transition-colors">Volver</button>
+                  <button onClick={handleCloseShift} className="flex-[2] bg-red-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-red-500 active:scale-95 transition-all">Cerrar Turno 🔒</button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
     </ProtectedRoute>
