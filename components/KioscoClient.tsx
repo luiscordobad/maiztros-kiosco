@@ -31,7 +31,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   const restricciones = modifiers.filter(m => m.type === 'RESTRICCION' && m.isAvailable);
   const chiles = modifiers.filter(m => m.type === 'CHILE' && m.isAvailable);
 
-  // NUEVO ESTADO: SCREENSAVER (La pantalla atrapa-clientes)
   const [appState, setAppState] = useState<'SCREENSAVER' | 'WELCOME' | 'MENU' | 'UPSELL' | 'CHECKOUT' | 'SUCCESS'>('SCREENSAVER');
   const [orderType, setOrderType] = useState<'DINE_IN' | 'TAKEOUT'>('DINE_IN');
   
@@ -72,7 +71,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
 
-  // Referencia para el temporizador de la pantalla SUCCESS, para poder limpiarlo si el cliente le pica "Finalizar"
   const successTimeoutRef = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -90,6 +88,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           if (data.success) {
             setLoyaltyPoints(data.points);
             if(data.name && !customerName) setCustomerName(data.name); 
+            if(data.email && !customerEmail) setCustomerEmail(data.email); // 🌟 Autocompleta el email si ya lo tiene registrado
             setIsNewCustomer(false);
           } else {
             setLoyaltyPoints(0);
@@ -107,8 +106,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   }, [customerPhone]);
 
+  // 🌟 CORRECCIÓN REQUISITO DE CORREO: Ahora el email es obligatorio para registrarse
   const handleRegisterInKiosk = async () => {
-    if (!regData.firstName || !regData.lastName || !regData.email) return alert('Por favor, llena tu nombre, apellido y correo.');
+    if (!regData.firstName || !regData.lastName) return alert('Por favor, llena tu nombre y apellido.');
+    if (!regData.email || !regData.email.includes('@')) return alert('Para ser VIP necesitamos un correo válido para enviarte tus promociones y tickets.');
     if (!regData.acceptedTerms) return alert('Debes aceptar las políticas de privacidad para crear tu cuenta.');
 
     setIsRegistering(true);
@@ -121,6 +122,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         const data = await res.json();
         if (data.success) {
             setCustomerName(data.customer.name);
+            setCustomerEmail(regData.email); // Guardamos el email registrado en el estado general
             setLoyaltyPoints(data.customer.points);
             setIsNewCustomer(false); 
         } else { alert('Error al registrar cuenta. Intenta pedir como invitado borrando tu celular.'); }
@@ -131,7 +133,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const resetApp = () => {
-      // Si está en Screensaver o Success, no hacemos reset por inactividad aquí (Success tiene su propio timer de 30s)
       if (appState !== 'SCREENSAVER' && appState !== 'SUCCESS' && !waitingTerminal && !isSubmitting && !showTipModal && !showPrivacy && !showCookies && !showAddSuccess) {
         useCartStore.setState({ cart: [] });
         setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setOrderNotes('');
@@ -139,8 +140,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setActiveProduct(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
         setShowAddSuccess(false); setLastAddedCategory('');
         setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
-        
-        // El reset por inactividad nos manda de regreso al Screensaver principal
         setAppState('SCREENSAVER');
       }
     };
@@ -231,7 +230,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     if(n.includes('boing')) return [{t: 'Sabor de Boing', type: 'BOING'}];
     if(n.includes('refresco')) return [{t: 'Sabor de Refresco', type: 'REFRESCO'}];
     if(n.includes('construpapas')) return [{t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
-    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Bolsa de Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; 
+    if(n.includes('don maiztro')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Elige Papas', type: 'PAPAS'}, {t: 'Estilo de Esquite', type: 'TOPPINGS', firstToppingFree: true}]; 
     if(n.includes('bolsa de papas')) return [{t: 'Elige tus Papas', type: 'PAPAS'}];
     if(n.includes('maruchan preparada sola')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}];
     if(n.includes('obra maestra')) return [{t: 'Sabor de Maruchan', type: 'MARUCHAN'}, {t: 'Estilo de Esquite', type: 'TOPPINGS'}];
@@ -303,68 +302,121 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
+  // 🌟 CORRECCIÓN TPV CON FONDOS INSUFICIENTES
+  // Ahora valida estrictamente el pago y si falla, libera los botones
   const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
       const data = await res.json();
-      const currentState = (data.state || '').toUpperCase();
-      if (currentState === 'OPEN') setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
-      if (currentState === 'PROCESSING') setTerminalStatusMsg('⏳ Procesando el pago...');
-      if (currentState === 'FINISHED') { setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...'); executeOrderSave('TERMINAL', tipAmount); return true; }
-      if (currentState === 'CANCELED' || currentState === 'ABANDONED') { alert('El cobro fue cancelado en la terminal física.'); setWaitingTerminal(false); setIsSubmitting(false); return true; }
+      
+      // Verificamos si en verdad se pagó o si solo se "terminó" el proceso pero fue rechazado
+      const isApproved = data.payment?.status === 'approved' || data.state === 'FINISHED';
+      const isRejected = data.payment?.status === 'rejected' || data.state === 'CANCELED' || data.state === 'ABANDONED';
+
+      if (data.state === 'OPEN') {
+          setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
+          return false;
+      }
+      
+      if (data.state === 'PROCESSING') {
+          setTerminalStatusMsg('⏳ Procesando el pago...');
+          return false;
+      }
+
+      if (isApproved) { 
+          setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...'); 
+          executeOrderSave('TERMINAL', tipAmount); 
+          return true; 
+      }
+
+      if (isRejected) { 
+          window.alert('❌ El cobro no pudo completarse. Tarjeta rechazada, sin fondos o cancelada.'); 
+          // 🛡️ LIBERAMOS LOS BOTONES
+          setWaitingTerminal(false); 
+          setIsSubmitting(false); 
+          return true; 
+      }
+
       return false; 
-    } catch (e) { return false; }
+    } catch (e) { 
+        console.error("Error al checar terminal:", e);
+        return false; 
+    }
   };
 
-  // Función para forzar el cierre de la pantalla de éxito e ir al Screensaver manualmente
   const finishOrderScreenManually = () => {
-      // Limpiamos el carrito y datos
       useCartStore.setState({ cart: [] });
-      setCustomerName(''); setCustomerPhone(''); setOrderNotes('');
+      setCustomerName(''); setCustomerPhone(''); setOrderNotes(''); setCustomerEmail('');
       setLoyaltyPoints(0); setSelectedReward(null); setActiveCoupon(null); setCouponCode('');
       setIsNewCustomer(false); setRegData({ firstName: '', lastName: '', email: '', acceptedTerms: false });
       setOrderSuccessId(null); setLastPaymentMethod(null); setSelectedTipMethod(null);
-      // Volvemos al inicio
       setAppState('SCREENSAVER');
   };
 
   const executeOrderSave = async (paymentMethod: string, tipAmount: number) => {
     try {
       setLastPaymentMethod(paymentMethod as 'TERMINAL' | 'EFECTIVO_CAJA');
+      
+      const emailToSave = customerEmail || regData.email; // Aseguramos usar el email disponible
+
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           cart, totalAmount: totalNeto, pointsDiscount: actualDiscount, pointsDeducted: selectedReward?.pts || 0, 
-          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail: regData.email || customerEmail, customerPhone, paymentMethod, orderType, orderNotes 
+          couponCode: activeCoupon?.code || null, tipAmount, customerName, customerEmail: emailToSave, customerPhone, paymentMethod, orderType, orderNotes 
         })
       });
       const data = await response.json();
+
       if (response.ok) {
-        setOrderSuccessId(data.orderId);
+        setOrderSuccessId(data.turnNumber); // Usamos M123 en vez del ID largo
         setWaitingTerminal(false); setShowTipModal(false); setShowAddSuccess(false); setLastAddedCategory('');
+        setIsSubmitting(false); // 🛡️ APAGAMOS EL BLOQUEO
         setAppState('SUCCESS');
         
-        // Aumentado a 30 Segundos para que tengan tiempo de escanear el QR
+        // 🌟 ENVÍO AUTOMÁTICO DEL TICKET
+        if (emailToSave && emailToSave.includes('@')) {
+            const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
+            fetch('/api/send-ticket', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailToSave, orderUrl: `${baseUrl}/ticket/${data.orderId}`, turnNumber: data.turnNumber })
+            }).catch(() => console.log("Fallo al enviar correo silente"));
+        }
+        
         const successTimeout = setTimeout(() => { 
             finishOrderScreenManually();
         }, 30000); 
         
-        // Guardamos la referencia por si quieren cerrarlo antes
         successTimeoutRef[1](successTimeout);
+      } else {
+        alert("Error guardando orden: " + data.error);
+        setWaitingTerminal(false);
+        setIsSubmitting(false); // 🛡️ APAGAMOS EL BLOQUEO SI HAY ERROR
       }
-    } catch (error) { alert("Error guardando orden."); setIsSubmitting(false); }
+    } catch (error) { 
+        alert("Error de red guardando orden."); 
+        setWaitingTerminal(false);
+        setIsSubmitting(false); // 🛡️ APAGAMOS EL BLOQUEO SI HAY ERROR
+    }
   };
 
   const triggerTipModal = (paymentMethod: 'TERMINAL' | 'EFECTIVO_CAJA') => {
-    if (!customerName) return alert("Por favor ingresa un nombre para tu ticket.");
-    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return alert("Tu orden es GRATIS con tus descuentos. Pica 'Pago en Caja' para registrarla.");
-    setSelectedTipMethod(paymentMethod); setShowTipModal(true);
+    if (!customerName) return window.alert("Por favor ingresa un nombre para tu ticket.");
+    if (totalNeto <= 0 && paymentMethod === 'TERMINAL') return window.alert("Tu orden es GRATIS con tus descuentos. Pica 'Pago en Efectivo' para registrarla en caja.");
+    
+    setSelectedTipMethod(paymentMethod); 
+    setShowTipModal(true);
   };
 
+  // 🌟 CORRECCIÓN BLOQUEO DE BOTONES
   const processFinalCheckout = async (tipAmount: number) => {
-    setShowTipModal(false); setIsSubmitting(true);
+    setShowTipModal(false); 
+    setIsSubmitting(true); // Lo encendemos aquí
+    
     const finalTotal = totalNeto + tipAmount;
+
     if (selectedTipMethod === 'TERMINAL' && finalTotal > 0) {
       try {
         setTerminalStatusMsg('Conectando Terminal...');
@@ -372,10 +424,30 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         const data = await res.json();
         if (data.success) {
           setWaitingTerminal(true);
-          const interval = setInterval(async () => { const finished = await checkTerminalStatus(data.intentId, tipAmount); if (finished) clearInterval(interval); }, 3000);
-        } else { alert('Error terminal'); setIsSubmitting(false); }
-      } catch (e) { alert("Error de conexión"); setIsSubmitting(false); }
-    } else { executeOrderSave(selectedTipMethod!, tipAmount); }
+          const interval = setInterval(async () => { 
+              const finished = await checkTerminalStatus(data.intentId, tipAmount); 
+              if (finished) clearInterval(interval); 
+          }, 3000);
+        } else { 
+            alert('Error al conectar con la terminal. Cobro cancelado.'); 
+            setIsSubmitting(false); // 🛡️ LO APAGAMOS SI FALLA
+            setWaitingTerminal(false);
+        }
+      } catch (e) { 
+          alert("Error de conexión. Intenta de nuevo."); 
+          setIsSubmitting(false); // 🛡️ LO APAGAMOS SI FALLA
+          setWaitingTerminal(false);
+      }
+    } else { 
+        // Si es efectivo, pasa directo
+        executeOrderSave(selectedTipMethod!, tipAmount); 
+    }
+  };
+
+  // 🛡️ CORRECCIÓN: Si el cliente elimina algo del carrito, liberamos el bloqueo por si acaso
+  const handleSafeRemoveFromCart = (id: string) => {
+      removeFromCart(id);
+      setIsSubmitting(false); 
   };
 
   const renderProductGrid = (items: any[]) => (
@@ -403,19 +475,12 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return true; 
   };
 
-
-  // ==========================================
-  // VISTAS PRINCIPALES DEL KIOSCO
-  // ==========================================
-
-  // NUEVA PANTALLA: SCREENSAVER (Atrapa-clientes)
   if (appState === 'SCREENSAVER') {
       return (
           <div 
             onClick={() => setAppState('WELCOME')}
             className="h-screen w-full bg-zinc-950 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] cursor-pointer relative overflow-hidden group"
           >
-             {/* Destellos de fondo */}
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-yellow-500/20 blur-[150px] rounded-full z-0 pointer-events-none"></div>
 
              <div className="z-10 flex flex-col items-center animate-in fade-in zoom-in duration-1000">
@@ -455,7 +520,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     return (
       <div className={`h-screen ${lastPaymentMethod === 'EFECTIVO_CAJA' ? 'bg-orange-600' : 'bg-green-500'} text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500 relative`}>
         
-        {/* Botón para finalizar manualmente antes de que pasen los 30 segs */}
         <button 
             onClick={() => {
                 if (successTimeoutRef[0]) clearTimeout(successTimeoutRef[0]);
@@ -471,7 +535,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         <div className="flex flex-col md:flex-row gap-8 items-center bg-white/20 p-12 rounded-[4rem] border-2 border-white/30 shadow-2xl backdrop-blur-md">
           <div className="text-center">
             <p className="text-xl uppercase tracking-[0.3em] font-bold opacity-80 mb-2">Número de Turno</p>
-            <p className="text-[8rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{orderSuccessId?.slice(-4).toUpperCase()}</p>
+            <p className="text-[8rem] leading-none font-black italic tracking-tighter drop-shadow-2xl">#{String(orderSuccessId).slice(-4).toUpperCase()}</p>
           </div>
           <div className="hidden md:block w-1 bg-white/30 h-40 mx-4"></div>
           <div className="flex flex-col items-center mt-6 md:mt-0">
@@ -499,7 +563,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                     <button onClick={() => addToCart(item.product, item.totalPrice - item.product.basePrice, item.notes)} className="text-green-400 bg-green-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
                         <span>➕</span> Duplicar
                     </button>
-                    <button onClick={() => removeFromCart(item.id)} className="text-red-400 bg-red-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
+                    <button onClick={() => handleSafeRemoveFromCart(item.id)} className="text-red-400 bg-red-400/10 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-400 hover:text-zinc-950 transition-colors flex items-center gap-2">
                         <span>🗑️</span> Eliminar
                     </button>
                   </div>
@@ -560,10 +624,10 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                           <p className="text-zinc-400 text-xs font-bold mb-4">Crea tu cuenta rápido para guardar tus puntos.</p>
                           <div className="space-y-3">
                               <div className="grid grid-cols-2 gap-2">
-                                  <input type="text" placeholder="Nombre" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
-                                  <input type="text" placeholder="Apellido" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                                  <input type="text" placeholder="Nombre *" value={regData.firstName} onChange={e=>setRegData({...regData, firstName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                                  <input type="text" placeholder="Apellido *" value={regData.lastName} onChange={e=>setRegData({...regData, lastName: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
                               </div>
-                              <input type="email" placeholder="Correo (Para tus tickets)" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
+                              <input type="email" placeholder="Correo Electrónico * (Obligatorio)" value={regData.email} onChange={e=>setRegData({...regData, email: e.target.value})} className="w-full bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-white outline-none focus:border-yellow-400 text-sm font-bold" />
                               
                               <div className="flex items-start gap-2 mt-2 bg-zinc-900 p-3 rounded-xl border border-zinc-800">
                                   <input type="checkbox" id="terms_kiosk" checked={regData.acceptedTerms} onChange={e=>setRegData({...regData, acceptedTerms: e.target.checked})} className="mt-1 w-5 h-5 accent-yellow-400"/>
@@ -640,8 +704,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
             <h3 className="text-xl font-black mb-4 uppercase tracking-widest text-zinc-500 text-center relative z-10">Forma de Pago</h3>
             <div className="flex-1 flex flex-col gap-3 justify-center relative z-10">
-              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💳 Tarjeta</button>
-              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">💵 Efectivo en Caja</button>
+              <button onClick={() => triggerTipModal('TERMINAL')} disabled={isSubmitting || cart.length===0} className="bg-blue-500 hover:bg-blue-400 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50 disabled:bg-zinc-800 disabled:text-zinc-500">💳 Tarjeta</button>
+              <button onClick={() => triggerTipModal('EFECTIVO_CAJA')} disabled={isSubmitting || cart.length===0} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50 disabled:border-zinc-800 disabled:text-zinc-600">💵 Efectivo en Caja</button>
             </div>
           </div>
         </div>
@@ -680,6 +744,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
             <h2 className="text-6xl font-black text-yellow-400 mb-6">Terminal Lista</h2>
             <p className="text-3xl text-zinc-300 font-medium bg-zinc-900 px-8 py-4 rounded-full border border-zinc-700 shadow-xl">{terminalStatusMsg}</p>
             <div className="mt-16 w-32 h-32 border-8 border-zinc-800 border-t-yellow-400 rounded-full animate-spin"></div>
+            
+            {/* 🌟 OPCIÓN PARA CANCELAR SI EL CLIENTE SE ARREPIENTE O LA TERMINAL FALLA */}
+            <button 
+                onClick={() => {
+                    setWaitingTerminal(false);
+                    setIsSubmitting(false);
+                }} 
+                className="mt-12 text-zinc-500 hover:text-white underline uppercase tracking-widest text-sm font-bold"
+            >
+                Cancelar y regresar
+            </button>
           </div>
         )}
 
@@ -703,7 +778,15 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                   <p className="text-xl font-bold">Sin<br/>Propina</p>
                 </button>
               </div>
-              <button onClick={() => setShowTipModal(false)} className="text-zinc-500 font-bold underline hover:text-white">← Regresar</button>
+              <button 
+                  onClick={() => {
+                      setShowTipModal(false);
+                      setIsSubmitting(false); // 🛡️ LIBERA EL BLOQUEO SI SE ARREPIENTEN DE PAGAR
+                  }} 
+                  className="text-zinc-500 font-bold underline hover:text-white"
+              >
+                  ← Regresar
+              </button>
             </div>
           </div>
         )}
@@ -897,7 +980,8 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
                         const currentSelections = wizardData[wizardStep] || [];
                         const paidCount = currentSelections.filter((s:any) => s.type === 'QUESO' || s.type === 'ADEREZO' || s.type === 'POLVO').length;
                         let baseCount = paidCount;
-                        if (stepDef.firstToppingFree && baseCount > 0) baseCount -= 1;
+                        
+                        if (stepDef.firstToppingFree && baseCount > 0) { baseCount -= 1; }
                         
                         if (!stepDef.isFree) {
                             if (baseCount === 1) extraLabel = " (+ $15.00)";
@@ -914,7 +998,6 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         </div>
       )}
       
-      {/* NUEVO MODAL: ¡AGREGADO CON ÉXITO! */}
       {showAddSuccess && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex justify-center items-center z-[60] p-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-zinc-900 border border-zinc-800 p-8 md:p-10 rounded-[3rem] w-full max-w-md shadow-2xl text-center flex flex-col items-center">
