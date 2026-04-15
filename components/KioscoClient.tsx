@@ -1,4 +1,4 @@
- // @ts-nocheck
+// @ts-nocheck
 
 /* eslint-disable */
 
@@ -1903,3 +1903,5 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     </div>
 
   );
+
+}
