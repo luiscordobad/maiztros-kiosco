@@ -301,15 +301,14 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
     }
   };
 
-  // 🌟 CORRECCIÓN MAESTRA DE LA TERMINAL DE PAGOS
+  // 🌟 CORRECCIÓN EXTREMA DE LA TERMINAL
   const checkTerminalStatus = async (intentId: string, tipAmount: number) => {
     try {
       const res = await fetch(`/api/terminal?intentId=${intentId}`);
       const data = await res.json();
       
       const currentState = (data.state || '').toUpperCase();
-      // Extraemos el estatus exacto del banco desde la API de Mercado Pago
-      const paymentState = (data.payment?.state || data.payment?.status || '').toUpperCase();
+      const paymentStatus = (data.payment?.status || data.payment?.state || '').toLowerCase();
 
       if (currentState === 'OPEN') {
           setTerminalStatusMsg('💳 Esperando que pases la tarjeta...');
@@ -321,16 +320,17 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           return false;
       }
 
-      // Si terminó el flujo en el aparatito, revisamos qué dijo el BANCO
       if (currentState === 'FINISHED') {
-          if (paymentState === 'APPROVED' || paymentState === 'ACCREDITED') {
-              setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...'); 
-              executeOrderSave('TERMINAL', tipAmount); 
+          // 🛡️ REGLA: Si la tarjeta fue rechazada explícitamente, cancelamos todo.
+          // Si no dice rejected, asumimos éxito (porque Mercado Pago a veces no manda la palabra "approved").
+          if (paymentStatus === 'rejected' || paymentStatus === 'cancelled' || paymentStatus === 'cc_rejected_insufficient_amount') {
+              window.alert('❌ Tarjeta rechazada o fondos insuficientes. Intenta nuevamente o usa otro método.');
+              setWaitingTerminal(false); 
+              setIsSubmitting(false); // 🌟 SE LIBERAN LOS BOTONES
               return true; 
           } else {
-              window.alert('❌ Tarjeta rechazada o fondos insuficientes. Intenta nuevamente.');
-              setWaitingTerminal(false); 
-              setIsSubmitting(false); // 🛡️ SE LIBERAN LOS BOTONES DEL CARRITO
+              setTerminalStatusMsg('✅ ¡Pago aprobado! Imprimiendo recibo...'); 
+              executeOrderSave('TERMINAL', tipAmount); 
               return true; 
           }
       }
@@ -338,7 +338,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
       if (currentState === 'CANCELED' || currentState === 'ABANDONED' || currentState === 'ERROR') { 
           window.alert('❌ El cobro fue cancelado en la terminal física.'); 
           setWaitingTerminal(false); 
-          setIsSubmitting(false); // 🛡️ SE LIBERAN LOS BOTONES DEL CARRITO
+          setIsSubmitting(false); // 🌟 SE LIBERAN LOS BOTONES
           return true; 
       }
 
@@ -381,7 +381,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         setIsSubmitting(false); 
         setAppState('SUCCESS');
         
-        // 🌟 ENVÍO AUTOMÁTICO DE TICKET SI HAY CORREO
+        // ENVÍO DE TICKET AL CORREO
         if (emailToUse && emailToUse.includes('@')) {
             const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maiztros.vercel.app';
             fetch('/api/send-ticket', {
@@ -401,11 +401,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
         successTimeoutRef[1](successTimeout);
       } else { 
           alert("Error guardando orden: " + data.error); 
-          setIsSubmitting(false); 
+          setIsSubmitting(false); // LIBERAR
       }
     } catch (error) { 
         alert("Error de red guardando orden."); 
-        setIsSubmitting(false); 
+        setIsSubmitting(false); // LIBERAR
     }
   };
 
@@ -419,7 +419,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const processFinalCheckout = async (tipAmount: number) => {
     setShowTipModal(false); 
-    setIsSubmitting(true); // 🔒 BLOQUEO INICIAL AL ENVIAR PAGO
+    setIsSubmitting(true); // BLOQUEO INICIAL AL ENVIAR PAGO
     
     const finalTotal = totalNeto + tipAmount;
 
@@ -437,11 +437,11 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
           }, 3000);
         } else { 
             alert('Error al conectar con la terminal.'); 
-            setIsSubmitting(false); 
+            setIsSubmitting(false); // LIBERAR SI FALLA API TERMINAL
         }
       } catch (e) { 
           alert("Error de conexión con Mercado Pago"); 
-          setIsSubmitting(false); 
+          setIsSubmitting(false); // LIBERAR SI FALLA RED
       }
     } else { 
         executeOrderSave(selectedTipMethod!, tipAmount); 
@@ -450,7 +450,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
   const handleSafeRemoveFromCart = (id: string) => {
       removeFromCart(id);
-      setIsSubmitting(false); // 🛡️ SIEMPRE ASEGURAR LIBERACIÓN DE BOTONES
+      setIsSubmitting(false); // SIEMPRE ASEGURAR LIBERACIÓN DE BOTONES
   };
 
   const renderProductGrid = (items: any[]) => (
@@ -694,6 +694,7 @@ export default function KioscoClient({ products, modifiers }: { products: any[],
 
             <div className="space-y-4 mb-6 border-b border-zinc-800 pb-6 relative z-10">
               <input type="text" placeholder="Nombre para el ticket *" value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold disabled:opacity-50 disabled:border-zinc-800 disabled:text-zinc-500"/>
+              <input type="email" placeholder="Correo (Opcional si eres invitado)" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} disabled={customerPhone.length === 10 && !isNewCustomer} className="w-full bg-zinc-950 border border-zinc-700 p-4 rounded-xl focus:border-yellow-400 outline-none font-bold disabled:opacity-50 disabled:border-zinc-800 disabled:text-zinc-500"/>
               
               <div className="flex gap-2">
                 <input type="text" placeholder="Promo de la App" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} disabled={!!selectedReward} className="w-full bg-zinc-950 border border-zinc-700 p-3 rounded-xl focus:border-purple-400 outline-none uppercase font-bold text-center tracking-widest text-sm disabled:opacity-50"/>
